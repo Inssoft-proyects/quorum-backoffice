@@ -2,33 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      "@quorum-backoffice/shared": [
-        "../../packages/shared/src"
-      ],
-      "@quorum-backoffice/shared/*": [
-        "../../packages/shared/src/*"
-      ]
+      "@/*": ["src/*"]
     },
-    "types": [
-      "node",
-      "jest"
-    ],
-    "isolatedModules": true
+    "types": ["node", "jest"]
   },
-  "include": [
-    "src/**/*",
-    "migrations/**/*",
-    "test/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "coverage"
-  ]
+  "include": ["src/**/*", "migrations/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist", "coverage"]
 }

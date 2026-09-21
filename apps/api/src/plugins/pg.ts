@@ -32,6 +32,11 @@ declare module 'fastify' {
 async function plugin(app: FastifyInstance): Promise<void> {
   const url = app.config.DATABASE_URL;
 
+  // Parse bigint (8 bytes per id) as number since our row IDs fit in JS Number range.
+  // Without this, Fastify's JSON serializer emits them as strings which Zod then
+  // rejects on the client side (it expects number for id).
+  pg.types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
+
   const pool = new Pool({
     connectionString: url,
     max: 10,

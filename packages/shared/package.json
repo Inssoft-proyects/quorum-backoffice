@@ -5,6 +5,16 @@
   "description": "Zod DTOs and shared types for the backoffice suite.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./dto/marbete": {
+      "types": "./dist/dto/marbete.d.ts",
+      "default": "./dist/dto/marbete.js"
+    }
+  },
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",

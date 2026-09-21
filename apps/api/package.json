@@ -26,7 +26,7 @@
     "@fastify/rate-limit": "^10.2.2",
     "fastify": "^5.10.0",
     "fastify-plugin": "^5.0.1",
-    "@quorum-backoffice/shared": "*",
+    "@quorum-backoffice/shared": "file:../../packages/shared",
     "ioredis": "^5.4.1",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
