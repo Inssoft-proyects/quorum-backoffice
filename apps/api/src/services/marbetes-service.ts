@@ -10,6 +10,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { AppError } from '../lib/errors';
 import { generatePublicUid, maskCode, sha256Hex } from '../lib/marbete-id';
 import { PgMarbeteRepo } from '../repositories/pg-marbetes';
+import { PgStudentRepo } from '../repositories/pg-students';
 import { OtpClient } from './otp-client';
 import { AuditService } from './audit-service';
 import type {
@@ -49,6 +50,37 @@ export class MarbetesService {
     this.repo = new PgMarbeteRepo(deps.pool);
     this.otp = deps.otp;
     this.log = deps.log;
+  }
+
+  /**
+   * Resolve a Canvas user identifier to the internal students_cache row.
+   * Throws AppError(422, 'student_not_found') when the student is not in
+   * cache, and AppError(422, 'student_not_active') when the row exists but
+   * is marked inactive.
+   *
+   * Returns the resolved internal id (students_cache.id) so the repo can
+   * persist the foreign key without further validation.
+   */
+  private async resolveCanvasStudent(canvasUserId: number): Promise<number> {
+    const studentRepo = new PgStudentRepo(this.deps.pool);
+    const row = await studentRepo.findByCanvasId(canvasUserId);
+    if (!row) {
+      throw new AppError(
+        'student_not_found',
+        'student not found in cache; sync from Canvas first',
+        422,
+        { canvasUserId },
+      );
+    }
+    if (!row.is_active) {
+      throw new AppError(
+        'student_not_active',
+        'student is not active in Canvas',
+        422,
+        { canvasUserId },
+      );
+    }
+    return row.id;
   }
 
   /**
@@ -98,6 +130,11 @@ export class MarbetesService {
   ): Promise<MarbeteDetailResponse> {
     const otpResult = await this.verifyOtp(actor, 'marbete.create', otpCode);
 
+    let assignedInternalId: number | null = null;
+    if (req.canvasUserId !== undefined) {
+      assignedInternalId = await this.resolveCanvasStudent(req.canvasUserId);
+    }
+
     let row: import('../repositories/pg-marbetes').MarbeteRow | null = null;
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const publicUid = generatePublicUid();
@@ -107,7 +144,7 @@ export class MarbetesService {
           publicUid,
           codeHash,
           createdBy: actor,
-          assignedStudentId: req.assignedStudentId ?? null,
+          assignedStudentId: assignedInternalId,
         });
         break;
       } catch (err) {
@@ -148,12 +185,14 @@ export class MarbetesService {
     const before = this.repo.toResponse(existing);
     let updated: import('../repositories/pg-marbetes').MarbeteRow;
 
-    if (req.assignedStudentId !== undefined) {
-      if (req.assignedStudentId !== null) {
-        const student = await this.repo.studentOf(req.assignedStudentId);
-        if (!student) throw AppError.badRequest('assignedStudentId not found');
+    if (req.canvasUserId !== undefined) {
+      let nextAssignedStudentId: number | null;
+      if (req.canvasUserId === null) {
+        nextAssignedStudentId = null;
+      } else {
+        nextAssignedStudentId = await this.resolveCanvasStudent(req.canvasUserId);
       }
-      const set = await this.repo.assign(id, req.assignedStudentId);
+      const set = await this.repo.assign(id, nextAssignedStudentId);
       if (!set) throw AppError.notFound(`marbete ${id} not found`);
       const refreshed = await this.repo.findById(id);
       if (!refreshed) throw AppError.notFound(`marbete ${id} not found`);
@@ -168,7 +207,7 @@ export class MarbetesService {
 
     const audit = new AuditService(this.deps.pool);
     const action =
-      req.assignedStudentId !== undefined ? 'marbete.assign' : 'marbete.update';
+      req.canvasUserId !== undefined ? 'marbete.assign' : 'marbete.update';
     await audit.write({
       actorId: actor,
       action,

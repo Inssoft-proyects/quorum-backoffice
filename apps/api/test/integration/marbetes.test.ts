@@ -1,6 +1,15 @@
 /**
  * WU3b integration tests: full CRUD with mocked OTP service + audit writes.
  *
+ * WU8b1 extends:
+ *   - the `seedStudent` helper accepts an `active` flag (default true)
+ *   - the PATCH test uses `canvasUserId` (the external Canvas id) instead of
+ *     the internal `students_cache.id`
+ *   - the new `assignment by canvas_user_id` describe block covers the
+ *     happy path, the 422 student_not_found rejection (unknown canvas id),
+ *     the 422 student_not_active rejection (inactive row), and the
+ *     unassign-by-null path.
+ *
  * The OTP service is mocked at the fetch level: any request to
  * OTP_SERVICE_URL is intercepted and returns ok=true with a deterministic
  * otpId. A separate suite verifies OTP rejection paths.
@@ -84,10 +93,16 @@ describe('marbetes routes with mocked OTP happy path (integration, real PG)', ()
     await pool.end();
   });
 
-  async function seedStudent(canvasId: number, name: string, email: string): Promise<number> {
+  async function seedStudent(
+    canvasId: number,
+    name: string,
+    email: string,
+    active = true,
+  ): Promise<number> {
     const r = await pool.query<{ id: number }>(
-      `INSERT INTO students_cache (canvas_user_id, full_name, email) VALUES ($1, $2, $3) RETURNING id`,
-      [canvasId, name, email],
+      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [canvasId, name, email, active],
     );
     const id = r.rows[0]?.id;
     if (!id) throw new Error('seed_failed');
@@ -122,7 +137,8 @@ describe('marbetes routes with mocked OTP happy path (integration, real PG)', ()
   });
 
   it('PATCH /api/v1/marbetes/:id assigns with valid OTP and writes audit (action = marbete.assign)', async () => {
-    const studentId = await seedStudent(99101, 'Grace Hopper', 'grace@quorum.local');
+    const canvasId = 99101;
+    await seedStudent(canvasId, 'Grace Hopper', 'grace@quorum.local');
     const c = await app.inject({
       method: 'POST',
       url: '/api/v1/marbetes',
@@ -134,7 +150,7 @@ describe('marbetes routes with mocked OTP happy path (integration, real PG)', ()
       method: 'PATCH',
       url: `/api/v1/marbetes/${cid}`,
       headers: happyHeaders(),
-      payload: JSON.stringify({ assignedStudentId: studentId }),
+      payload: JSON.stringify({ canvasUserId: canvasId }),
     });
     expect(p.statusCode).toBe(200);
 
@@ -182,6 +198,193 @@ describe('marbetes routes with mocked OTP happy path (integration, real PG)', ()
       headers: { 'x-test-actor': 'tester' },
     });
     expect(list.statusCode).toBe(200);
+  });
+});
+
+describe('assignment by canvas_user_id (WU8b1)', () => {
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  let pool: Pool;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
+    await pool.query(`
+      DROP TABLE IF EXISTS audit_log CASCADE;
+      DROP TABLE IF EXISTS dispositivos CASCADE;
+      DROP TABLE IF EXISTS marbetes CASCADE;
+      DROP TABLE IF EXISTS students_cache CASCADE;
+      DROP TYPE IF EXISTS audit_action CASCADE;
+      DROP TYPE IF EXISTS dispositivo_status CASCADE;
+      DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS _migrations CASCADE;
+    `);
+    await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
+    app = await buildApp({ config: TEST_ENV });
+    const fetchMock = makeOtpFetch((body) => {
+      const code = (body as { code?: string }).code;
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
+      return { status: 401, body: { error: 'invalid' } };
+    });
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await pool.end();
+  });
+
+  async function seedStudent(
+    canvasId: number,
+    name: string,
+    email: string,
+    active = true,
+  ): Promise<number> {
+    const r = await pool.query<{ id: number }>(
+      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [canvasId, name, email, active],
+    );
+    const id = r.rows[0]?.id;
+    if (!id) throw new Error('seed_failed');
+    return id;
+  }
+
+  function happyHeaders(): Record<string, string> {
+    return {
+      'x-test-actor': 'tester',
+      'x-otp-code': VALID_OTP,
+      'content-type': 'application/json',
+    };
+  }
+
+  it('POST assigns via canvasUserId to an active student → 201', async () => {
+    const canvasId = 70_001;
+    await seedStudent(canvasId, 'Ada Lovelace', `ada-${canvasId}@quorum.local`);
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'ASSIGN-ACTIVE-1', canvasUserId: canvasId }),
+    });
+    expect(r.statusCode).toBe(201);
+    const body = r.json() as {
+      id: number;
+      assignedStudentId: number;
+      student: { canvasUserId: number; fullName: string } | null;
+    };
+    expect(body.assignedStudentId).not.toBeNull();
+    expect(body.student?.canvasUserId).toBe(canvasId);
+    expect(body.student?.fullName).toBe('Ada Lovelace');
+  });
+
+  it('POST with unknown canvasUserId → 422 student_not_found', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'ASSIGN-UNKNOWN-1', canvasUserId: 888_888_888 }),
+    });
+    expect(r.statusCode).toBe(422);
+    const body = r.json() as { code: string; details?: { canvasUserId?: number } };
+    expect(body.code).toBe('student_not_found');
+    expect(body.details?.canvasUserId).toBe(888_888_888);
+  });
+
+  it('POST with inactive student (is_active = false) → 422 student_not_active', async () => {
+    const canvasId = 70_002;
+    await seedStudent(canvasId, 'Inactive Student', `inactive-${canvasId}@quorum.local`, false);
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'ASSIGN-INACTIVE-1', canvasUserId: canvasId }),
+    });
+    expect(r.statusCode).toBe(422);
+    const body = r.json() as { code: string; details?: { canvasUserId?: number } };
+    expect(body.code).toBe('student_not_active');
+    expect(body.details?.canvasUserId).toBe(canvasId);
+  });
+
+  it('PATCH assigns via canvasUserId to an active student → 200', async () => {
+    const canvasId = 70_003;
+    const studentId = await seedStudent(canvasId, 'Linus Torvalds', `linus-${canvasId}@quorum.local`);
+    const c = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'PATCH-ASSIGN-1' }),
+    });
+    const cid = (c.json() as { id: number }).id;
+    const p = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marbetes/${cid}`,
+      headers: happyHeaders(),
+      payload: JSON.stringify({ canvasUserId: canvasId }),
+    });
+    expect(p.statusCode).toBe(200);
+    const detail = p.json() as { assignedStudentId: number };
+    expect(detail.assignedStudentId).toBe(studentId);
+  });
+
+  it('PATCH with unknown canvasUserId → 422 student_not_found', async () => {
+    const c = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'PATCH-UNKNOWN-1' }),
+    });
+    const cid = (c.json() as { id: number }).id;
+    const p = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marbetes/${cid}`,
+      headers: happyHeaders(),
+      payload: JSON.stringify({ canvasUserId: 777_777_777 }),
+    });
+    expect(p.statusCode).toBe(422);
+    const body = p.json() as { code: string };
+    expect(body.code).toBe('student_not_found');
+  });
+
+  it('PATCH with inactive student → 422 student_not_active', async () => {
+    const canvasId = 70_004;
+    await seedStudent(canvasId, 'Withdrawn', `withdrawn-${canvasId}@quorum.local`, false);
+    const c = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'PATCH-INACTIVE-1' }),
+    });
+    const cid = (c.json() as { id: number }).id;
+    const p = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marbetes/${cid}`,
+      headers: happyHeaders(),
+      payload: JSON.stringify({ canvasUserId: canvasId }),
+    });
+    expect(p.statusCode).toBe(422);
+    const body = p.json() as { code: string };
+    expect(body.code).toBe('student_not_active');
+  });
+
+  it('PATCH with canvasUserId: null unassigns → 200, assignedStudentId becomes null', async () => {
+    const canvasId = 70_005;
+    await seedStudent(canvasId, 'Unassigning', `unassign-${canvasId}@quorum.local`);
+    const c = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'PATCH-UNASSIGN-1', canvasUserId: canvasId }),
+    });
+    const cid = (c.json() as { id: number }).id;
+    const p = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marbetes/${cid}`,
+      headers: happyHeaders(),
+      payload: JSON.stringify({ canvasUserId: null }),
+    });
+    expect(p.statusCode).toBe(200);
+    const detail = p.json() as { assignedStudentId: number | null; assignedAt: string | null };
+    expect(detail.assignedStudentId).toBeNull();
+    expect(detail.assignedAt).toBeNull();
   });
 });
 

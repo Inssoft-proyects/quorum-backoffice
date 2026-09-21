@@ -33,6 +33,7 @@ import { registerMarbetesRoutes } from './routes/marbetes';
 import { registerDispositivosRoutes } from './routes/dispositivos';
 import { registerAuditRoutes } from './routes/audit';
 import { registerAuthRoutes } from './routes/auth';
+import { registerStudentsRoutes } from './routes/students';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -91,6 +92,7 @@ export async function buildApp(
   await registerDispositivosRoutes(app as unknown as FastifyInstance);
   await registerAuditRoutes(app as unknown as FastifyInstance);
   await registerAuthRoutes(app as unknown as FastifyInstance);
+  await registerStudentsRoutes(app as unknown as FastifyInstance);
 
   return app;
 }

@@ -23,8 +23,13 @@ export const CreateMarbeteRequest = z.object({
    * it (sha256) before persisting; the plain code is never stored.
    */
   code: z.string().min(8).max(128),
-  /** Optional: assign to a student at creation time. */
-  assignedStudentId: z.number().int().positive().optional(),
+  /**
+   * Optional: assign to a student at creation time by their external Canvas
+   * user identifier. The API resolves this to the internal students_cache.id
+   * and rejects the assignment if the student is not in cache or marked
+   * inactive.
+   */
+  canvasUserId: z.number().int().positive().optional(),
   /** Optional: human-set note (not persisted in MVP; reserved for WU3b). */
   note: z.string().max(500).optional(),
 });
@@ -32,7 +37,12 @@ export type CreateMarbeteRequest = z.infer<typeof CreateMarbeteRequest>;
 
 // ---- Update / Assign ----
 export const UpdateMarbeteRequest = z.object({
-  assignedStudentId: z.number().int().positive().nullable().optional(),
+  /**
+   * Canvas user identifier of the student to assign. Pass `null` explicitly
+   * to unassign the marbete. Resolved server-side against students_cache;
+   * unresolved or inactive students are rejected with 422.
+   */
+  canvasUserId: z.number().int().positive().nullable().optional(),
   status: MarbeteStatus.optional(),
 });
 export type UpdateMarbeteRequest = z.infer<typeof UpdateMarbeteRequest>;

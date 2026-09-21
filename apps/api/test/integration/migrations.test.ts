@@ -46,7 +46,7 @@ describe('migrations runner (integration, real PG)', () => {
     await pool.end();
   });
 
-  it('applies all 4 migrations', async () => {
+  it('applies all migrations', async () => {
     const result = await migrate({ pool, dir: MIGRATIONS_DIR });
     expect(result.applied.sort()).toEqual([
       '0001_init.sql',
@@ -54,6 +54,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0003_dispositivos.sql',
       '0004_audit.sql',
       '0005_auth.sql',
+      '0006_students_active.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -67,6 +68,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0003_dispositivos.sql',
       '0004_audit.sql',
       '0005_auth.sql',
+      '0006_students_active.sql',
     ]);
   });
 
