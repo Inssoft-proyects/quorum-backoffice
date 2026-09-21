@@ -25,12 +25,12 @@ const sample: MarbeteDetailResponse[] = [
 
 describe('MarbetesTable', () => {
   it('shows empty state when no items', () => {
-    render(<MarbetesTable items={[]} userRole="admin" onDelete={() => {}} />);
+    render(<MarbetesTable items={[]} userRole="admin" onDelete={() => {}} onEdit={() => {}} />);
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
   });
 
   it('renders rows with masked code and student info', () => {
-    render(<MarbetesTable items={sample} userRole="admin" onDelete={() => {}} />);
+    render(<MarbetesTable items={sample} userRole="admin" onDelete={() => {}} onEdit={() => {}} />);
     expect(screen.getByText('1***23')).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByText('ada@quorum.local')).toBeInTheDocument();
@@ -38,12 +38,12 @@ describe('MarbetesTable', () => {
   });
 
   it('shows delete button for admin', () => {
-    render(<MarbetesTable items={sample} userRole="admin" onDelete={() => {}} />);
+    render(<MarbetesTable items={sample} userRole="admin" onDelete={() => {}} onEdit={() => {}} />);
     expect(screen.getByTestId('delete-1')).toBeInTheDocument();
   });
 
   it('hides delete button for operator', () => {
-    render(<MarbetesTable items={sample} userRole="operator" onDelete={() => {}} />);
+    render(<MarbetesTable items={sample} userRole="operator" onDelete={() => {}} onEdit={() => {}} />);
     expect(screen.queryByTestId('delete-1')).toBeNull();
   });
 });

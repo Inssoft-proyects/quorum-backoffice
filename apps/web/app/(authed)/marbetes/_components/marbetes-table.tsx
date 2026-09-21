@@ -16,6 +16,7 @@ interface Props {
   items: MarbeteDetailResponse[];
   userRole: UserRole;
   onDelete: (item: MarbeteDetailResponse) => void;
+  onEdit: (item: MarbeteDetailResponse) => void;
   isPending?: boolean;
 }
 
@@ -34,11 +35,12 @@ function statusLabel(status: MarbeteDetailResponse['status']): string {
 }
 
 /**
- * Renders the marbetes list as a shadcn table. The delete action is gated
- * by `hasAtLeastRole(userRole, 'admin')` and hidden for already-deleted rows.
+ * Renders the marbetes list as a shadcn table. The edit and delete actions
+ * are gated by `hasAtLeastRole(userRole, 'admin')` and hidden for
+ * already-deleted rows.
  */
-export function MarbetesTable({ items, userRole, onDelete, isPending }: Props) {
-  const canDelete = hasAtLeastRole(userRole, 'admin');
+export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending }: Props) {
+  const canManage = hasAtLeastRole(userRole, 'admin');
   if (items.length === 0) {
     return (
       <div
@@ -82,16 +84,27 @@ export function MarbetesTable({ items, userRole, onDelete, isPending }: Props) {
                 {m.assignedAt ? new Date(m.assignedAt).toLocaleDateString('es') : '—'}
               </TableCell>
               <TableCell className="text-right">
-                {canDelete && !m.deletedAt ? (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => onDelete(m)}
-                    disabled={isPending}
-                    data-testid={`delete-${m.id}`}
-                  >
-                    Eliminar
-                  </Button>
+                {canManage && !m.deletedAt ? (
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEdit(m)}
+                      disabled={isPending}
+                      data-testid={`edit-${m.id}`}
+                    >
+                      Editar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => onDelete(m)}
+                      disabled={isPending}
+                      data-testid={`delete-${m.id}`}
+                    >
+                      Eliminar
+                    </Button>
+                  </div>
                 ) : null}
               </TableCell>
             </TableRow>

@@ -13,14 +13,30 @@
 
 import type { z } from 'zod';
 import {
+  CreateMarbeteRequest,
   DeleteMarbeteRequest,
   ListMarbetesFilter,
+  UpdateMarbeteRequest,
   type ListMarbetesResponse,
   type LoginRequest,
   type MarbeteCountersResponse,
   type MarbeteDetailResponse,
   type MeResponse,
 } from '@quorum-backoffice/shared';
+
+/**
+ * Student detail shape returned by GET /api/v1/students?canvasUserId=...
+ * (apps/api/src/services/students-service.ts). Mirrored locally so the web
+ * package does not depend on the api package; the API is the source of
+ * truth and the integration tests assert the round-trip.
+ */
+export interface StudentDetailResponse {
+  id: number;
+  canvasUserId: number;
+  fullName: string;
+  email: string;
+  isActive: boolean;
+}
 
 const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://127.0.0.1:3100';
 
@@ -108,6 +124,44 @@ async function apiDeleteWithOtp<T>(
   return res.json() as Promise<T>;
 }
 
+async function apiPostWithOtp<T>(
+  path: string,
+  body: object,
+  otpCode: string,
+  cookie?: string,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: buildHeaders(cookie, {
+      'content-type': 'application/json',
+      'x-otp-code': otpCode,
+    }),
+    body: JSON.stringify(body),
+    credentials: 'include',
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json() as Promise<T>;
+}
+
+async function apiPatchWithOtp<T>(
+  path: string,
+  body: object,
+  otpCode: string,
+  cookie?: string,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PATCH',
+    headers: buildHeaders(cookie, {
+      'content-type': 'application/json',
+      'x-otp-code': otpCode,
+    }),
+    body: JSON.stringify(body),
+    credentials: 'include',
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json() as Promise<T>;
+}
+
 // ---- Auth (existing surface) ----
 
 export async function login(body: LoginRequest, cookie?: string): Promise<MeResponse> {
@@ -170,6 +224,40 @@ export async function deleteMarbete(
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
   return apiDeleteWithOtp<MarbeteDetailResponse>(
+    `/api/v1/marbetes/${id}`,
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+// ---- Marbetes (WU8b2) ----
+
+export async function getStudentByCanvasId(
+  canvasUserId: number,
+  cookie?: string,
+): Promise<StudentDetailResponse> {
+  return apiGet<StudentDetailResponse>(
+    `/api/v1/students?canvasUserId=${canvasUserId}`,
+    cookie,
+  );
+}
+
+export async function createMarbete(
+  req: CreateMarbeteRequest,
+  otpCode: string,
+  cookie?: string,
+): Promise<MarbeteDetailResponse> {
+  return apiPostWithOtp<MarbeteDetailResponse>('/api/v1/marbetes', req, otpCode, cookie);
+}
+
+export async function updateMarbete(
+  id: number,
+  req: UpdateMarbeteRequest,
+  otpCode: string,
+  cookie?: string,
+): Promise<MarbeteDetailResponse> {
+  return apiPatchWithOtp<MarbeteDetailResponse>(
     `/api/v1/marbetes/${id}`,
     req,
     otpCode,
