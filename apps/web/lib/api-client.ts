@@ -2,17 +2,25 @@
  * API client for the backoffice.
  *
  * Two flavours:
- *   - `login`, `logout`, `me`: called from the browser; the browser
- *     handles the session cookie automatically via credentials: 'include'.
- *   - `login`, `logout`, `me` also accept an optional `cookie` string and
- *     forward it as the `cookie` header. This is how server components /
- *     route handlers / layouts talk to the API, since the browser cookie
- *     store is not available in the Node runtime.
+ *   - Callers in the browser omit the `cookie` arg; the browser handles
+ *     the session cookie automatically via `credentials: 'include'`.
+ *   - Server components / route handlers / layouts pass a cookie string
+ *     (built from next/headers) that we forward as the `cookie` header,
+ *     since the browser cookie store is not available in the Node runtime.
  *
  * The base URL comes from NEXT_PUBLIC_API_URL (default http://127.0.0.1:3100).
  */
 
-import type { LoginRequest, MeResponse } from '@quorum-backoffice/shared';
+import type { z } from 'zod';
+import {
+  DeleteMarbeteRequest,
+  ListMarbetesFilter,
+  type ListMarbetesResponse,
+  type LoginRequest,
+  type MarbeteCountersResponse,
+  type MarbeteDetailResponse,
+  type MeResponse,
+} from '@quorum-backoffice/shared';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://127.0.0.1:3100';
 
@@ -43,17 +51,67 @@ async function parseError(res: Response): Promise<ApiError> {
   return new ApiError(body?.code ?? 'unknown', body?.message ?? res.statusText, res.status);
 }
 
-export async function login(body: LoginRequest, cookie?: string): Promise<MeResponse> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+function buildHeaders(cookie?: string, extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...(extra ?? {}) };
   if (cookie) headers['cookie'] = cookie;
-  const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+  return headers;
+}
+
+function buildQueryString(params: Record<string, unknown>): string {
+  const usp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    usp.set(k, String(v));
+  }
+  const s = usp.toString();
+  return s ? `?${s}` : '';
+}
+
+async function apiGet<T>(path: string, cookie?: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'GET',
+    headers: buildHeaders(cookie),
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json() as Promise<T>;
+}
+
+async function apiPost<T>(path: string, body: unknown, cookie?: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers,
+    headers: buildHeaders(cookie, { 'content-type': 'application/json' }),
     body: JSON.stringify(body),
     credentials: 'include',
   });
   if (!res.ok) throw await parseError(res);
-  const data = (await res.json()) as { user: MeResponse };
+  return res.json() as Promise<T>;
+}
+
+async function apiDeleteWithOtp<T>(
+  path: string,
+  body: object,
+  otpCode: string,
+  cookie?: string,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers: buildHeaders(cookie, {
+      'content-type': 'application/json',
+      'x-otp-code': otpCode,
+    }),
+    body: JSON.stringify(body),
+    credentials: 'include',
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json() as Promise<T>;
+}
+
+// ---- Auth (existing surface) ----
+
+export async function login(body: LoginRequest, cookie?: string): Promise<MeResponse> {
+  const data = await apiPost<{ user: MeResponse }>('/api/v1/auth/login', body, cookie);
   return data.user;
 }
 
@@ -70,15 +128,51 @@ export async function logout(cookie?: string): Promise<void> {
 }
 
 export async function me(cookie?: string): Promise<MeResponse | null> {
-  const headers: Record<string, string> = {};
-  if (cookie) headers['cookie'] = cookie;
   const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
     method: 'GET',
-    headers,
+    headers: buildHeaders(cookie),
     credentials: 'include',
     cache: 'no-store',
   });
   if (res.status === 401) return null;
   if (!res.ok) throw await parseError(res);
   return (await res.json()) as MeResponse;
+}
+
+// ---- Marbetes (WU8a) ----
+
+export async function getMarbeteCounters(cookie?: string): Promise<MarbeteCountersResponse> {
+  return apiGet<MarbeteCountersResponse>('/api/v1/marbetes/counters', cookie);
+}
+
+export async function listMarbetes(
+  filter: z.input<typeof ListMarbetesFilter>,
+  cookie?: string,
+): Promise<ListMarbetesResponse> {
+  const qs = buildQueryString({
+    status: filter.status,
+    assigned: filter.assigned,
+    search: filter.search,
+    limit: filter.limit,
+    offset: filter.offset,
+  });
+  return apiGet<ListMarbetesResponse>(`/api/v1/marbetes${qs}`, cookie);
+}
+
+export async function getMarbete(id: number, cookie?: string): Promise<MarbeteDetailResponse> {
+  return apiGet<MarbeteDetailResponse>(`/api/v1/marbetes/${id}`, cookie);
+}
+
+export async function deleteMarbete(
+  id: number,
+  req: DeleteMarbeteRequest,
+  otpCode: string,
+  cookie?: string,
+): Promise<MarbeteDetailResponse> {
+  return apiDeleteWithOtp<MarbeteDetailResponse>(
+    `/api/v1/marbetes/${id}`,
+    req,
+    otpCode,
+    cookie,
+  );
 }
