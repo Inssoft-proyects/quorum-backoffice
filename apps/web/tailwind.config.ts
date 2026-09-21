@@ -1,9 +1,8 @@
 /**
- * WU0 placeholder for Tailwind 4 theme.
- *
- * Tailwind 4 prefers CSS-first config via `@theme` blocks in globals.css,
- * so this file is intentionally minimal. WU1 will replace it with the
- * full InecConecta token palette (see odd/tasks/quorum-backoffice-mvp.md §6).
+ * Tailwind 4 uses CSS-first configuration via @theme blocks in globals.css.
+ * This TS config stays minimal and only points content paths. Tailwind 4
+ * reads tokens directly from the @theme block; we keep this file so the
+ * shadcn CLI and external tools still see a valid tailwind config.
  */
 import type { Config } from 'tailwindcss';
 

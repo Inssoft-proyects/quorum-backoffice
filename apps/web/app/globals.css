@@ -3,19 +3,102 @@
 @tailwind utilities;
 
 /*
- * WU0 placeholder: no theme tokens yet.
- * WU1 will replace this with the InecConecta color palette (CSS variables)
- * defined in odd/tasks/quorum-backoffice-mvp.md §6.
+ * InecConecta — Design System Foundation (WU1a)
+ *
+ * Mapped 1:1 from the brand tokens in ./diseno/image.png.
+ * Tokens use the role semantic (--color-primary-500) — never the visual
+ * color name. Tailwind 4 @theme block exposes them as utility classes
+ * (bg-primary-500, text-secondary-500, etc.).
+ *
+ * Roles (Spanish copy preserved):
+ *   primary/500       — marca, acciones primarias, estados seleccionados
+ *   secondary/500     — acciones secundarias, iconos activos, acentos
+ *   text/primary      — títulos, cuerpos principales
+ *   text/muted        — texto auxiliar, metadatos
+ *   text/muted-bold   — labels con mayor énfasis visual
+ *   feedback/success  — confirmaciones, checks, estados correctos
+ *   alert/error-bg    — fondo de banners de error
+ *   alert/error-text  — texto/iconos/borde de alerta de error
+ *   alert/warning-bg  — fondo de alertas preventivas
+ *   alert/warning-text — texto/iconos/borde de alerta preventiva
  */
-:root {
-  color-scheme: light;
+
+@theme {
+  --color-primary-500: #ab8620;
+  --color-secondary-500: #358456;
+  --color-text-primary: #292929;
+  --color-text-muted: #6f6f6f;
+  --color-text-muted-bold: #5f5f5f;
+  --color-feedback-success: #03bb35;
+  --color-alert-error-bg: #ffe5e9;
+  --color-alert-error-text: #ac000e;
+  --color-alert-warning-bg: #fff5e6;
+  --color-alert-warning-text: #723d19;
+
+  --color-background: #ffffff;
+  --color-foreground: var(--color-text-primary);
+  --color-border: #e5e5e5;
+  --color-input: #e5e5e5;
+  --color-ring: var(--color-primary-500);
+  --color-card: #ffffff;
+  --color-card-foreground: var(--color-text-primary);
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: var(--color-text-muted);
+  --color-accent: var(--color-secondary-500);
+  --color-accent-foreground: #ffffff;
+  --color-destructive: var(--color-alert-error-text);
+  --color-destructive-foreground: #ffffff;
+  --color-popover: #ffffff;
+  --color-popover-foreground: var(--color-text-primary);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 }
 
-html,
-body {
-  height: 100%;
+/*
+ * Dark mode (WU1b ships the full theme provider; this is the foundation).
+ * Triggered by the `.dark` class on <html>. WU1b wires the toggle.
+ */
+@layer base {
+  .dark {
+    --color-background: #1a1a1a;
+    --color-foreground: #f5f5f5;
+    --color-border: #404040;
+    --color-input: #404040;
+    --color-card: #262626;
+    --color-card-foreground: #f5f5f5;
+    --color-muted: #2d2d2d;
+    --color-muted-foreground: #a3a3a3;
+    --color-popover: #262626;
+    --color-popover-foreground: #f5f5f5;
+  }
 }
 
-body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: var(--color-border);
+  }
+
+  html,
+  body {
+    height: 100%;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 }
