@@ -252,8 +252,8 @@ remitos exactos (rutas canónicas, comandos, allowed edit surfaces).
 | WU0 | ✅ done | `1f6fd95` | ~440 (en `1f6fd95`) | Bootstrap monorepo. Inline (worker bloqueado). Tests 6/6. |
 | WU1a | ✅ done | `f5d1adc` | 443 | Tokens + 5 shadcn core + icon wrapper. |
 | WU1b | ✅ done | `73a5011` | 1322 | shadcn extend + theme provider + login demo. Excede 400-line budget por verbose wrappers (permitido por policy ODD). |
-| WU2 | ⏳ next | — | — | Schema + migrations + pg plugin tests. |
-| WU3 | pending | — | — | API Marbetes CRUD + OTP guard. |
+| WU2 | ✅ done | `ef998be` | 427 | Schema (4 migrations) + runner + 11 tests. Audit append-only enforced via REVOKE PUBLIC. CLI migrate aplicada a `quorum_backoffice` real. |
+| WU3 | ⏳ next | — | — | API Marbetes CRUD + OTP guard. |
 | WU4 | pending | — | — | API Dispositivos CRUD + OTP guard. |
 | WU5 | pending | — | — | API Audit + append-only. |
 | WU6 | pending | — | — | API Auth + RBAC. |
