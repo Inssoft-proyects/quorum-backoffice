@@ -27,6 +27,7 @@ import redisPlugin from './plugins/redis';
 import metricsPlugin from './plugins/metrics';
 import { registerHealthRoutes } from './routes/health';
 import { registerMarbetesRoutes } from './routes/marbetes';
+import { registerDispositivosRoutes } from './routes/dispositivos';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -71,6 +72,7 @@ export async function buildApp(
   // Health & metrics
   await registerHealthRoutes(app as unknown as FastifyInstance);
   await registerMarbetesRoutes(app as unknown as FastifyInstance);
+  await registerDispositivosRoutes(app as unknown as FastifyInstance);
 
   return app;
 }
