@@ -17,11 +17,10 @@ import {
 } from '@quorum-backoffice/shared';
 import { MarbetesService } from '../services/marbetes-service';
 import { OtpClient } from '../services/otp-client';
+import { requireSession, requireRole } from '../plugins/rbac';
 
 function actorFromRequest(req: FastifyRequest): string {
-  const headerActor = req.headers['x-test-actor'];
-  if (typeof headerActor === 'string' && headerActor.length > 0) return headerActor;
-  return 'dev-user';
+  return req.session?.user?.email ?? 'dev-user';
 }
 
 function otpFromRequest(req: FastifyRequest): string | undefined {
@@ -49,26 +48,30 @@ export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void
       otp,
     });
 
-  app.get('/api/v1/marbetes/counters', async () => {
+  app.get('/api/v1/marbetes/counters', { preHandler: requireSession() }, async () => {
     const svc = getService();
     return svc.counters();
   });
 
-  app.get('/api/v1/marbetes', async (req) => {
+  app.get('/api/v1/marbetes', { preHandler: requireSession() }, async (req) => {
     const filter = ListMarbetesFilter.parse(req.query);
     const svc = getService();
     return svc.list(filter);
   });
 
-  app.get<{ Params: { id: string } }>('/api/v1/marbetes/:id', async (req, reply) => {
-    const { id } = MarbeteIdParam.parse(req.params);
-    const svc = getService();
-    const detail = await svc.detail(id);
-    reply.header('cache-control', 'no-store');
-    return detail;
-  });
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/marbetes/:id',
+    { preHandler: requireSession() },
+    async (req, reply) => {
+      const { id } = MarbeteIdParam.parse(req.params);
+      const svc = getService();
+      const detail = await svc.detail(id);
+      reply.header('cache-control', 'no-store');
+      return detail;
+    },
+  );
 
-  app.post('/api/v1/marbetes', async (req, reply) => {
+  app.post('/api/v1/marbetes', { preHandler: requireRole('admin') }, async (req, reply) => {
     const body = CreateMarbeteRequest.parse(req.body);
     const actor = actorFromRequest(req);
     const otp = otpFromRequest(req);
@@ -80,23 +83,31 @@ export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void
     return created;
   });
 
-  app.patch<{ Params: { id: string } }>('/api/v1/marbetes/:id', async (req) => {
-    const { id } = MarbeteIdParam.parse(req.params);
-    const body = UpdateMarbeteRequest.parse(req.body);
-    const actor = actorFromRequest(req);
-    const otp = otpFromRequest(req);
-    const meta = metaFromRequest(req);
-    const svc = getService();
-    return svc.update(actor, id, body, otp, meta);
-  });
+  app.patch<{ Params: { id: string } }>(
+    '/api/v1/marbetes/:id',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const { id } = MarbeteIdParam.parse(req.params);
+      const body = UpdateMarbeteRequest.parse(req.body);
+      const actor = actorFromRequest(req);
+      const otp = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.update(actor, id, body, otp, meta);
+    },
+  );
 
-  app.delete<{ Params: { id: string } }>('/api/v1/marbetes/:id', async (req) => {
-    const { id } = MarbeteIdParam.parse(req.params);
-    const body = DeleteMarbeteRequest.parse(req.body ?? {});
-    const actor = actorFromRequest(req);
-    const otp = otpFromRequest(req);
-    const meta = metaFromRequest(req);
-    const svc = getService();
-    return svc.delete(actor, id, body, otp, meta);
-  });
+  app.delete<{ Params: { id: string } }>(
+    '/api/v1/marbetes/:id',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const { id } = MarbeteIdParam.parse(req.params);
+      const body = DeleteMarbeteRequest.parse(req.body ?? {});
+      const actor = actorFromRequest(req);
+      const otp = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.delete(actor, id, body, otp, meta);
+    },
+  );
 }

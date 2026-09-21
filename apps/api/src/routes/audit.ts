@@ -12,6 +12,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ListAuditFilter } from '@quorum-backoffice/shared';
 import { AuditQueryService } from '../services/audit-query-service';
+import { requireRole } from '../plugins/rbac';
 
 // Local path-param schema; mirrors DispositivoIdParam but stays in this
 // module to avoid touching the shared DTO package surface.
@@ -24,17 +25,21 @@ export async function registerAuditRoutes(app: FastifyInstance): Promise<void> {
   const getService = (): AuditQueryService =>
     new AuditQueryService({ pool: app.pg as unknown as import('pg').Pool });
 
-  app.get('/api/v1/audit', async (req) => {
+  app.get('/api/v1/audit', { preHandler: requireRole('auditor') }, async (req) => {
     const filter = ListAuditFilter.parse(req.query);
     const svc = getService();
     return svc.list(filter);
   });
 
-  app.get<{ Params: { id: string } }>('/api/v1/audit/:id', async (req, reply) => {
-    const { id } = AuditIdParam.parse(req.params);
-    const svc = getService();
-    const detail = await svc.detail(id);
-    reply.header('cache-control', 'no-store');
-    return detail;
-  });
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/audit/:id',
+    { preHandler: requireRole('auditor') },
+    async (req, reply) => {
+      const { id } = AuditIdParam.parse(req.params);
+      const svc = getService();
+      const detail = await svc.detail(id);
+      reply.header('cache-control', 'no-store');
+      return detail;
+    },
+  );
 }

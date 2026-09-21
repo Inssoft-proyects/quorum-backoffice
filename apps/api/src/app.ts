@@ -27,6 +27,7 @@ import { httpErrorHandler } from './lib/errors';
 import pgPlugin from './plugins/pg';
 import redisPlugin from './plugins/redis';
 import metricsPlugin from './plugins/metrics';
+import sessionPlugin from './plugins/session';
 import { registerHealthRoutes } from './routes/health';
 import { registerMarbetesRoutes } from './routes/marbetes';
 import { registerDispositivosRoutes } from './routes/dispositivos';
@@ -76,6 +77,10 @@ export async function buildApp(
   await app.register(pgPlugin);
   await app.register(redisPlugin);
   await app.register(cookie, { secret: app.config.SESSION_SECRET });
+
+  // Session hydration (depends on pg + cookie; runs an onRequest hook
+  // that must fire before any domain route reaches its handler).
+  await app.register(sessionPlugin);
 
   // Centralized error handler
   app.setErrorHandler(httpErrorHandler);

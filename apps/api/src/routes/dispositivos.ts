@@ -18,11 +18,10 @@ import {
 } from '@quorum-backoffice/shared';
 import { DispositivosService } from '../services/dispositivos-service';
 import { OtpClient } from '../services/otp-client';
+import { requireSession, requireRole } from '../plugins/rbac';
 
 function actorFromRequest(req: FastifyRequest): string {
-  const headerActor = req.headers['x-test-actor'];
-  if (typeof headerActor === 'string' && headerActor.length > 0) return headerActor;
-  return 'dev-user';
+  return req.session?.user?.email ?? 'dev-user';
 }
 
 function otpFromRequest(req: FastifyRequest): string | undefined {
@@ -50,49 +49,65 @@ export async function registerDispositivosRoutes(app: FastifyInstance): Promise<
       otp,
     });
 
-  app.get('/api/v1/dispositivos', async (req) => {
+  app.get('/api/v1/dispositivos', { preHandler: requireSession() }, async (req) => {
     const filter = ListDispositivosFilter.parse(req.query);
     const svc = getService();
     return svc.list(filter);
   });
 
-  app.get<{ Params: { id: string } }>('/api/v1/dispositivos/:id', async (req, reply) => {
-    const { id } = DispositivoIdParam.parse(req.params);
-    const svc = getService();
-    const detail = await svc.detail(id);
-    reply.header('cache-control', 'no-store');
-    return detail;
-  });
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/dispositivos/:id',
+    { preHandler: requireSession() },
+    async (req, reply) => {
+      const { id } = DispositivoIdParam.parse(req.params);
+      const svc = getService();
+      const detail = await svc.detail(id);
+      reply.header('cache-control', 'no-store');
+      return detail;
+    },
+  );
 
-  app.post('/api/v1/dispositivos', async (req, reply) => {
-    const body = CreateDispositivoRequest.parse(req.body);
-    const actor = actorFromRequest(req);
-    const otpCode = otpFromRequest(req);
-    const meta = metaFromRequest(req);
-    const svc = getService();
-    const created = await svc.create(actor, body, otpCode, meta);
-    reply.status(201);
-    reply.header('location', `/api/v1/dispositivos/${created.id}`);
-    return created;
-  });
+  app.post(
+    '/api/v1/dispositivos',
+    { preHandler: requireRole('admin') },
+    async (req, reply) => {
+      const body = CreateDispositivoRequest.parse(req.body);
+      const actor = actorFromRequest(req);
+      const otpCode = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      const created = await svc.create(actor, body, otpCode, meta);
+      reply.status(201);
+      reply.header('location', `/api/v1/dispositivos/${created.id}`);
+      return created;
+    },
+  );
 
-  app.patch<{ Params: { id: string } }>('/api/v1/dispositivos/:id', async (req) => {
-    const { id } = DispositivoIdParam.parse(req.params);
-    const body = UpdateDispositivoRequest.parse(req.body);
-    const actor = actorFromRequest(req);
-    const otpCode = otpFromRequest(req);
-    const meta = metaFromRequest(req);
-    const svc = getService();
-    return svc.update(actor, id, body, otpCode, meta);
-  });
+  app.patch<{ Params: { id: string } }>(
+    '/api/v1/dispositivos/:id',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const { id } = DispositivoIdParam.parse(req.params);
+      const body = UpdateDispositivoRequest.parse(req.body);
+      const actor = actorFromRequest(req);
+      const otpCode = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.update(actor, id, body, otpCode, meta);
+    },
+  );
 
-  app.delete<{ Params: { id: string } }>('/api/v1/dispositivos/:id', async (req) => {
-    const { id } = DispositivoIdParam.parse(req.params);
-    const body = DeleteDispositivoRequest.parse(req.body ?? {});
-    const actor = actorFromRequest(req);
-    const otpCode = otpFromRequest(req);
-    const meta = metaFromRequest(req);
-    const svc = getService();
-    return svc.revoke(actor, id, body, otpCode, meta);
-  });
+  app.delete<{ Params: { id: string } }>(
+    '/api/v1/dispositivos/:id',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const { id } = DispositivoIdParam.parse(req.params);
+      const body = DeleteDispositivoRequest.parse(req.body ?? {});
+      const actor = actorFromRequest(req);
+      const otpCode = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.revoke(actor, id, body, otpCode, meta);
+    },
+  );
 }
