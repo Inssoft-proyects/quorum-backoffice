@@ -28,6 +28,7 @@ import metricsPlugin from './plugins/metrics';
 import { registerHealthRoutes } from './routes/health';
 import { registerMarbetesRoutes } from './routes/marbetes';
 import { registerDispositivosRoutes } from './routes/dispositivos';
+import { registerAuditRoutes } from './routes/audit';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -73,6 +74,7 @@ export async function buildApp(
   await registerHealthRoutes(app as unknown as FastifyInstance);
   await registerMarbetesRoutes(app as unknown as FastifyInstance);
   await registerDispositivosRoutes(app as unknown as FastifyInstance);
+  await registerAuditRoutes(app as unknown as FastifyInstance);
 
   return app;
 }

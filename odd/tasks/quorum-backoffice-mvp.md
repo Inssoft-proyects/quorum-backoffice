@@ -256,8 +256,8 @@ remitos exactos (rutas canónicas, comandos, allowed edit surfaces).
 | WU3a | ✅ done | `27c34c9` | 841 | Marbetes CRUD scaffolding (DTOs + repo + service + routes). OTP deferred WU3b. 8 nuevos tests integration (23/23 total). |
 | WU3b | ✅ done | `771a55e` | 570 | canvas-client + otp-client + audit-service. OTP enforced en destructive ops; 22/22 tests pasan. |
 | WU4 | ✅ done | `c8fa1b8` | 809 | API Dispositivos CRUD + OTP guard. DTOs (shared), repo (pg-dispositivos), service (OTP+audit), 5 routes (list/get/post/patch/delete→revoke), 11 tests integration (33/33 total verde). DELETE = soft-revoke (`revoked_at` + `revoked_reason`). Excede budget de 400 por test file de 291 LOC (justificado, mismo patrón que WU3a). |
-| WU5 | pending | — | — | API Audit + append-only. |
-| WU6 | pending | — | — | API Auth + RBAC. |
+| WU5 | ✅ done | — | ~440 | API Audit read-only. Repo (pg-audit) + service (audit-query-service) + 2 routes (list+detail). 11 nuevos tests integration (44/44 total verde). `entity_type` columna única fuente de verdad (sin derivation). Append-only enforced via REVOKE PUBLIC verificado con `information_schema.role_table_grants` (PG18-compatible). |
+| WU6 | pending | — | — | API Auth + RBAC (login + sesión + preHandler roles: admin / operator / auditor). |
 | WU7 | pending | — | — | Web Layout + Login real. |
 | WU8 | pending | — | — | Web Marbetes screen. |
 | WU9 | pending | — | — | Web Dispositivos screen. |
@@ -270,8 +270,11 @@ Rama de feature: `feature/wu0-bootstrap`. Total acumulado en la rama:
 
 ## 13. Bloqueadores activos (transparencia)
 
-- **`gentle-ai-worker` no puede registrar worktree en este repo** (error
-  estable: "Select an existing worktree in the same Git clone as this
-  session"). Probado con sesión_worktree_register, worktree manual, commit
-  inicial. Fallback inline aplicado por ahora. WU3+ (CRUD) se beneficiaría
-  de worker; investigar el bug del runner antes de WU3.
+- ~~`gentle-ai-worker` no puede registrar worktree en este repo~~ —
+  **resuelto en WU4**. El subagent ejecuta correctamente delegaciones con
+  un solo archivo (`packages/shared/src/dto/dispositivo.ts`, WU4 fase 1) y
+  múltiples archivos (5 archivos de WU4 fase 2) cuando la tarea incluye
+  la sección canónica `## Allowed edit surfaces` con un path por línea
+  justo después del heading, sin prosa intermedia. WU5+ se delega via
+  `gentle-ai-worker` por defecto; se vuelve inline solo si reaparece el
+  bug.
