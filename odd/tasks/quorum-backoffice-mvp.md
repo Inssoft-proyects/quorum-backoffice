@@ -244,3 +244,33 @@ Criterios de split (a evaluar en apply):
 
 Empezar por **WU0 — Bootstrap monorepo** delegando a `gentle-ai-worker` con
 remitos exactos (rutas canónicas, comandos, allowed edit surfaces).
+
+## 12. Bitácora de WUs (evidencia, commits, líneas)
+
+| WU | Estado | Commit | Líneas (insertions) | Notas |
+| --- | --- | --- | --- | --- |
+| WU0 | ✅ done | `1f6fd95` | ~440 (en `1f6fd95`) | Bootstrap monorepo. Inline (worker bloqueado). Tests 6/6. |
+| WU1a | ✅ done | `f5d1adc` | 443 | Tokens + 5 shadcn core + icon wrapper. |
+| WU1b | ✅ done | `73a5011` | 1322 | shadcn extend + theme provider + login demo. Excede 400-line budget por verbose wrappers (permitido por policy ODD). |
+| WU2 | ⏳ next | — | — | Schema + migrations + pg plugin tests. |
+| WU3 | pending | — | — | API Marbetes CRUD + OTP guard. |
+| WU4 | pending | — | — | API Dispositivos CRUD + OTP guard. |
+| WU5 | pending | — | — | API Audit + append-only. |
+| WU6 | pending | — | — | API Auth + RBAC. |
+| WU7 | pending | — | — | Web Layout + Login real. |
+| WU8 | pending | — | — | Web Marbetes screen. |
+| WU9 | pending | — | — | Web Dispositivos screen. |
+| WU10 | pending | — | — | Web Audit screen. |
+| WU11 | pending | — | — | Observabilidad + runbook + e2e. |
+
+Rama de feature: `feature/wu0-bootstrap`. Total acumulado en la rama:
+~15k insertions (incluye `node_modules`, `package-lock.json`, assets
+`diseno/`, y la base WU0+WU1).
+
+## 13. Bloqueadores activos (transparencia)
+
+- **`gentle-ai-worker` no puede registrar worktree en este repo** (error
+  estable: "Select an existing worktree in the same Git clone as this
+  session"). Probado con sesión_worktree_register, worktree manual, commit
+  inicial. Fallback inline aplicado por ahora. WU3+ (CRUD) se beneficiaría
+  de worker; investigar el bug del runner antes de WU3.
