@@ -6,7 +6,7 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "types": ["node", "jest"]
+    "types": ["node", "jest"], "lib": ["ES2022", "DOM"]
   },
   "include": ["src/**/*", "migrations/**/*", "test/**/*"],
   "exclude": ["node_modules", "dist", "coverage"]

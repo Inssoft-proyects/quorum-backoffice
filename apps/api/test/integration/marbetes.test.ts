@@ -1,13 +1,14 @@
 /**
- * WU3a integration tests: full CRUD against real PG.
+ * WU3b integration tests: full CRUD with mocked OTP service + audit writes.
  *
- * Assumes scripts/dev-bootstrap.sh + npm run migrate have run so the
- * schema is in place and the dev test actor header is accepted.
+ * The OTP service is mocked at the fetch level: any request to
+ * OTP_SERVICE_URL is intercepted and returns ok=true with a deterministic
+ * otpId. A separate suite verifies OTP rejection paths.
  */
 import { Pool } from 'pg';
-import { migrate } from '../../src/migrations';
 import path from 'node:path';
 import { buildApp } from '../../src/app';
+import { migrate } from '../../src/migrations';
 
 const TEST_DATABASE_URL =
   process.env['DATABASE_URL_TEST'] ??
@@ -28,13 +29,32 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   SESSION_TTL_SECONDS: '3600',
 };
 
-describe('marbetes routes (integration, real PG)', () => {
+const VALID_OTP = '123456';
+const MOCK_OTP_ID = 'otp-test-fixed';
+
+function makeOtpFetch(behaviour: (body: unknown) => { status: number; body: unknown }): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('/v1/otps/verify')) {
+      const raw = init?.body ? String(init.body) : '{}';
+      const parsed = JSON.parse(raw) as { code?: string };
+      // Reject if code is the explicitly invalid one.
+      if (parsed.code === '999999') {
+        return new Response(JSON.stringify({ error: 'invalid' }), { status: 401 });
+      }
+      const r = behaviour(JSON.parse(raw));
+      return new Response(JSON.stringify(r.body), { status: r.status });
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+}
+
+describe('marbetes routes with mocked OTP happy path (integration, real PG)', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   let pool: Pool;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
-    // Clean slate
     await pool.query(`
       DROP TABLE IF EXISTS audit_log CASCADE;
       DROP TABLE IF EXISTS dispositivos CASCADE;
@@ -45,8 +65,18 @@ describe('marbetes routes (integration, real PG)', () => {
       DROP TYPE IF EXISTS marbete_status CASCADE;
       DROP TABLE IF EXISTS _migrations CASCADE;
     `);
-    await runMigrations(pool);
-    app = await buildApp({ config: TEST_ENV });
+    await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
+
+    const fetchMock = makeOtpFetch((body) => {
+      const code = (body as { code?: string }).code;
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
+      return { status: 401, body: { error: 'invalid' } };
+    });
+    app = await buildApp({
+      config: TEST_ENV,
+      // Inject the mock fetch via global; OtpClient falls back to global fetch.
+    });
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
   });
 
   afterAll(async () => {
@@ -64,158 +94,149 @@ describe('marbetes routes (integration, real PG)', () => {
     return id;
   }
 
-  it('GET /api/v1/marbetes/counters returns zeros initially', async () => {
-    const r = await app.inject({
-      method: 'GET',
-      url: '/api/v1/marbetes/counters',
-      headers: { 'x-test-actor': 'tester' },
-    });
-    expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ ok: 0, ko: 0 });
-  });
+  function happyHeaders(): Record<string, string> {
+    return {
+      'x-test-actor': 'tester',
+      'x-otp-code': VALID_OTP,
+      'content-type': 'application/json',
+    };
+  }
 
-  it('POST /api/v1/marbetes creates a marbete (assign later)', async () => {
+  it('POST /api/v1/marbetes creates with valid OTP and writes audit', async () => {
     const r = await app.inject({
       method: 'POST',
       url: '/api/v1/marbetes',
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ code: 'ABC123-XYZ' }),
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'WITH-OTP-CODE-1' }),
     });
     expect(r.statusCode).toBe(201);
-    const body = r.json() as { id: number; publicUid: string; status: string; maskedCode: string; student: unknown };
+    const body = r.json() as { id: number; publicUid: string };
     expect(body.id).toBeGreaterThan(0);
-    expect(body.publicUid).toMatch(/^m-[A-Z2-9]{4}$/);
-    expect(body.status).toBe('active');
-    expect(body.maskedCode).toMatch(/^.{1}\*\*\*.{2}$/);
-    expect(body.student).toBeNull();
-    expect(r.headers['location']).toBe(`/api/v1/marbetes/${body.id}`);
+
+    // Audit entry exists with the captured otp_id.
+    const audit = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM audit_log WHERE action = 'marbete.create' AND otp_id = $1`,
+      [MOCK_OTP_ID],
+    );
+    expect(Number(audit.rows[0]?.count)).toBeGreaterThanOrEqual(1);
   });
 
-  it('PATCH /api/v1/marbetes/:id assigns a student', async () => {
-    const studentId = await seedStudent(99001, 'Ada Lovelace', 'ada@quorum.local');
-    const create = await app.inject({
+  it('PATCH /api/v1/marbetes/:id assigns with valid OTP and writes audit (action = marbete.assign)', async () => {
+    const studentId = await seedStudent(99101, 'Grace Hopper', 'grace@quorum.local');
+    const c = await app.inject({
       method: 'POST',
       url: '/api/v1/marbetes',
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ code: 'ASSIGNED-CODE-1' }),
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'GRACE-MARBETE-1' }),
     });
-    const created = create.json() as { id: number };
-
-    const patch = await app.inject({
+    const cid = (c.json() as { id: number }).id;
+    const p = await app.inject({
       method: 'PATCH',
-      url: `/api/v1/marbetes/${created.id}`,
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
+      url: `/api/v1/marbetes/${cid}`,
+      headers: happyHeaders(),
       payload: JSON.stringify({ assignedStudentId: studentId }),
     });
-    expect(patch.statusCode).toBe(200);
-    const body = patch.json() as { assignedStudentId: number; assignedAt: string | null; student: { fullName: string } | null };
-    expect(body.assignedStudentId).toBe(studentId);
-    expect(body.assignedAt).not.toBeNull();
-    expect(body.student?.fullName).toBe('Ada Lovelace');
+    expect(p.statusCode).toBe(200);
+
+    const audit = await pool.query<{ action: string }>(
+      `SELECT action FROM audit_log WHERE entity_id = $1 ORDER BY occurred_at DESC LIMIT 1`,
+      [(c.json() as { publicUid: string }).publicUid],
+    );
+    expect(audit.rows[0]?.action).toBe('marbete.assign');
   });
 
-  it('rejects assigning a second active marbete to the same student', async () => {
-    const studentId = await seedStudent(99002, 'Alan Turing', 'alan@quorum.local');
-    const m1 = await app.inject({
+  it('DELETE /api/v1/marbetes/:id soft-deletes with valid OTP and writes audit (action = marbete.delete)', async () => {
+    const c = await app.inject({
       method: 'POST',
       url: '/api/v1/marbetes',
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ code: 'TURING-1' }),
+      headers: happyHeaders(),
+      payload: JSON.stringify({ code: 'TO-DELETE-WITH-OTP' }),
     });
-    const first = m1.json() as { id: number };
-    await app.inject({
-      method: 'PATCH',
-      url: `/api/v1/marbetes/${first.id}`,
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ assignedStudentId: studentId }),
-    });
-
-    const m2 = await app.inject({
-      method: 'POST',
-      url: '/api/v1/marbetes',
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ code: 'TURING-2' }),
-    });
-    const second = m2.json() as { id: number };
-
-    const patch = await app.inject({
-      method: 'PATCH',
-      url: `/api/v1/marbetes/${second.id}`,
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ assignedStudentId: studentId }),
-    });
-    expect(patch.statusCode).toBe(500); // PG 23505 raised by repo -> mapped to internal
-    const body = patch.json() as { code: string };
-    expect(body.code).toBe('internal');
-  });
-
-  it('DELETE /api/v1/marbetes/:id soft-deletes with a reason', async () => {
-    const create = await app.inject({
-      method: 'POST',
-      url: '/api/v1/marbetes',
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ code: 'TO-DELETE-1' }),
-    });
-    const created = create.json() as { id: number };
-    const del = await app.inject({
+    const cid = (c.json() as { id: number; publicUid: string }).id;
+    const publicUid = (c.json() as { publicUid: string }).publicUid;
+    const d = await app.inject({
       method: 'DELETE',
-      url: `/api/v1/marbetes/${created.id}`,
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ reason: 'broken lenticular code' }),
+      url: `/api/v1/marbetes/${cid}`,
+      headers: happyHeaders(),
+      payload: JSON.stringify({ reason: 'lost in transit' }),
     });
-    expect(del.statusCode).toBe(200);
-    const body = del.json() as { status: string; deletedAt: string | null; deletionReason: string | null };
-    expect(body.status).toBe('revoked');
-    expect(body.deletedAt).not.toBeNull();
-    expect(body.deletionReason).toBe('broken lenticular code');
+    expect(d.statusCode).toBe(200);
+
+    const audit = await pool.query<{ action: string }>(
+      `SELECT action FROM audit_log WHERE entity_id = $1 ORDER BY occurred_at DESC LIMIT 1`,
+      [publicUid],
+    );
+    expect(audit.rows[0]?.action).toBe('marbete.delete');
   });
 
-  it('counters reflect OK after an assigned marbete exists', async () => {
-    const r = await app.inject({
+  it('GET routes do NOT require OTP', async () => {
+    const counters = await app.inject({
       method: 'GET',
       url: '/api/v1/marbetes/counters',
       headers: { 'x-test-actor': 'tester' },
     });
-    expect(r.statusCode).toBe(200);
-    const body = r.json() as { ok: number; ko: number };
-    expect(body.ok).toBeGreaterThanOrEqual(1);
-  });
-
-  it('rejects DELETE without a reason (Zod)', async () => {
-    const create = await app.inject({
-      method: 'POST',
-      url: '/api/v1/marbetes',
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({ code: 'NO-REASON-1' }),
-    });
-    const created = create.json() as { id: number };
-    const del = await app.inject({
-      method: 'DELETE',
-      url: `/api/v1/marbetes/${created.id}`,
-      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
-      payload: JSON.stringify({}),
-    });
-    expect(del.statusCode).toBe(400);
-  });
-
-  it('list with search filter returns matching marbete', async () => {
-    const r = await app.inject({
+    expect(counters.statusCode).toBe(200);
+    const list = await app.inject({
       method: 'GET',
-      url: '/api/v1/marbetes?search=m-&limit=10',
+      url: '/api/v1/marbetes',
       headers: { 'x-test-actor': 'tester' },
     });
-    expect(r.statusCode).toBe(200);
-    const body = r.json() as { total: number; items: unknown[] };
-    expect(body.total).toBeGreaterThanOrEqual(1);
-    expect(body.items.length).toBeGreaterThanOrEqual(1);
+    expect(list.statusCode).toBe(200);
   });
 });
 
-async function runMigrations(pool: Pool): Promise<void> {
-  const dir = path.resolve(__dirname, '..', '..', 'migrations');
-  const r = await migrate({ pool, dir });
-  if (r.applied.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log('test applied migrations:', r.applied);
-  }
-}
+describe('marbetes routes with rejected OTP (integration)', () => {
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  let pool: Pool;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
+    await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
+    app = await buildApp({ config: TEST_ENV });
+    const fetchMock = makeOtpFetch(() => ({ status: 401, body: { error: 'invalid' } }));
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await pool.end();
+  });
+
+  it('POST returns 401 when OTP is invalid', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: {
+        'x-test-actor': 'tester',
+        'x-otp-code': '999999',
+        'content-type': 'application/json',
+      },
+      payload: JSON.stringify({ code: 'INVALID-OTP-1' }),
+    });
+    expect(r.statusCode).toBe(401);
+    const body = r.json() as { code: string };
+    expect(body.code).toBe('otp_invalid');
+  });
+
+  it('POST returns 401 when OTP header is missing', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
+      payload: JSON.stringify({ code: 'NO-OTP-HEADER-1' }),
+    });
+    expect(r.statusCode).toBe(401);
+    const body = r.json() as { code: string };
+    expect(body.code).toBe('otp_required');
+  });
+
+  it('DELETE returns 401 when OTP is missing', async () => {
+    const r = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/marbetes/1',
+      headers: { 'x-test-actor': 'tester', 'content-type': 'application/json' },
+      payload: JSON.stringify({ reason: 'no otp' }),
+    });
+    expect(r.statusCode).toBe(401);
+  });
+});

@@ -1,19 +1,17 @@
 /**
- * Marbetes service: orchestrates repository calls, hashing, masking, and
- * (TODO WU3b) OTP enforcement + audit writes.
+ * Marbetes service: orchestrates repository calls, hashing, masking, OTP
+ * verification (via OtpClient), and audit writes (via AuditService).
  *
- * WU3a intentionally leaves the OTP guard as a TODO; the routes call the
- * service with a `requireOtp: false` flag and the service silently trusts
- * the caller. WU3b wires the real guard.
+ * WU3b wires the real OTP guard and audit emission. The Canvas client
+ * is consumed by the canvas-hydration preHandler (separate concern).
  */
+import type pg from 'pg';
 import type { FastifyBaseLogger } from 'fastify';
 import { AppError } from '../lib/errors';
-import {
-  generatePublicUid,
-  maskCode,
-  sha256Hex,
-} from '../lib/marbete-id';
+import { generatePublicUid, maskCode, sha256Hex } from '../lib/marbete-id';
 import { PgMarbeteRepo } from '../repositories/pg-marbetes';
+import { OtpClient } from './otp-client';
+import { AuditService } from './audit-service';
 import type {
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
@@ -25,25 +23,55 @@ import type {
   UpdateMarbeteRequest,
 } from '@quorum-backoffice/shared';
 
-interface ServiceDeps {
-  pool: import('pg').Pool;
-  log: FastifyBaseLogger;
+interface RequestMeta {
+  ip?: string | null;
+  userAgent?: string | null;
 }
+
+interface ServiceDeps {
+  pool: pg.Pool;
+  log: FastifyBaseLogger;
+  otp: OtpClient;
+}
+
+const DESTRUCTIVE_ACTIONS = new Set([
+  'marbete.create',
+  'marbete.update',
+  'marbete.delete',
+]);
 
 export class MarbetesService {
   private readonly repo: PgMarbeteRepo;
+  private readonly otp: OtpClient;
+  private readonly log: FastifyBaseLogger;
+
   constructor(private readonly deps: ServiceDeps) {
     this.repo = new PgMarbeteRepo(deps.pool);
+    this.otp = deps.otp;
+    this.log = deps.log;
   }
 
   /**
-   * WU3b: replace this with the real OTP verifier (quorum-otp /v1/otps/verify).
-   * WU3a: trusts the caller so the CRUD flow can be exercised end-to-end.
+   * Verify OTP against quorum-otp. Throws AppError on failure.
+   * For non-destructive operations (list, counters, detail) this is a no-op.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async _verifyOtpForAction(_actor: string, _action: string, _code?: string): Promise<void> {
-    // TODO WU3b: real OTP verification.
-    return;
+  private async verifyOtp(
+    actor: string,
+    action: string,
+    otpCode: string | undefined,
+  ): Promise<{ otpId: string }> {
+    if (!DESTRUCTIVE_ACTIONS.has(action)) return { otpId: 'noop' };
+    if (!otpCode) {
+      throw new AppError('otp_required', 'X-OTP-Code header missing; destructive operations require a single-use 6-char OTP.', 401, {
+        action,
+      });
+    }
+    const r = await this.otp.verify({ subject: actor, scope: action, code: otpCode });
+    if (!r.ok) {
+      this.log.warn({ actor, action, reason: r.reason }, 'otp_verify_failed');
+      throw new AppError('otp_invalid', `otp verify rejected: ${r.reason}`, 401, { action, reason: r.reason });
+    }
+    return { otpId: r.otpId };
   }
 
   async list(filter: ListMarbetesFilter): Promise<ListMarbetesResponse> {
@@ -66,13 +94,12 @@ export class MarbetesService {
     actor: string,
     req: CreateMarbeteRequest,
     otpCode: string | undefined,
+    meta: RequestMeta = {},
   ): Promise<MarbeteDetailResponse> {
-    await this._verifyOtpForAction(actor, 'marbete.create', otpCode);
+    const otpResult = await this.verifyOtp(actor, 'marbete.create', otpCode);
 
-    // Generate a unique public_uid; retry on the rare collision.
-    let attempt = 0;
     let row: import('../repositories/pg-marbetes').MarbeteRow | null = null;
-    while (attempt < 5) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       const publicUid = generatePublicUid();
       const codeHash = sha256Hex(req.code);
       try {
@@ -85,14 +112,23 @@ export class MarbetesService {
         break;
       } catch (err) {
         const e = err as { code?: string; constraint?: string };
-        if (e.code === '23505' && e.constraint?.includes('public_uid')) {
-          attempt += 1;
-          continue;
-        }
+        if (e.code === '23505' && e.constraint?.includes('public_uid')) continue;
         throw err;
       }
     }
     if (!row) throw AppError.internal('failed to allocate unique public_uid');
+
+    const audit = new AuditService(this.deps.pool);
+    await audit.write({
+      actorId: actor,
+      action: 'marbete.create',
+      entityType: 'marbete',
+      entityId: row.public_uid,
+      afterJson: this.repo.toResponse(row),
+      otpId: otpResult.otpId,
+      ip: meta.ip ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
     return this.toDetail(row);
   }
 
@@ -101,31 +137,50 @@ export class MarbetesService {
     id: number,
     req: UpdateMarbeteRequest,
     otpCode: string | undefined,
+    meta: RequestMeta = {},
   ): Promise<MarbeteDetailResponse> {
-    await this._verifyOtpForAction(actor, 'marbete.update', otpCode);
+    const otpResult = await this.verifyOtp(actor, 'marbete.update', otpCode);
 
     const existing = await this.repo.findById(id);
     if (!existing) throw AppError.notFound(`marbete ${id} not found`);
     if (existing.deleted_at) throw AppError.conflict('cannot update a soft-deleted marbete');
+
+    const before = this.repo.toResponse(existing);
+    let updated: import('../repositories/pg-marbetes').MarbeteRow;
 
     if (req.assignedStudentId !== undefined) {
       if (req.assignedStudentId !== null) {
         const student = await this.repo.studentOf(req.assignedStudentId);
         if (!student) throw AppError.badRequest('assignedStudentId not found');
       }
-      const updated = await this.repo.assign(id, req.assignedStudentId);
-      if (!updated) throw AppError.notFound(`marbete ${id} not found`);
-      // Reload to capture new assigned_at.
+      const set = await this.repo.assign(id, req.assignedStudentId);
+      if (!set) throw AppError.notFound(`marbete ${id} not found`);
       const refreshed = await this.repo.findById(id);
       if (!refreshed) throw AppError.notFound(`marbete ${id} not found`);
-      return this.toDetail(refreshed);
+      updated = refreshed;
+    } else if (req.status) {
+      const set = await this.repo.setStatus(id, req.status as MarbeteStatus);
+      if (!set) throw AppError.notFound(`marbete ${id} not found`);
+      updated = set;
+    } else {
+      updated = existing;
     }
-    if (req.status) {
-      const updated = await this.repo.setStatus(id, req.status as MarbeteStatus);
-      if (!updated) throw AppError.notFound(`marbete ${id} not found`);
-      return this.toDetail(updated);
-    }
-    return this.toDetail(existing);
+
+    const audit = new AuditService(this.deps.pool);
+    const action =
+      req.assignedStudentId !== undefined ? 'marbete.assign' : 'marbete.update';
+    await audit.write({
+      actorId: actor,
+      action,
+      entityType: 'marbete',
+      entityId: updated.public_uid,
+      beforeJson: before,
+      afterJson: this.repo.toResponse(updated),
+      otpId: otpResult.otpId,
+      ip: meta.ip ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
+    return this.toDetail(updated);
   }
 
   async delete(
@@ -133,17 +188,30 @@ export class MarbetesService {
     id: number,
     req: DeleteMarbeteRequest,
     otpCode: string | undefined,
+    meta: RequestMeta = {},
   ): Promise<MarbeteDetailResponse> {
-    await this._verifyOtpForAction(actor, 'marbete.delete', otpCode);
+    const otpResult = await this.verifyOtp(actor, 'marbete.delete', otpCode);
 
     const existing = await this.repo.findById(id);
     if (!existing) throw AppError.notFound(`marbete ${id} not found`);
-    if (existing.deleted_at) {
-      throw AppError.conflict('marbete already deleted');
-    }
+    if (existing.deleted_at) throw AppError.conflict('marbete already deleted');
 
+    const before = this.repo.toResponse(existing);
     const row = await this.repo.softDelete(id, req.reason);
     if (!row) throw AppError.notFound(`marbete ${id} not found`);
+
+    const audit = new AuditService(this.deps.pool);
+    await audit.write({
+      actorId: actor,
+      action: 'marbete.delete',
+      entityType: 'marbete',
+      entityId: row.public_uid,
+      beforeJson: before,
+      afterJson: this.repo.toResponse(row),
+      otpId: otpResult.otpId,
+      ip: meta.ip ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
     return this.toDetail(row);
   }
 
@@ -163,10 +231,6 @@ export class MarbetesService {
         };
       }
     }
-    return {
-      ...base,
-      maskedCode: maskCode(row.public_uid),
-      student,
-    };
+    return { ...base, maskedCode: maskCode(row.public_uid), student };
   }
 }
