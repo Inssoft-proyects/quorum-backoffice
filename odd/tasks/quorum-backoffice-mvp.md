@@ -255,7 +255,7 @@ remitos exactos (rutas canónicas, comandos, allowed edit surfaces).
 | WU2 | ✅ done | `ef998be` | 427 | Schema (4 migrations) + runner + 11 tests. Audit append-only enforced via REVOKE PUBLIC. CLI migrate aplicada a `quorum_backoffice` real. |
 | WU3a | ✅ done | `27c34c9` | 841 | Marbetes CRUD scaffolding (DTOs + repo + service + routes). OTP deferred WU3b. 8 nuevos tests integration (23/23 total). |
 | WU3b | ✅ done | `771a55e` | 570 | canvas-client + otp-client + audit-service. OTP enforced en destructive ops; 22/22 tests pasan. |
-| WU4 | ✅ done | — | ~440 | API Dispositivos CRUD + OTP guard. DTOs (shared), repo (pg-dispositivos), service (OTP+audit), 5 routes (list/get/post/patch/delete→revoke), 11 tests integration (33/33 total verde). DELETE = soft-revoke (`revoked_at` + `revoked_reason`). |
+| WU4 | ✅ done | `c8fa1b8` | 809 | API Dispositivos CRUD + OTP guard. DTOs (shared), repo (pg-dispositivos), service (OTP+audit), 5 routes (list/get/post/patch/delete→revoke), 11 tests integration (33/33 total verde). DELETE = soft-revoke (`revoked_at` + `revoked_reason`). Excede budget de 400 por test file de 291 LOC (justificado, mismo patrón que WU3a). |
 | WU5 | pending | — | — | API Audit + append-only. |
 | WU6 | pending | — | — | API Auth + RBAC. |
 | WU7 | pending | — | — | Web Layout + Login real. |
