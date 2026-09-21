@@ -256,7 +256,7 @@ remitos exactos (rutas canónicas, comandos, allowed edit surfaces).
 | WU3a | ✅ done | `27c34c9` | 841 | Marbetes CRUD scaffolding (DTOs + repo + service + routes). OTP deferred WU3b. 8 nuevos tests integration (23/23 total). |
 | WU3b | ✅ done | `771a55e` | 570 | canvas-client + otp-client + audit-service. OTP enforced en destructive ops; 22/22 tests pasan. |
 | WU4 | ✅ done | `c8fa1b8` | 809 | API Dispositivos CRUD + OTP guard. DTOs (shared), repo (pg-dispositivos), service (OTP+audit), 5 routes (list/get/post/patch/delete→revoke), 11 tests integration (33/33 total verde). DELETE = soft-revoke (`revoked_at` + `revoked_reason`). Excede budget de 400 por test file de 291 LOC (justificado, mismo patrón que WU3a). |
-| WU5 | ✅ done | — | ~440 | API Audit read-only. Repo (pg-audit) + service (audit-query-service) + 2 routes (list+detail). 11 nuevos tests integration (44/44 total verde). `entity_type` columna única fuente de verdad (sin derivation). Append-only enforced via REVOKE PUBLIC verificado con `information_schema.role_table_grants` (PG18-compatible). |
+| WU5 | ✅ done | `1c2902c` | 511 | API Audit read-only. Repo (pg-audit) + service (audit-query-service) + 2 routes (list+detail). 11 nuevos tests integration (44/44 total verde). `entity_type` columna única fuente de verdad (sin derivation). Append-only enforced via REVOKE PUBLIC verificado con `information_schema.role_table_grants` (PG18-compatible). |
 | WU6 | pending | — | — | API Auth + RBAC (login + sesión + preHandler roles: admin / operator / auditor). |
 | WU7 | pending | — | — | Web Layout + Login real. |
 | WU8 | pending | — | — | Web Marbetes screen. |
