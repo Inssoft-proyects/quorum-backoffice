@@ -1,0 +1,53 @@
+{
+  "name": "@quorum-backoffice/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backoffice admin API: marbetes, devices, audit, OTP enforcement.",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=22.22.1"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.{ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,json}\" \"test/**/*.{ts,json}\"",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathIgnorePatterns=integration",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathPattern=integration",
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --coverage --runInBand",
+    "migrate": "tsx scripts/migrate.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@fastify/helmet": "^12.0.1",
+    "@fastify/rate-limit": "^10.2.2",
+    "fastify": "^5.10.0",
+    "fastify-plugin": "^5.0.1",
+    "@quorum-backoffice/shared": "*",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "prom-client": "^15.1.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "@types/supertest": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.13.0",
+    "@typescript-eslint/parser": "^8.13.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "jest": "^30.0.0",
+    "prettier": "^3.3.3",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.4.11",
+    "tsx": "^4.19.2",
+    "typescript": "5.6.3"
+  }
+}

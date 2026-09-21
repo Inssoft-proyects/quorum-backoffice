@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * WU0 placeholder: no theme tokens yet.
+ * WU1 will replace this with the InecConecta color palette (CSS variables)
+ * defined in odd/tasks/quorum-backoffice-mvp.md §6.
+ */
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
