@@ -11,7 +11,7 @@
     "lint": "next lint",
     "format": "prettier --write \"app/**/*.{ts,tsx,json,css}\" \"components/**/*.{ts,tsx,json,css}\"",
     "format:check": "prettier --check \"app/**/*.{ts,tsx,json,css}\" \"components/**/*.{ts,tsx,json,css}\"",
-    "test": "echo \"no web tests in WU0; component tests land in WU7+\" && exit 0"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs"
   },
   "dependencies": {
     "@quorum-backoffice/shared": "*",
@@ -32,6 +32,10 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0-beta.6",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22.10.5",
     "@types/react": "19.0.1",
     "@types/react-dom": "19.0.1",
@@ -39,6 +43,8 @@
     "eslint": "^8.57.0",
     "eslint-config-next": "15.0.4",
     "eslint-config-prettier": "^9.1.0",
+    "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.0",
     "postcss": "^8.4.49",
     "prettier": "^3.3.3",
     "tailwindcss": "^4.0.0-beta.6",
