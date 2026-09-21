@@ -253,7 +253,7 @@ remitos exactos (rutas canónicas, comandos, allowed edit surfaces).
 | WU1a | ✅ done | `f5d1adc` | 443 | Tokens + 5 shadcn core + icon wrapper. |
 | WU1b | ✅ done | `73a5011` | 1322 | shadcn extend + theme provider + login demo. Excede 400-line budget por verbose wrappers (permitido por policy ODD). |
 | WU2 | ✅ done | `ef998be` | 427 | Schema (4 migrations) + runner + 11 tests. Audit append-only enforced via REVOKE PUBLIC. CLI migrate aplicada a `quorum_backoffice` real. |
-| WU3a | ✅ done | \ | 841 | Marbetes CRUD scaffolding (DTOs + repo + service + routes). OTP deferred WU3b. 8 nuevos tests integration (23/23 total). |
+| WU3a | ✅ done | `27c34c9` | 841 | Marbetes CRUD scaffolding (DTOs + repo + service + routes). OTP deferred WU3b. 8 nuevos tests integration (23/23 total). |
 | WU3b | ⏳ next | — | — | canvas-client + otp-guard + integración. |
 | WU4 | pending | — | — | API Dispositivos CRUD + OTP guard. |
 | WU5 | pending | — | — | API Audit + append-only. |
