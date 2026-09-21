@@ -200,7 +200,9 @@ Tests RED primero, luego GREEN, luego REFACTOR.
 | WU3 | API: Marbetes | ~400 | CRUD + asignar + OTP guard. Probable split → WU3a/b si excede. |
 | WU4 | API: Dispositivos | ~250 | CRUD + OTP guard |
 | WU5 | API: Audit | ~250 | Listado + filtros + append-only enforced |
-| WU6 | API: Auth + RBAC | ~300 | Login, sesión firmada, preHandlers por rol |
+| WU6 | API: Auth + RBAC | ~600 (split) | Login + sesión firmada + preHandlers por rol. Split: WU6a = schema+crypto+auth-service+login/logout/me; WU6b = session plugin + RBAC plugin + wire en rutas. |
+| WU6a | API: Auth core | ~350 | migration 0005 (users + sessions) + bcrypt + session token + rate-limit Redis + AuthService + rutas login/logout/me + tests (login OK/bad/rate-limit/audit, logout, me). Roles enum: admin/operator/auditor. Jerarquía numérica operator=1, auditor=2, admin=3. |
+| WU6b | API: Session + RBAC | ~300 | session plugin (cookie → req.session.user) + rbac plugin (requireRole minRole) + wire en marbetes/dispositivos/audit (replace x-test-actor con req.session.user.id; requireRole('admin') en POST/PATCH/DELETE; requireRole('auditor') en GET audit) + RBAC tests. |
 | WU7 | Web: Layout + Login | ~300 | Sidebar, topbar, login form, auth context, API client |
 | WU8 | Web: Marbetes screen | ~400 | Tarjetas OK/KO, tabla, dialogs, OTP modal. Probable split. |
 | WU9 | Web: Dispositivos screen | ~300 | Tabla + dialogs + OTP modal |
@@ -257,7 +259,8 @@ remitos exactos (rutas canónicas, comandos, allowed edit surfaces).
 | WU3b | ✅ done | `771a55e` | 570 | canvas-client + otp-client + audit-service. OTP enforced en destructive ops; 22/22 tests pasan. |
 | WU4 | ✅ done | `c8fa1b8` | 809 | API Dispositivos CRUD + OTP guard. DTOs (shared), repo (pg-dispositivos), service (OTP+audit), 5 routes (list/get/post/patch/delete→revoke), 11 tests integration (33/33 total verde). DELETE = soft-revoke (`revoked_at` + `revoked_reason`). Excede budget de 400 por test file de 291 LOC (justificado, mismo patrón que WU3a). |
 | WU5 | ✅ done | `1c2902c` | 511 | API Audit read-only. Repo (pg-audit) + service (audit-query-service) + 2 routes (list+detail). 11 nuevos tests integration (44/44 total verde). `entity_type` columna única fuente de verdad (sin derivation). Append-only enforced via REVOKE PUBLIC verificado con `information_schema.role_table_grants` (PG18-compatible). |
-| WU6 | pending | — | — | API Auth + RBAC (login + sesión + preHandler roles: admin / operator / auditor). |
+| WU6a | pending | — | — | API Auth core (schema + crypto + login/logout/me + tests). |
+| WU6b | pending | — | — | API Session plugin + RBAC + wire en rutas. |
 | WU7 | pending | — | — | Web Layout + Login real. |
 | WU8 | pending | — | — | Web Marbetes screen. |
 | WU9 | pending | — | — | Web Dispositivos screen. |

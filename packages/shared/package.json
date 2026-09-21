@@ -13,6 +13,10 @@
     "./dto/marbete": {
       "types": "./dist/dto/marbete.d.ts",
       "default": "./dist/dto/marbete.js"
+    },
+    "./dto/auth": {
+      "types": "./dist/dto/auth.d.ts",
+      "default": "./dist/dto/auth.js"
     }
   },
   "files": ["dist"],

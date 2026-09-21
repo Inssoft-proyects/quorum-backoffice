@@ -18,6 +18,11 @@ const ConfigSchema = z.object({
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 chars'),
   SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 
+  AUTH_COOKIE_NAME: z.string().default('sid'),
+  AUTH_COOKIE_SECURE: z.coerce.boolean().default(true),
+  AUTH_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  AUTH_LOGIN_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
+
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
   BOOTSTRAP_ADMIN_PASSWORD: z.string().min(8).optional(),
 });

@@ -18,6 +18,8 @@ import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import cookie from '@fastify/cookie';
+import pg from 'pg';
 
 import { loadConfig, type Config } from './config';
 import { createLogger } from './lib/logger';
@@ -29,12 +31,19 @@ import { registerHealthRoutes } from './routes/health';
 import { registerMarbetesRoutes } from './routes/marbetes';
 import { registerDispositivosRoutes } from './routes/dispositivos';
 import { registerAuditRoutes } from './routes/audit';
+import { registerAuthRoutes } from './routes/auth';
 
 declare module 'fastify' {
   interface FastifyInstance {
     config: Config;
   }
 }
+
+// Hoist the BIGINT-to-number parser to module load. The pg plugin also sets
+// it inside its plugin function, but tests build their own Pool instances
+// before buildApp() runs, so we need the parser registered up-front so those
+// standalone pools also return numeric ids (matching the DTO contract).
+pg.types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
 
 export async function buildApp(
   overrides?: { config?: NodeJS.ProcessEnv },
@@ -66,6 +75,7 @@ export async function buildApp(
   await app.register(metricsPlugin);
   await app.register(pgPlugin);
   await app.register(redisPlugin);
+  await app.register(cookie, { secret: app.config.SESSION_SECRET });
 
   // Centralized error handler
   app.setErrorHandler(httpErrorHandler);
@@ -75,6 +85,7 @@ export async function buildApp(
   await registerMarbetesRoutes(app as unknown as FastifyInstance);
   await registerDispositivosRoutes(app as unknown as FastifyInstance);
   await registerAuditRoutes(app as unknown as FastifyInstance);
+  await registerAuthRoutes(app as unknown as FastifyInstance);
 
   return app;
 }

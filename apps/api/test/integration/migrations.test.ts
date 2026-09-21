@@ -31,10 +31,13 @@ describe('migrations runner (integration, real PG)', () => {
       DROP TABLE IF EXISTS audit_log CASCADE;
       DROP TABLE IF EXISTS dispositivos CASCADE;
       DROP TABLE IF EXISTS marbetes CASCADE;
+      DROP TABLE IF EXISTS sessions CASCADE;
       DROP TABLE IF EXISTS students_cache CASCADE;
+      DROP TABLE IF EXISTS users CASCADE;
       DROP TYPE IF EXISTS audit_action CASCADE;
       DROP TYPE IF EXISTS dispositivo_status CASCADE;
       DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TYPE IF EXISTS user_role CASCADE;
       DELETE FROM _migrations;
     `);
   });
@@ -50,6 +53,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0002_marbetes.sql',
       '0003_dispositivos.sql',
       '0004_audit.sql',
+      '0005_auth.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -62,6 +66,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0002_marbetes.sql',
       '0003_dispositivos.sql',
       '0004_audit.sql',
+      '0005_auth.sql',
     ]);
   });
 
