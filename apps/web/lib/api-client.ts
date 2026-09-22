@@ -17,11 +17,17 @@ import {
   DeleteMarbeteRequest,
   ListMarbetesFilter,
   UpdateMarbeteRequest,
+  type CreateDispositivoRequest,
+  type DeleteDispositivoRequest,
+  type DispositivoDetailResponse,
+  type ListDispositivosFilter,
+  type ListDispositivosResponse,
   type ListMarbetesResponse,
   type LoginRequest,
   type MarbeteCountersResponse,
   type MarbeteDetailResponse,
   type MeResponse,
+  type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
 
 /**
@@ -259,6 +265,69 @@ export async function updateMarbete(
 ): Promise<MarbeteDetailResponse> {
   return apiPatchWithOtp<MarbeteDetailResponse>(
     `/api/v1/marbetes/${id}`,
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+// ---- Dispositivos (WU9) ----
+
+export async function listDispositivos(
+  filter: z.input<typeof ListDispositivosFilter>,
+  cookie?: string,
+): Promise<ListDispositivosResponse> {
+  const qs = buildQueryString({
+    status: filter.status,
+    search: filter.search,
+    limit: filter.limit,
+    offset: filter.offset,
+  });
+  return apiGet<ListDispositivosResponse>(`/api/v1/dispositivos${qs}`, cookie);
+}
+
+export async function getDispositivo(
+  id: number,
+  cookie?: string,
+): Promise<DispositivoDetailResponse> {
+  return apiGet<DispositivoDetailResponse>(`/api/v1/dispositivos/${id}`, cookie);
+}
+
+export async function createDispositivo(
+  req: CreateDispositivoRequest,
+  otpCode: string,
+  cookie?: string,
+): Promise<DispositivoDetailResponse> {
+  return apiPostWithOtp<DispositivoDetailResponse>(
+    '/api/v1/dispositivos',
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+export async function updateDispositivo(
+  id: number,
+  req: UpdateDispositivoRequest,
+  otpCode: string,
+  cookie?: string,
+): Promise<DispositivoDetailResponse> {
+  return apiPatchWithOtp<DispositivoDetailResponse>(
+    `/api/v1/dispositivos/${id}`,
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+export async function revokeDispositivo(
+  id: number,
+  req: DeleteDispositivoRequest,
+  otpCode: string,
+  cookie?: string,
+): Promise<DispositivoDetailResponse> {
+  return apiDeleteWithOtp<DispositivoDetailResponse>(
+    `/api/v1/dispositivos/${id}`,
     req,
     otpCode,
     cookie,
