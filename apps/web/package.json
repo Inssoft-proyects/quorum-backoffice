@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start -p ${PORT:-3002}",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "tsc --noEmit && echo 'web lint: tsc clean (eslint deferred to a future polish WU; next lint removed in Next.js 16)'",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx --max-warnings=9999",
     "format": "prettier --write \"app/**/*.{ts,tsx,json,css}\" \"components/**/*.{ts,tsx,json,css}\"",
     "format:check": "prettier --check \"app/**/*.{ts,tsx,json,css}\" \"components/**/*.{ts,tsx,json,css}\"",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs",
