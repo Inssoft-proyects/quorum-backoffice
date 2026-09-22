@@ -208,3 +208,17 @@ The OTP probe in `/readyz` calls `${OTP_SERVICE_URL}/healthz` with a
 design — the OTP service must expose a health endpoint — but it means
 `/readyz` will show a non-`ok` OTP check during outages or until the
 OTP service ships its own `/healthz`.
+
+## Web lint status
+
+The `apps/web` project does not currently run ESLint as part of `npm
+run lint`. Reason: Next.js 16 (installed at 16.3.5) removed the
+`next lint` command entirely. The web lint script currently delegates
+to `tsc --noEmit` (TypeScript) which catches type errors but not
+style/lint issues.
+
+When the project adds ESLint (a future polish WU), update the script
+in `apps/web/package.json` from the `tsc --noEmit` placeholder to the
+appropriate ESLint invocation (likely `eslint .` with a flat
+`eslint.config.js` at the web root, plus the `eslint-config-next`
+package for Next.js-aware rules).

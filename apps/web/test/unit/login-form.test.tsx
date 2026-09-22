@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 
 const stubRouter: AppRouterInstance = {
   back: () => undefined,
+  bfcacheId: '',
   forward: () => undefined,
   refresh: () => undefined,
   push: () => undefined,

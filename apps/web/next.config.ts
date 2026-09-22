@@ -9,9 +9,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  eslint: {
-    dirs: ['app', 'components', 'lib'],
-  },
 };
 
 export default nextConfig;
