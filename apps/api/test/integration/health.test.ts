@@ -43,10 +43,11 @@ describe('health endpoints (integration, real PG + Redis)', () => {
     try {
       const r = await app.inject({ method: 'GET', url: '/readyz' });
       expect(r.statusCode).toBe(200);
-      const body = r.json() as { status: string; checks: { postgres: string; redis: string } };
-      expect(body.status).toBe('ready');
-      expect(body.checks.postgres).toBe('up');
-      expect(body.checks.redis).toBe('up');
+      const body = r.json() as { status: string; checks: { pg: string; redis: string; otp: string } };
+      expect(body.status).toBe('ok');
+      expect(body.checks.pg).toBe('ok');
+      expect(body.checks.redis).toBe('ok');
+      expect(body.checks.otp).toMatch(/^(ok|down|unknown)$/);
     } finally {
       await app.close();
     }
