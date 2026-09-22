@@ -50,3 +50,7 @@ Thumbs.db
 
 # Next.js
 next-env.d.ts
+
+# Nested design-asset repos that confuse the review engine
+/diseno/maqueta_Inec/
+/diseno/design/
