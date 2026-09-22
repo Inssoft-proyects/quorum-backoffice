@@ -23,6 +23,8 @@ const ConfigSchema = z.object({
   AUTH_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_LOGIN_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
 
+  ALLOWED_ORIGIN: z.string().url().optional(),
+
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
   BOOTSTRAP_ADMIN_PASSWORD: z.string().min(8).optional(),
 });

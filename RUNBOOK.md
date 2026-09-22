@@ -222,3 +222,35 @@ in `apps/web/package.json` from the `tsc --noEmit` placeholder to the
 appropriate ESLint invocation (likely `eslint .` with a flat
 `eslint.config.js` at the web root, plus the `eslint-config-next`
 package for Next.js-aware rules).
+
+## Production deployment with nginx
+
+For VPS deployment with auto-TLS via Let's Encrypt, use the vhost in
+`infra/nginx/quorum.asistentepro.mx.conf` and the operational guide in
+`infra/nginx/README.md`. The README walks through:
+
+1. Install nginx + certbot (`apt install nginx certbot python3-certbot-nginx`).
+2. Build the app (`npm install && npm run build --workspaces --if-present`).
+3. Drop env files into `/etc/quorum-backoffice/` (api.env + web.env).
+4. Enable the systemd units (templates in `infra/nginx/README.md` §5).
+5. Symlink `infra/nginx/quorum.asistentepro.mx.conf` into `/etc/nginx/sites-enabled/`.
+6. Run `certbot --nginx -d quorum.asistentepro.mx` — TLS auto-provisioned.
+7. `systemctl reload nginx` — done.
+
+The vhost:
+- HTTP→HTTPS redirect on port 80.
+- TLS 1.2/1.3 only via Let's Encrypt (auto-renewal).
+- Routes `/healthz`, `/readyz`, `/metrics` (CIDR-restricted) to the API.
+- Routes `/api/*` to the API.
+- Catch-all to the Next.js web (port 3002).
+- Adds HSTS, X-Frame-Options DENY, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, X-XSS-Protection.
+- `server_tokens off` (no nginx version leak).
+- `_next/static/*` cached 1 year with immutable.
+
+For production HTTPS mode in the api:
+- `ALLOWED_ORIGIN=https://quorum.asistentepro.mx` — single-origin CORS allow.
+- `AUTH_COOKIE_SECURE=true` — cookies only over HTTPS.
+- `AUTH_COOKIE_NAME=__Host-sid` — cookie hardening (requires Secure + Path=/).
+- `SESSION_SECRET` — generate fresh with `openssl rand -hex 32`.
+
+See `infra/nginx/README.md` for the full operational guide.

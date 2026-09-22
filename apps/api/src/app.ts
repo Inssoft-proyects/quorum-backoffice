@@ -66,7 +66,8 @@ export async function buildApp(
 
   // Security & infra
   await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(cors, { origin: false, credentials: true });
+  const corsOrigin = app.config.ALLOWED_ORIGIN ?? false;
+  await app.register(cors, { origin: corsOrigin, credentials: true });
   await app.register(rateLimit, {
     max: 600,
     timeWindow: '1 minute',
