@@ -253,4 +253,13 @@ For production HTTPS mode in the api:
 - `AUTH_COOKIE_NAME=__Host-sid` — cookie hardening (requires Secure + Path=/).
 - `SESSION_SECRET` — generate fresh with `openssl rand -hex 32`.
 
+The Quorum Backoffice is mounted at `/backoffice/` under the domain
+because the root (`/`) hosts Jitsi. The Next.js app uses
+`basePath: '/backoffice'` (in `apps/web/next.config.ts`) to auto-prefix
+all internal links. Nginx uses `rewrite` directives to strip the
+prefix when forwarding to the backend services, so the api continues
+to serve at `/api/v1/...` internally and the web serves at `/...`
+internally — the `/backoffice/` prefix exists only at the public
+edge.
+
 See `infra/nginx/README.md` for the full operational guide.
