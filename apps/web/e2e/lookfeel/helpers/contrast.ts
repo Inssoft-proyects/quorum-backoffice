@@ -51,9 +51,9 @@ export function parseColor(input: string | null | undefined): RGBColor | null {
   if (value.startsWith('#')) {
     const hex = value.slice(1);
     if (hex.length === 3) {
-      const r = parseInt(hex[0] + hex[0], 16);
-      const g = parseInt(hex[1] + hex[1], 16);
-      const b = parseInt(hex[2] + hex[2], 16);
+      const r = parseInt((hex[0] ?? '') + (hex[0] ?? ''), 16);
+      const g = parseInt((hex[1] ?? '') + (hex[1] ?? ''), 16);
+      const b = parseInt((hex[2] ?? '') + (hex[2] ?? ''), 16);
       if ([r, g, b].some((n) => Number.isNaN(n))) return null;
       return { r, g, b, a: 1 };
     }
@@ -80,9 +80,9 @@ export function parseColor(input: string | null | undefined): RGBColor | null {
     /^rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/,
   );
   if (rgbMatch) {
-    const r = clampByte(parseChannel(rgbMatch[1]));
-    const g = clampByte(parseChannel(rgbMatch[2]));
-    const b = clampByte(parseChannel(rgbMatch[3]));
+    const r = clampByte(parseChannel(rgbMatch[1] ?? '0'));
+    const g = clampByte(parseChannel(rgbMatch[2] ?? '0'));
+    const b = clampByte(parseChannel(rgbMatch[3] ?? '0'));
     const aRaw = rgbMatch[4];
     let a = 1;
     if (aRaw !== undefined) {
@@ -132,11 +132,16 @@ export function contrastRatio(a: RGBColor, b: RGBColor): number {
  * stacking context until we find a non-transparent background. This is
  * required because Tailwind/utility classes routinely leave the body
  * background at `transparent` and only paint the page on the `<html>`.
+ *
+ * Returns the raw CSS color strings; callers should pipe them through
+ * `parseColor()` to get a typed RGBColor. Doing it here would force a
+ * `page.evaluate` round-trip into the Node realm and that's not worth it
+ * for a helper that's only used in tests.
  */
 export async function getElementColors(
   page: Page,
   selector: string,
-): Promise<{ fg: RGBColor | null; bg: RGBColor | null }> {
+): Promise<{ fg: string | null; bg: string | null }> {
   return await page.evaluate((sel: string) => {
     const el = document.querySelector(sel);
     if (!el) return { fg: null, bg: null };

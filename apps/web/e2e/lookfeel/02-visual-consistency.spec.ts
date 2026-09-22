@@ -34,7 +34,7 @@ type StylesReport = {
   screens: Record<string, ScreenStyles>;
   inconsistencies: Array<{
     selector: string;
-    property: 'fontSize' | 'color' | 'fontWeight' | 'padding' | 'borderRadius' | 'gap';
+    property: 'fontSize' | 'color' | 'fontWeight' | 'padding' | 'borderRadius' | 'gap' | 'bgColor';
     values: Record<string, string>;
     reason: string;
   }>;
