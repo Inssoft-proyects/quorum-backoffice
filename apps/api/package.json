@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "Backoffice admin API: marbetes, devices, audit, OTP enforcement.",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "engines": {
     "node": ">=22.22.1"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.{ts,json}\"",
@@ -18,7 +18,8 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathIgnorePatterns=integration",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathPattern=integration",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --coverage --runInBand",
-    "migrate": "tsx scripts/migrate.ts"
+    "migrate": "tsx scripts/migrate.ts",
+    "seed:e2e": "tsx scripts/seed-e2e-users.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
