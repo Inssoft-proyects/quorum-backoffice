@@ -15,11 +15,14 @@ import type { z } from 'zod';
 import {
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
+  ListAuditFilter,
   ListMarbetesFilter,
   UpdateMarbeteRequest,
+  type AuditEntry,
   type CreateDispositivoRequest,
   type DeleteDispositivoRequest,
   type DispositivoDetailResponse,
+  type ListAuditResponse,
   type ListDispositivosFilter,
   type ListDispositivosResponse,
   type ListMarbetesResponse,
@@ -332,4 +335,33 @@ export async function revokeDispositivo(
     otpCode,
     cookie,
   );
+}
+
+// ---- Audit (WU10) ----
+
+/**
+ * Read-only audit log wrapper. Both endpoints are gated to auditor+ by the
+ * API (requireRole('auditor')). Caller in the browser omits `cookie`; the
+ * server component / route handler forwards the session cookie string.
+ */
+export async function listAuditEntries(
+  filter: z.input<typeof ListAuditFilter>,
+  cookie?: string,
+): Promise<ListAuditResponse> {
+  const qs = buildQueryString({
+    entityType: filter.entityType,
+    entityId: filter.entityId,
+    actorId: filter.actorId,
+    action: filter.action,
+    since: filter.since,
+    until: filter.until,
+    search: filter.search,
+    limit: filter.limit,
+    offset: filter.offset,
+  });
+  return apiGet<ListAuditResponse>(`/api/v1/audit${qs}`, cookie);
+}
+
+export async function getAuditEntry(id: number, cookie?: string): Promise<AuditEntry> {
+  return apiGet<AuditEntry>(`/api/v1/audit/${id}`, cookie);
 }
