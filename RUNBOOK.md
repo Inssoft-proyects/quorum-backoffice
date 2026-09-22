@@ -157,18 +157,23 @@ The counter increments per failed login. Reset with `redis-cli DEL`.
 ## E2E test setup
 
 Before running `npm run test:e2e` from `apps/web`, seed three users via
-direct SQL (cost-12 bcrypt hashes):
+the dedicated idempotent CLI (cost-12 bcrypt hashes, same as
+`AuthService`):
 
-```sql
--- These hashes correspond to password 'admin1234', 'operator1234', 'auditor1234'
--- generated with bcrypt cost 12. Replace with your own hashes for real E2E.
-INSERT INTO users (email, password_hash, role) VALUES
-  ('admin@quorum.local',    '$2b$12$...admin1234...', 'admin'),
-  ('operator@quorum.local', '$2b$12$...operator1234...', 'operator'),
-  ('auditor@quorum.local',  '$2b$12$...auditor1234...', 'auditor');
+```bash
+cd apps/api && npm run seed:e2e
 ```
 
-Or override via env vars:
+This upserts the three default users — `admin@quorum.local`,
+`operator@quorum.local`, `auditor@quorum.local` — with passwords
+`admin1234`, `operator1234`, `auditor1234` (matching the defaults in
+`apps/web/e2e/auth.spec.ts`). Each user is created if missing or
+refreshed with a fresh bcrypt hash if already present.
+
+This script is idempotent — running it multiple times upserts users
+with fresh bcrypt hashes. Safe to re-run before each e2e test session.
+
+Override any default via env vars before running the script:
 - `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD`
 - `E2E_OPERATOR_EMAIL` / `E2E_OPERATOR_PASSWORD`
 - `E2E_AUDITOR_EMAIL` / `E2E_AUDITOR_PASSWORD`
