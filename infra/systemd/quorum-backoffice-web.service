@@ -1,0 +1,21 @@
+# File path: /etc/systemd/system/quorum-backoffice-web.service
+[Unit]
+Description=Quorum Backoffice Web (Next.js)
+After=network.target quorum-backoffice-api.service
+
+[Service]
+Type=simple
+User=quorum
+Group=quorum
+WorkingDirectory=/opt/quorum-backoffice/apps/web
+EnvironmentFile=/etc/quorum-backoffice/web.env
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -p 3002
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -88,56 +88,7 @@ sudo -u postgres psql -d quorum_backoffice -c \
 
 ### 5. Run the API + Web as systemd services
 
-Use the templates in `infra/systemd/` (or copy from a sibling project):
-
-```ini
-# /etc/systemd/system/quorum-backoffice-api.service
-[Unit]
-Description=Quorum Backoffice API
-After=network.target postgresql.service redis-server.service
-
-[Service]
-Type=simple
-User=quorum
-Group=quorum
-WorkingDirectory=/opt/quorum-backoffice/apps/api
-EnvironmentFile=/etc/quorum-backoffice/api.env
-ExecStart=/usr/bin/node dist/src/server.js
-Restart=on-failure
-RestartSec=5s
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/quorum-backoffice/apps/api/dist
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```ini
-# /etc/systemd/system/quorum-backoffice-web.service
-[Unit]
-Description=Quorum Backoffice Web (Next.js)
-After=network.target quorum-backoffice-api.service
-
-[Service]
-Type=simple
-User=quorum
-Group=quorum
-WorkingDirectory=/opt/quorum-backoffice/apps/web
-EnvironmentFile=/etc/quorum-backoffice/web.env
-ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -p 3002
-Restart=on-failure
-RestartSec=5s
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-
-[Install]
-WantedBy=multi-user.target
-```
+Copy the systemd units from `infra/systemd/`:
 
 ```bash
 sudo cp /opt/quorum-backoffice/infra/systemd/quorum-backoffice-api.service /etc/systemd/system/
@@ -147,7 +98,8 @@ sudo systemctl enable --now quorum-backoffice-api
 sudo systemctl enable --now quorum-backoffice-web
 ```
 
-> **Note**: the systemd templates above live in this README, not as separate files in `infra/systemd/`. Copy them out as needed. If you prefer them committed as files, the WU can add them later.
+The systemd units are committed under `infra/systemd/` (not inlined in
+this README). The copy commands above pull them from there.
 
 ### 6. Enable the nginx vhost
 

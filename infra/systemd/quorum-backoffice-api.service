@@ -1,0 +1,22 @@
+# File path: /etc/systemd/system/quorum-backoffice-api.service
+[Unit]
+Description=Quorum Backoffice API
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=quorum
+Group=quorum
+WorkingDirectory=/opt/quorum-backoffice/apps/api
+EnvironmentFile=/etc/quorum-backoffice/api.env
+ExecStart=/usr/bin/node dist/src/server.js
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/quorum-backoffice/apps/api/dist
+
+[Install]
+WantedBy=multi-user.target
