@@ -1,11 +1,10 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { hasAtLeastRole } from '@quorum-backoffice/shared';
 import type { MarbeteStatus } from '@quorum-backoffice/shared';
 import { ListMarbetesFilter } from '@quorum-backoffice/shared';
 import type { z } from 'zod';
 import { listMarbetes, getMarbeteCounters } from '@/lib/api-client';
-import { getServerSession } from '@/lib/server-session';
+import { getServerSession, getAuthCookieHeader } from '@/lib/server-session';
 import { StatusCards } from './_components/status-cards';
 import { MarbetesFilters } from './_components/marbetes-filters';
 import { MarbetesPageClient } from './_components/marbetes-page-client';
@@ -29,9 +28,7 @@ export default async function MarbetesPage({
   if (!hasAtLeastRole(user.role, 'operator')) redirect('/dashboard');
 
   const sp = await searchParams;
-  const cookieStore = await cookies();
-  const rawSid = cookieStore.get('sid')?.value;
-  const cookie = rawSid ? `sid=${rawSid}` : undefined;
+  const cookie = await getAuthCookieHeader();
 
   const rawStatus = typeof sp.status === 'string' ? sp.status : '';
   const rawSearch = typeof sp.search === 'string' ? sp.search : '';

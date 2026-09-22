@@ -1,9 +1,8 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { hasAtLeastRole, ListAuditFilter } from '@quorum-backoffice/shared';
 import type { z } from 'zod';
 import { listAuditEntries } from '@/lib/api-client';
-import { getServerSession } from '@/lib/server-session';
+import { getServerSession, getAuthCookieHeader } from '@/lib/server-session';
 import { AuditFilters } from './_components/audit-filters';
 import { AuditPageClient } from './_components/audit-page-client';
 
@@ -48,9 +47,7 @@ export default async function AuditPage({
   if (!hasAtLeastRole(user.role, 'auditor')) redirect('/dashboard');
 
   const sp = await searchParams;
-  const cookieStore = await cookies();
-  const rawSid = cookieStore.get('sid')?.value;
-  const cookie = rawSid ? `sid=${rawSid}` : undefined;
+  const cookie = await getAuthCookieHeader();
 
   const rawEntityType = pickString(sp.entityType);
   const rawActorId = pickString(sp.actorId);
