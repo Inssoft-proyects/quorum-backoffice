@@ -8,7 +8,9 @@
  * Auth (WU6) replaces `x-test-actor` with `req.session.user.id`.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import {
+  BulkCreateMarbetesRequest,
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
   ListMarbetesFilter,
@@ -19,6 +21,7 @@ import {
 import { MarbetesService } from '../services/marbetes-service';
 import { OtpClient } from '../services/otp-client';
 import { requireSession, requireRole } from '../plugins/rbac';
+import { parseCsvCodes } from '../lib/marbete-id';
 
 function actorFromRequest(req: FastifyRequest): string {
   return req.session?.user?.email ?? 'dev-user';
@@ -83,6 +86,60 @@ export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void
     reply.header('location', `/api/v1/marbetes/${created.id}`);
     return created;
   });
+
+  // WU #3 / Polish WU v4: bulk create up to 200 marbetes in one transactional
+  // call. Admin-only + OTP-required (scope `marbete.bulk_create`). Per-row
+  // outcomes are returned in the response body.
+  app.post(
+    '/api/v1/marbetes/bulk',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const body = BulkCreateMarbetesRequest.parse(req.body);
+      const actor = actorFromRequest(req);
+      const otp = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.bulkCreate(actor, body, 'json', null, otp, meta);
+    },
+  );
+
+  // CSV variant: parses the upload server-side so the frontend dialog can
+  // stay dumb (it sends `text` + `fileName`). Same OTP / role gate.
+  app.post(
+    '/api/v1/marbetes/bulk-csv',
+    { preHandler: requireRole('admin') },
+    async (req, reply) => {
+      const parsed = z
+        .object({
+          text: z.string().min(1),
+          reason: z.string().max(500).optional(),
+          fileName: z.string().min(1).max(255),
+        })
+        .parse(req.body);
+      const { codes, errors } = parseCsvCodes(parsed.text);
+      if (errors.length > 0) {
+        reply.code(400);
+        return {
+          error: 'csv_parse_failed',
+          message: `${errors.length} row(s) could not be parsed`,
+          errors,
+        };
+      }
+      const items = codes.map((row) => ({ code: row.code }));
+      const actor = actorFromRequest(req);
+      const otp = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.bulkCreate(
+        actor,
+        { items, reason: parsed.reason },
+        'csv',
+        parsed.fileName,
+        otp,
+        meta,
+      );
+    },
+  );
 
   app.patch<{ Params: { id: string } }>(
     '/api/v1/marbetes/:id',

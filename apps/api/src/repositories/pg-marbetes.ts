@@ -186,6 +186,55 @@ export class PgMarbeteRepo {
     return r.rows[0] ?? null;
   }
 
+  /**
+   * Bulk insert (WU #3 / Polish WU v4). Takes a `PoolClient` so the caller
+   * can wrap it in BEGIN/COMMIT and keep the entire batch — including the
+   * companion audit_log row — in a single transaction. Uses UNNEST for a
+   * single round-trip regardless of batch size (capped at 200 by the DTO).
+   *
+   * No pre-flight duplicate check here; the service layer filters out
+   * pre-existing code_hashes before calling so we avoid surfacing a 23505
+   * to the operator. The CHECK constraint on `code_hash` still protects
+   * against concurrent writers (serializable transaction would be needed
+   * for full safety; the bulk endpoint is admin-only and not on a hot path).
+   */
+  async bulkInsert(
+    client: pg.PoolClient,
+    rows: { publicUid: string; codeHash: string; createdBy: string }[],
+  ): Promise<MarbeteRow[]> {
+    if (rows.length === 0) return [];
+    const publicUids = rows.map((r) => r.publicUid);
+    const codeHashes = rows.map((r) => r.codeHash);
+    const createdBys = rows.map((r) => r.createdBy);
+    // `status` is omitted so the column DEFAULT ('active') is preserved.
+    // Explicitly listing a column with a default requires the SELECT to
+    // produce a matching expression, which UNNEST() cannot do for a
+    // constant across all rows without an extra array literal.
+    const r = await client.query<MarbeteRow>(
+      `INSERT INTO marbetes (public_uid, code_hash, created_by)
+       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[])
+       RETURNING id, public_uid, status, assigned_student_id, assigned_at,
+                 created_at, created_by, deleted_at, deletion_reason`,
+      [publicUids, codeHashes, createdBys],
+    );
+    return r.rows;
+  }
+
+  /**
+   * Returns the subset of `codeHashes` that already exist in the marbetes
+   * table. Used by `bulkCreate` to detect DB-side duplicates before
+   * attempting the INSERT, so we can surface them as per-row failures
+   * instead of a single 23505 aborting the entire batch.
+   */
+  async findExistingCodeHashes(codeHashes: string[]): Promise<string[]> {
+    if (codeHashes.length === 0) return [];
+    const r = await this.client.query<{ code_hash: string }>(
+      `SELECT code_hash FROM marbetes WHERE code_hash = ANY($1::text[])`,
+      [codeHashes],
+    );
+    return r.rows.map((row) => row.code_hash);
+  }
+
   toResponse(row: MarbeteRow): MarbeteResponse {
     return toResponse(row);
   }

@@ -12,6 +12,8 @@ export const AuditAction = z.enum([
   'marbete.update',
   'marbete.delete',
   'marbete.assign',
+  'marbete.reveal',
+  'marbete.bulk_create',
   'dispositivo.create',
   'dispositivo.update',
   'dispositivo.revoke',

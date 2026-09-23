@@ -126,3 +126,47 @@ export interface RevealMarbeteResponse {
   /** ISO 8601 timestamp of the reveal. */
   revealedAt: string;
 }
+
+// ---- Bulk create (WU #3 / Polish WU v4) ----
+//
+// Admin-only endpoint that accepts up to 200 marbete codes in a single
+// transactional call. Per-row outcomes are returned in `successes` /
+// `failures` so partial successes are observable to the operator; the
+// underlying SQL is still all-or-nothing (any unexpected DB error
+// rolls the entire batch back), but pre-validation duplicates
+// (intra-batch or already in DB) are reported as `failures` and do not
+// abort the rest of the insert.
+export const BulkCreateMarbetesItem = z.object({
+  code: z.string().min(8).max(128),
+  canvasUserId: z.number().int().positive().optional(),
+  note: z.string().max(500).optional(),
+});
+export type BulkCreateMarbetesItem = z.infer<typeof BulkCreateMarbetesItem>;
+
+export const BulkCreateMarbetesRequest = z.object({
+  items: z.array(BulkCreateMarbetesItem).min(1).max(200),
+  reason: z.string().max(500).optional(),
+});
+export type BulkCreateMarbetesRequest = z.infer<typeof BulkCreateMarbetesRequest>;
+
+export interface BulkCreateMarbeteSuccess {
+  id: number;
+  publicUid: string;
+  status: MarbeteStatus;
+}
+
+export interface BulkCreateMarbeteFailure {
+  index: number;
+  line: number | null;
+  code: string;
+  reason: string;
+}
+
+export interface BulkCreateMarbetesResponse {
+  total: number;
+  created: number;
+  failed: number;
+  successes: BulkCreateMarbeteSuccess[];
+  failures: BulkCreateMarbeteFailure[];
+  auditId: number | null;
+}
