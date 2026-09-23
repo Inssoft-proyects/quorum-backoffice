@@ -13,7 +13,13 @@ interface NavItem {
  * Sidebar nav. Marbetes + Dispositivos are visible to all roles;
  * Auditoría is visible only to auditor+.
  */
-export function Sidebar({ user }: { user: MeResponse }) {
+export function Sidebar({
+  user,
+  className,
+}: {
+  user: MeResponse;
+  className?: string;
+}) {
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Inicio', visible: true },
     { href: '/marbetes', label: 'Marbetes', visible: true },
@@ -25,7 +31,12 @@ export function Sidebar({ user }: { user: MeResponse }) {
     },
   ];
   return (
-    <aside className="flex flex-col border-r border-border bg-card px-4 py-6">
+    <aside
+      className={cn(
+        'flex flex-col border-r border-border bg-card px-4 py-6',
+        className,
+      )}
+    >
       <div className="px-2 pb-6 text-sm font-semibold uppercase tracking-wider text-text-muted">
         Quorum Backoffice
       </div>

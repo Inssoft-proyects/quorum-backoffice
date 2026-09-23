@@ -1187,4 +1187,12 @@
     }
     .data-table tbody { grid-template-columns: 1fr; }
   }
+
+  /* ----- Mobile nav drawer (RESP-001) ----- */
+  .data-\[state\=closed\]\:slide-out-to-left[data-state="closed"] {
+    transform: translateX(-100%);
+  }
+  .data-\[state\=open\]\:slide-in-from-left[data-state="open"] {
+    transform: translateX(0);
+  }
 }
