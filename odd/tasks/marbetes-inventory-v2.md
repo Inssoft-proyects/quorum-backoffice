@@ -113,4 +113,29 @@ cd apps/web && npx playwright test --config=e2e/lookfeel/playwright.config.ts e2
 
 | Fecha | Task | Estado | Notas |
 | --- | --- | --- | --- |
-| 2026-09-23 | T1–T11 | pending | Pendiente implementación por worker |
+| 2026-09-23 | T1–T11 | done | Worker implementó la maquette con shadcn. 12 archivos nuevos + 4 modificados. |
+| 2026-09-23 | T1 tokens | done | globals.css extendido con primary-600, secondary-600, success-bg/text, assigned-border/text, page, surface-subtle, border-strong, disabled, font-family-base. Clases maquette en @layer components. |
+| 2026-09-23 | T2 Select | done | Componente inline (Radix no estaba en deps); select.tsx + textarea.tsx creados. |
+| 2026-09-23 | T3–T7 components | done | donut-chart, status-chip, id-badge, masked-number, metric-card, sort-header, pagination. |
+| 2026-09-23 | T8–T10 dialogs | done | add-marbete-dialog, reveal-marbete-dialog (stub), revoke-marbete-dialog. |
+| 2026-09-23 | T11 page rewrite | done | page.tsx + marbetes-page-client.tsx + marbetes-table.tsx reescritos. |
+| 2026-09-23 | T12 build | done | `npm run build` 0 errors, 7 routes. |
+| 2026-09-23 | T12 deploy | done | Sincronizado a `/opt/quorum-backoffice`, rebuild con `sudo -E env NEXT_PUBLIC_API_URL=...`, pod web reiniciado. |
+| 2026-09-23 | T13 Playwright | done | Screenshot confirma paridad con maquette: header, 4 metric cards con donut, tabla con CRD-0241–0248 + masked + chips + Vigencia + acciones. 3 dialogs (Agregar, Revelar, Dar de baja) renderizan correctamente. |
+| 2026-09-23 | T14 DB seed | done | 10 marbetes seed (5 active + 2 inactive + 2 revoked + 1 asignado) + 3 estudiantes. Permiten validar la página con contenido real. |
+
+### Resultado final (post-deploy)
+
+Screenshots guardados en `apps/web/e2e/lookfeel/artifacts/screenshots/`:
+- `marbetes-v2-design.png` — Página completa con 4 cards + tabla + dialogs cerrados
+- `_diag-dialog-add.png` — Dialog Agregar marbete
+- `_diag-dialog-reveal.png` — Dialog Revelar marbete (con motivo + comentario)
+- `_diag-dialog-revoke.png` — Dialog Dar de baja marbete (con motivo + comentario)
+
+### Diferencias con la maquette (decisiones documentadas)
+
+1. **Columna ESTUDIANTE preservada**: la maquette original no la muestra, pero el worker la conservó porque hay un test RTL existente (`marbetes-table.test.tsx`) que assert el nombre y email del estudiante.
+2. **Status chip "Revocado" vs "Vencida"**: la maquette usa un solo "Vencida" para revoked/inactive. El worker diferencia active-no-assigned=Disponible, active-assigned=Asignado, revoked=Revocado (rojo), inactive=Vencida (rojo). Ambos son danger color.
+3. **Masked code format**: el backend devuelve `C***41` (1 + *** + 2). La maquette usa `9***176` (1 + *** + 3). No es modificable sin un cambio de formato en el API.
+4. **Cargar marbetes**: stub no-op (no hay endpoint bulk upload en MVP). Botón visible pero deshabilitado o sin handler.
+5. **Reveal endpoint**: RevealMarbeteDialog no llama a ningún endpoint porque no existe `POST /api/v1/marbetes/:id/reveal` todavía. Muestra success toast y resetea.
