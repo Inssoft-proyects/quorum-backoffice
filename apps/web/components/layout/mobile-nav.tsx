@@ -51,6 +51,7 @@ export function MobileNav({ user }: { user: MeResponse }) {
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>
       <DialogContent
+        aria-modal="true"
         className="fixed inset-y-0 left-0 right-auto top-0 z-50 w-72 max-w-[85vw] translate-x-0 translate-y-0 gap-0 border-r border-border bg-card p-0 data-[state=closed]:duration-200 data-[state=open]:duration-200 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:rounded-none"
       >
         <DialogTitle className="sr-only">Menú principal</DialogTitle>
