@@ -35,3 +35,6 @@ export type { RevealMarbeteDialogProps } from './reveal-marbete-dialog';
 
 export { RevokeMarbeteDialog } from './revoke-marbete-dialog';
 export type { RevokeMarbeteDialogProps } from './revoke-marbete-dialog';
+
+export { BulkUploadDialog } from './bulk-upload-dialog';
+export type { BulkUploadDialogProps } from './bulk-upload-dialog';
