@@ -127,15 +127,25 @@ bash scripts/dev-bootstrap.sh
 
 ## Polish items pendientes (no bloquean MVP)
 
-1. **Endpoint `POST /api/v1/marbetes/:id/reveal`** (Revelar marbete necesita backend). Effort M.
-2. **Bulk upload endpoint** para el botón "Cargar marbetes". Effort L.
-3. Migración bcrypt → argon2id (OWASP 2025+).
-4. Política de archivado para `audit_log` (>1 año → cold storage).
+(none — todos los items XS/M cerrados en Polish WU v1 (infra/devops) + v2 (UI/UX) + v3 (security + endpoint + archival))
 
-Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + 764243e en `feature/wu0-bootstrap`):
+Cerrados en Polish WU v3 (commits `859c8f3` + `157b163` + `70c9c16` + `fcd523d` + `1fa0513` → `5fe6692` en master, merge de `feature/polish-wu-v3`):
+- **W #1 M** (Reveal endpoint): `POST /api/v1/marbetes/:id/reveal` admin-only + `RevealMarbeteDialog` wired.
+- **W #5 S-M** (argon2id migration): dual-verify + transparent re-hash on first successful login.
+- **W #6 M** (audit_log archival): `audit_log_archive` table + `archive_audit_log(retention_days)` SECURITY DEFINER + cron weekly en RUNBOOK.
+
+Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + `764243e` en `feature/wu0-bootstrap`):
 - **RESP-001 P0** (mobile responsive): AppShell con sidebar colapsable en <md.
 - **A11Y-001 P1**: landmark `<header>` en card de /login.
 - **VIS-002 P2**: focus-visible audit + styles en .metric-card, .sort-button, .row-action, .table-pagination__toggle.
+- **W #7 XS** (dialog animation): fade-in/out para los 3 dialogs existentes de marbetes (add/reveal/revoke). Cerrado en v3 commit `859c8f3`.
+- **W #8 XS** (aria-modal MobileNav): explícito en `<DialogContent>`. Cerrado en v3 commit `157b163`.
+
+Pendientes (L effort, sesiones dedicadas futuras):
+- Redesign `/dispositivos` per maquet InecConecta (replica del marbetes v2).
+- Redesign `/audit` per maquet InecConecta.
+- Bulk upload endpoint para "Cargar marbetes".
+- RDD review (bloqueado por config del harness — host relay sin modelo asignado).
 
 ## Decisiones técnicas heredadas (no cambiar sin discutir)
 
@@ -154,39 +164,15 @@ Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + 764243e en
 - **Review budget**: ≤400 líneas por WU
 - **RDD aplicado**: 10 recepciones exitosas, todas tier `low` / non-executable doc-only. Para feat commits: lenses R1-R4.
 
-## Próximos pasos sugeridos (elegir uno)
+## Próximos pasos sugeridos
 
-### A) Merge PR #1 + deploy en VPS
-```bash
-gh pr merge 1 --squash   # o rebase + merge según preferencia
-# Una vez mergeado a master, en el VPS:
-cd /opt/quorum-backoffice && git pull
-npm install && npm run --workspaces --if-present build
-cd apps/api && npm run migrate
-# Configurar env files en /etc/quorum-backoffice/ (ver infra/nginx/README.md §3)
-# Habilitar vhost + certbot (ver infra/nginx/README.md §6-§7)
-# Habilitar systemd units (ver infra/nginx/README.md §5)
-sudo systemctl enable --now quorum-backoffice-api quorum-backoffice-web
-```
+Items L pendientes (sesiones dedicadas):
+1. **Rediseño `/dispositivos`** per maquet InecConecta (replicar marbetes v2 con `inventory/*` components).
+2. **Rediseño `/audit`** per maquet InecConecta (idem).
+4. **Bulk upload endpoint** para "Cargar marbetes" (CSV/Excel parser + UI upload).
 
-### B) Polish WU v3 (reveal endpoint + bulk upload + bcrypt→argon2id + audit_log archival)
-Cualquier combinación de los 4 polish items restantes arriba (en orden: endpoint reveal, bulk upload, bcrypt→argon2id, audit_log archival).
-
-### C) Endpoint faltante: POST /api/v1/marbetes/:id/reveal
-Implementar en `apps/api/src/routes/marbetes.ts` con la firma:
-```ts
-POST /api/v1/marbetes/:id/reveal
-Body: { otpCode?: string }  // OTP solo si AUTH_OTP_REQUIRED=true
-Response: { code: string }  // código completo
-```
-Side effect: insert en `audit_log` con action='marbete.reveal', metadata con motivo.
-Después wire-ar `RevealMarbeteDialog` para llamar al endpoint.
-
-### D) Continuar con redesign de /dispositivos y /audit
-Aplicar el mismo patrón de componentes inventory/* a las otras 2 pantallas.
-
-### E) Cerrar el ciclo RDD review
-Correr `gentle_review inspect` + `start` para los 8 commits nuevos. El user debe dar consent en la UI host-owned.
+Bloqueado por config:
+- **RDD review** del Polish WU v3 (5 commits + 1 merge). requiere asignar modelo al host relay en `agent model routing config`.
 
 ## Convenciones para nuevas sesiones
 
