@@ -217,6 +217,11 @@
     transform: translateY(-1px);
   }
 
+  .metric-card:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+
   .metric-card[aria-pressed="true"] {
     border-color: var(--color-secondary-600);
     background: var(--color-secondary-600);
@@ -560,6 +565,11 @@
     color: #212121;
   }
 
+  .sort-button:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+
   .sort-button.is-active {
     border-color: var(--color-border);
     background: var(--color-background);
@@ -723,6 +733,11 @@
     color: var(--color-text-primary);
     text-align: left;
     cursor: pointer;
+  }
+
+  .table-pagination__toggle:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
   }
 
   .table-pagination__toggle-copy {
@@ -928,6 +943,11 @@
   .row-action:hover {
     border-color: var(--color-secondary-500);
     background: var(--color-success-bg);
+  }
+
+  .row-action:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
   }
 
   .row-action:disabled {
