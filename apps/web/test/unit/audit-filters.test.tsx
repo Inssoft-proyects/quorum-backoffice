@@ -33,4 +33,25 @@ describe('AuditFilters', () => {
     const lastCall = replaceMock.mock.calls.at(-1)?.[0] as string;
     expect(lastCall).toMatch(/entityType=marbete/);
   });
+
+  it('updates URL when the search input changes', async () => {
+    const user = userEvent.setup();
+    render(<AuditFilters />);
+    const searchInput = screen.getByTestId('filter-search');
+    await user.type(searchInput, 'm-AB12CD');
+    expect(replaceMock).toHaveBeenCalled();
+    const lastCall = replaceMock.mock.calls.at(-1)?.[0] as string;
+    expect(lastCall).toMatch(/search=m-AB12CD/);
+  });
+
+  it('renders the search input inside the inventory-search shell', () => {
+    render(<AuditFilters />);
+    const shell = screen.getByTestId('audit-filters');
+    expect(shell).toBeInTheDocument();
+    // The shell now hosts the search input — verify the input is
+    // nested inside the .inventory-search container by querying it
+    // through the shell.
+    const searchInput = screen.getByTestId('filter-search');
+    expect(shell.contains(searchInput)).toBe(true);
+  });
 });

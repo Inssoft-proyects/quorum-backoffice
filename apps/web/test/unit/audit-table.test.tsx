@@ -39,4 +39,18 @@ describe('AuditTable', () => {
     screen.getByTestId('audit-detail-1').click();
     expect(onSelect).toHaveBeenCalledWith(sample[0]);
   });
+
+  it('renders an AUD-#### IdBadge for each row matching the entry id', () => {
+    render(<AuditTable items={sample} onSelect={() => {}} />);
+    // The badge text is the formatted value, padded to 4 digits.
+    expect(screen.getByText('AUD-0001')).toBeInTheDocument();
+  });
+
+  it('renders the action label as a StatusChip with the correct variant', () => {
+    render(<AuditTable items={sample} onSelect={() => {}} />);
+    // The marbete.create action maps to the 'available' (success)
+    // variant — chip--available class is applied to the chip span.
+    const actionChip = screen.getByText('marbete.create');
+    expect(actionChip.className).toMatch(/chip--available/);
+  });
 });
