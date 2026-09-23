@@ -134,6 +134,9 @@ Cerrados en Polish WU v3 (commits `859c8f3` + `157b163` + `70c9c16` + `fcd523d` 
 - **W #5 S-M** (argon2id migration): dual-verify + transparent re-hash on first successful login.
 - **W #6 M** (audit_log archival): `audit_log_archive` table + `archive_audit_log(retention_days)` SECURITY DEFINER + cron weekly en RUNBOOK.
 
+Cerrados en WU #2 (commits `f7d071c` + `9a425b8` en feature/dispositivos-v2, merge TBD a master):
+- **WU #2 L** (Rediseño /dispositivos): replica del patrón marbetes v2. 4 metric cards (Total / Activos / Revocados / Sin marca con pills attention), DonutChart segments, tabla rediseñada con IdBadge DIS-#### + StatusChip, filtros en `.inventory-search` shell, Playwright spec `08-dispositivos-design.spec.ts` con 5 cases (T8.1-T8.5). 3 dialogs (Create/Edit/Revoke) intactos. Plan en `odd/tasks/dispositivos-inventory-v2.md`.
+
 Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + `764243e` en `feature/wu0-bootstrap`):
 - **RESP-001 P0** (mobile responsive): AppShell con sidebar colapsable en <md.
 - **A11Y-001 P1**: landmark `<header>` en card de /login.
@@ -142,10 +145,8 @@ Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + `764243e` 
 - **W #8 XS** (aria-modal MobileNav): explícito en `<DialogContent>`. Cerrado en v3 commit `157b163`.
 
 Pendientes (L effort, sesiones dedicadas futuras):
-- Redesign `/dispositivos` per maquet InecConecta (replica del marbetes v2).
-- Redesign `/audit` per maquet InecConecta.
-- Bulk upload endpoint para "Cargar marbetes".
-- RDD review (bloqueado por config del harness — host relay sin modelo asignado).
+- Redesign `/audit` per maquet InecConecta (replica del marbetes v2 con patrón adaptado a entries de audit log).
+- Bulk upload endpoint para "Cargar marbetes" (CSV/Excel parser + UI upload).
 
 ## Decisiones técnicas heredadas (no cambiar sin discutir)
 
@@ -167,9 +168,9 @@ Pendientes (L effort, sesiones dedicadas futuras):
 ## Próximos pasos sugeridos
 
 Items L pendientes (sesiones dedicadas):
-1. **Rediseño `/dispositivos`** per maquet InecConecta (replicar marbetes v2 con `inventory/*` components).
-2. **Rediseño `/audit`** per maquet InecConecta (idem).
-4. **Bulk upload endpoint** para "Cargar marbetes" (CSV/Excel parser + UI upload).
+1. ~~Rediseño `/dispositivos`~~ (done in WU #2)
+2. **Rediseño `/audit`** per maquet InecConecta
+3. **Bulk upload endpoint** para "Cargar marbetes"
 
 Bloqueado por config:
 - **RDD review** del Polish WU v3 (5 commits + 1 merge). requiere asignar modelo al host relay en `agent model routing config`.
