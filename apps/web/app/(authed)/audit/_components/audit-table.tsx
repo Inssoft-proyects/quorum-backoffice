@@ -1,44 +1,45 @@
 'use client';
+
+import * as React from 'react';
 import type { AuditEntry } from '@quorum-backoffice/shared';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { IdBadge, SortHeader, StatusChip, type SortState } from '@/components/inventory';
 
 interface Props {
   items: AuditEntry[];
+  /** Current sort applied to the table. Optional for test-render parity. */
+  sort?: SortState | null;
+  /** Notifies the parent of a sort cycle. */
+  onSortChange?: (s: SortState | null) => void;
   onSelect: (entry: AuditEntry) => void;
 }
 
 /**
- * Maps the AuditAction value to a Badge variant. Destructive actions
- * (delete / revoke / failed logins) get the destructive variant; writes
- * (create / assign / login) get default; everything else is secondary.
+ * Maps the AuditAction value to a StatusChip variant. Reads `succesful`
+ * writes as the green "available" variant, destructive actions as
+ * "danger", and meta actions (update, reveal, logout) as the neutral
+ * "assigned" variant (border + no bullet). The full set of AuditAction
+ * values is covered.
  */
-function actionVariant(
+function actionToVariant(
   action: AuditEntry['action'],
-): 'default' | 'secondary' | 'destructive' | 'outline' {
+): 'available' | 'assigned' | 'warning' | 'danger' {
   if (
     action.endsWith('.delete') ||
     action.endsWith('.revoke') ||
     action === 'auth.failed'
   ) {
-    return 'destructive';
+    return 'danger';
   }
   if (
     action.endsWith('.create') ||
     action.endsWith('.assign') ||
+    action.endsWith('.bulk_create') ||
     action === 'auth.login'
   ) {
-    return 'default';
+    return 'available';
   }
-  return 'secondary';
+  // update / reveal / logout → neutral chip
+  return 'assigned';
 }
 
 function formatDate(iso: string): string {
@@ -53,12 +54,39 @@ function formatDate(iso: string): string {
 }
 
 /**
- * Audit log table (WU10). Read-only; the action column is the row's
- * "Ver" button which opens the detail drawer with the full before/after
- * JSON. Rows expose data-testid hooks for both the row and the detail
- * trigger so tests can target them directly.
+ * The audit log table (v2 — maquette pattern).
+ *
+ * Renders ID (AUD-####) / Fecha / Actor / Acción / Entidad / OTP /
+ * Detalle. Uses the inventory shell (.table-shell + .data-table), the
+ * sortable header primitive (SortHeader), the IdBadge for the ID column,
+ * and the StatusChip for the action label. The row carries an onClick
+ * that opens the drawer so the T6 interaction-flow spec can target the
+ * `<tr>` directly via the existing testid.
+ *
+ * `sort` and `onSortChange` are mandatory; the page-client owns the
+ * sort state.
  */
-export function AuditTable({ items, onSelect }: Props) {
+export function AuditTable({ items, sort, onSortChange, onSelect }: Props) {
+  const currentSort: SortState | null = sort ?? null;
+  const changeSort = onSortChange ?? (() => {});
+
+  function handleSort(key: string) {
+    let next: SortState | null;
+    if (!currentSort || currentSort.key !== key) {
+      // First click on a column: default direction is DESC for date
+      // columns (most recent first) and ASC for everything else.
+      const direction = key === 'occurredAt' ? 'desc' : 'asc';
+      next = { key, direction };
+    } else {
+      // Same column clicked again: 2-state toggle.
+      next = {
+        key,
+        direction: currentSort.direction === 'asc' ? 'desc' : 'asc',
+      };
+    }
+    changeSort(next);
+  }
+
   if (items.length === 0) {
     return (
       <div
@@ -69,55 +97,86 @@ export function AuditTable({ items, onSelect }: Props) {
       </div>
     );
   }
+
   return (
-    <div className="rounded-md border border-border bg-card">
-      <Table data-testid="audit-table">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Fecha</TableHead>
-            <TableHead>Actor</TableHead>
-            <TableHead>Acción</TableHead>
-            <TableHead>Entidad</TableHead>
-            <TableHead>OTP</TableHead>
-            <TableHead className="text-right">Detalle</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.map((e) => (
-            <TableRow key={e.id} data-testid={`audit-row-${e.id}`}>
-              <TableCell className="text-sm">{formatDate(e.occurredAt)}</TableCell>
-              <TableCell>
-                <div className="flex flex-col">
-                  <span className="text-sm">{e.actorEmail ?? e.actorId}</span>
-                  {e.actorEmail ? (
-                    <span className="text-xs text-text-muted">{e.actorId}</span>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant={actionVariant(e.action)}>{e.action}</Badge>
-              </TableCell>
-              <TableCell className="font-mono text-xs">
-                {e.entityType ?? '—'}
-                {e.entityId ? ` · ${e.entityId}` : ''}
-              </TableCell>
-              <TableCell className="font-mono text-xs">
-                {e.otpId ?? '—'}
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  variant="outline"
-                  size="sm"
+    <div className="table-shell" data-testid="audit-table">
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <SortHeader
+                label="ID"
+                sortKey="id"
+                currentSort={currentSort}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Fecha"
+                sortKey="occurredAt"
+                currentSort={currentSort}
+                onSort={handleSort}
+              />
+              <th scope="col">Actor</th>
+              <th scope="col">Acción</th>
+              <th scope="col">Entidad</th>
+              <th scope="col">OTP</th>
+              <th scope="col" className="text-right">
+                Detalle
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((e) => {
+              const variant = actionToVariant(e.action);
+              const audId = `AUD-${String(e.id).padStart(4, '0')}`;
+              return (
+                <tr
+                  key={e.id}
+                  data-testid={`audit-row-${e.id}`}
                   onClick={() => onSelect(e)}
-                  data-testid={`audit-detail-${e.id}`}
+                  style={{ cursor: 'pointer' }}
                 >
-                  Ver
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                  <td data-label="ID">
+                    <IdBadge value={audId} />
+                  </td>
+                  <td data-label="Fecha" className="text-sm">
+                    {formatDate(e.occurredAt)}
+                  </td>
+                  <td data-label="Actor">
+                    <div className="flex flex-col">
+                      <span className="text-sm">{e.actorEmail ?? e.actorId}</span>
+                      {e.actorEmail ? (
+                        <span className="text-xs text-text-muted">{e.actorId}</span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td data-label="Acción">
+                    <StatusChip variant={variant}>{e.action}</StatusChip>
+                  </td>
+                  <td data-label="Entidad" className="font-mono text-xs">
+                    {e.entityType ?? '—'}
+                    {e.entityId ? ` · ${e.entityId}` : ''}
+                  </td>
+                  <td data-label="OTP" className="font-mono text-xs">
+                    {e.otpId ?? '—'}
+                  </td>
+                  <td data-label="Detalle" className="text-right">
+                    <button
+                      type="button"
+                      className="row-action"
+                      onClick={() => onSelect(e)}
+                      data-testid={`audit-detail-${e.id}`}
+                      aria-label="Ver detalle"
+                    >
+                      Ver
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

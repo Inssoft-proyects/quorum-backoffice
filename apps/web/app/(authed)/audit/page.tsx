@@ -3,7 +3,6 @@ import { hasAtLeastRole, ListAuditFilter } from '@quorum-backoffice/shared';
 import type { z } from 'zod';
 import { listAuditEntries } from '@/lib/api-client';
 import { getServerSession, getAuthCookieHeader } from '@/lib/server-session';
-import { AuditFilters } from './_components/audit-filters';
 import { AuditPageClient } from './_components/audit-page-client';
 
 const VALID_ENTITY_TYPES = new Set(['marbete', 'dispositivo', 'session']);
@@ -12,6 +11,8 @@ const VALID_ACTIONS = new Set([
   'marbete.update',
   'marbete.delete',
   'marbete.assign',
+  'marbete.reveal',
+  'marbete.bulk_create',
   'dispositivo.create',
   'dispositivo.update',
   'dispositivo.revoke',
@@ -57,7 +58,7 @@ export default async function AuditPage({
   const rawSearch = pickString(sp.search);
 
   const filter: z.input<typeof ListAuditFilter> = {
-    limit: 100,
+    limit: 200,
     offset: 0,
   };
   if (VALID_ENTITY_TYPES.has(rawEntityType)) {
@@ -73,13 +74,5 @@ export default async function AuditPage({
 
   const list = await listAuditEntries(filter, cookie);
 
-  return (
-    <div className="grid gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-text-primary">Auditoría</h1>
-      </div>
-      <AuditFilters />
-      <AuditPageClient items={list.items} total={list.total} />
-    </div>
-  );
+  return <AuditPageClient items={list.items} total={list.total} />;
 }

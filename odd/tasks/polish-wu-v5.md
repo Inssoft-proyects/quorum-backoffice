@@ -73,9 +73,23 @@ Adaptar el patrón de inventario v2 (4 metric cards + donut + tabla con sort + f
 - Bulk actions de audit (archive/delete masivo).
 - Cambios al `AuditDetailDrawer` (queda intacto per spec).
 
-## 8. Bitácora (a completar al cerrar)
+## 8. Bitácora
 
 | Commit | Task | Líneas | Notas |
 | --- | --- | --- | --- |
-| (TBD) | Tasks 1-3 page + client + table + filters + Playwright spec | TBD | (a llenar al cierre con hashes reales) |
-| (this commit) | Doc closeout | TBD | Update `odd/tasks/quorum-backoffice-mvp.md` §12 + `HANDOFF.md` + este §8 |
+| (TBD — awaiting parent work-unit commit) | Tasks 1-4 page + client + table + filters + Playwright spec | +~640 / -~210 net | Implementación completa del patrón marbetes v2 en `/audit`. Tests 79/79 verde (22 suites). typecheck + lint clean. build 7 rutas. `audit-page-client.test.tsx` (NEW, 6 tests: T1 4 metric cards, T2 Marbetes filter, T3 Fecha sort cycle, T4 Total reset, T5 Dispositivos filter, T6 ID sort cycle) + `audit-table.test.tsx` (+2 tests: AUD-#### IdBadge + StatusChip variant) + `audit-filters.test.tsx` (+2 tests: search URL update + shell containment) + `09-audit-design.spec.ts` (NEW, 6 Playwright cases T9.1-T9.6). Archivo de página reescrito: limit 100→200, VALID_ACTIONS extendido a los 12 valores del enum AuditAction (incluye `marbete.reveal` y `marbete.bulk_create`). `AuditDetailDrawer` intacto (`data-testid="audit-detail"` preservado). T6 interaction-flows spec línea 116+ sigue compatible: el `<tr data-testid="audit-row-{id}">` ahora abre el drawer via onClick; el botón `Ver` conserva su propio onClick. Sin nuevos tokens CSS, sin nuevos componentes, sin nuevas deps. |
+| (this commit — pending parent review) | Doc closeout | +~80 / -~30 net | Update `odd/tasks/quorum-backoffice-mvp.md` §12 + `HANDOFF.md` + este §8 |
+
+## 9. Resultado final
+
+- **Tests**: 79 web RTL (22 suites) + 115 API integration (11 suites) = 194 tests verdes sin regresiones.
+- **typecheck**: clean en `web` + `api` + `shared`.
+- **lint**: 0 errors / 0 warnings nuevas (los pre-existentes en archivos no tocados no se consideran regresión).
+- **build**: 7 rutas (`/`, `/_not-found`, `/audit`, `/dashboard`, `/dispositivos`, `/login`, `/marbetes`). `/audit` se mantiene como `ƒ Dynamic`.
+- **Strict TDD**: ciclo RED→GREEN→TRIANGULATE ejecutado en `audit-page-client.test.tsx` (6 tests finales vs 4 RED originales); `audit-table.test.tsx` y `audit-filters.test.tsx` actualizados con casos nuevos. Evidencia:
+  - RED capturado: 6 tests fallidos en el primer run antes de tocar la implementación (2 en `audit-table.test.tsx` + 4 en `audit-page-client.test.tsx`).
+  - GREEN: 16/16 tests en los 4 archivos audit después de implementar.
+  - TRIANGULATE: +2 tests en `audit-page-client.test.tsx` (Dispositivos filter + ID sort cycle).
+- **Reuso estricto**: IdBadge (sin variante nueva, usa `value` libre), StatusChip (variantes existentes 'available'/'assigned'/'danger' mapeadas a create/assign/login, update/reveal/logout, delete/revoke/failed), SortHeader, MetricCard, Pagination, DonutChart — todos de `apps/web/components/inventory/`. Sin agregar `.chip--info` ni ningún token nuevo.
+- **Compatibilidad**: T6 spec (`05-interaction-flows.spec.ts` línea 116+) sigue pasando — el `<tr>` ahora abre el drawer vía `onClick`, y el botón `Ver` conserva su propio `onClick` + testid `audit-detail-{id}` para la unit test.
+
