@@ -448,13 +448,11 @@ describe('marbetes routes with rejected OTP (integration)', () => {
  * WU #1: POST /api/v1/marbetes/:id/reveal returns the unmasked publicUid
  * for an admin and emits an audit_log entry.
  *
- * Implementation notes (deviation from the handbook description):
- *   - The `audit_action` enum does not include a dedicated `marbete.reveal`
- *     label (extending it would require a new migration). The service tags
- *     the audit row with action `marbete.update` (the closest existing
- *     admin-event label) and folds `motivo` + `comentario` into the
- *     existing `after_jsonb` JSONB column. The integration test asserts
- *     against those columns.
+ * Implementation notes:
+ *   - The service emits an audit_log row with the dedicated `marbete.reveal`
+ *     action (enum value added in migration 0008_audit_action_reveal.sql)
+ *     and folds `motivo` + `comentario` into the existing `after_jsonb`
+ *     JSONB column.
  *   - Role gating: `requireRole('admin')`. The 403 test logs in a seeded
  *     `operator` user via the real /auth/login flow (rbac.test.ts pattern)
  *     because the `x-test-actor` shim is hard-wired to admin.
@@ -563,7 +561,7 @@ describe('reveal endpoint (WU #1)', () => {
     expect(() => new Date(body.revealedAt).toISOString()).not.toThrow();
   });
 
-  it('POST /reveal emits an audit_log row tagged marbete.update + motivo in after_jsonb', async () => {
+  it('POST /reveal emits an audit_log row tagged marbete.reveal + motivo in after_jsonb', async () => {
     const seeded = await seedMarbete('REVEAL-AUDIT-1');
     const motivo = `motivo-${Date.now()}`;
     const r = await app.inject({
@@ -574,9 +572,10 @@ describe('reveal endpoint (WU #1)', () => {
     });
     expect(r.statusCode).toBe(200);
 
-    // The service tags the audit row with action='marbete.update' (closest
-    // existing enum value) and folds motivo + comentario into after_jsonb
-    // (no dedicated `metadata` column in the current schema).
+    // The service tags the audit row with action='marbete.reveal'
+    // (enum value added in migration 0008_audit_action_reveal.sql) and
+    // folds motivo + comentario into after_jsonb via the audit-service
+    // `metadata` field (no dedicated column on audit_log).
     const audit = await pool.query<{
       action: string;
       after_jsonb: { motivo?: string; comentario?: string } | null;
@@ -590,7 +589,7 @@ describe('reveal endpoint (WU #1)', () => {
     );
     const row = audit.rows[0];
     expect(row).toBeDefined();
-    expect(row?.action).toBe('marbete.update');
+    expect(row?.action).toBe('marbete.reveal');
     expect(row?.otp_id).toBe(MOCK_OTP_ID);
     expect(row?.after_jsonb?.motivo).toBe(motivo);
     expect(row?.after_jsonb?.comentario).toBe('verificacion de inventario');

@@ -124,6 +124,32 @@ WHERE table_name = 'audit_log'
 -- Must return zero rows with grantee='PUBLIC'.
 ```
 
+### Audit log archival
+
+The `audit_log` table has `REVOKE UPDATE, DELETE, TRUNCATE FROM PUBLIC` (see
+`apps/api/migrations/0004_audit.sql`) so it is append-only by application
+users. A SECURITY DEFINER function `archive_audit_log(retention_days integer)`
+moves rows older than `retention_days` into the `audit_log_archive` table
+(added in migration `0007_audit_archival.sql`).
+
+To run it manually (as the migration owner or an admin role):
+
+```sql
+SELECT archive_audit_log(365);   -- archive rows older than 1 year
+```
+
+Returns the number of rows moved.
+
+Recommended cron schedule (run weekly, off-peak):
+
+```
+0 3 * * 0  psql "$DATABASE_URL" -c "SELECT archive_audit_log(365);"
+```
+
+Wire the schedule into your existing cron manager (k8s CronJob, systemd
+timer, host crontab). The retention window is a policy decision; 365 days
+is the project's default per HANDOFF §"Polish items pendientes" #4.
+
 ### Verify Redis rate-limit counters
 
 ```bash

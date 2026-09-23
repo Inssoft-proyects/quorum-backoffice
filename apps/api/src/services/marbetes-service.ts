@@ -24,6 +24,7 @@ import type {
   RevealMarbeteRequest,
   RevealMarbeteResponse,
   UpdateMarbeteRequest,
+  AuditAction,
 } from '@quorum-backoffice/shared';
 
 interface RequestMeta {
@@ -267,6 +268,8 @@ export class MarbetesService {
    * Side effects: a single audit_log entry with the supplied motivo +
    * comentario folded into `after_jsonb`. The OTP scope `marbete.reveal`
    * is forwarded to OtpClient.verify when AUTH_OTP_REQUIRED is enabled.
+   *
+   * Audit action is 'marbete.reveal' (enum value added in migration 0008).
    */
   async reveal(
     actor: string,
@@ -284,7 +287,11 @@ export class MarbetesService {
     const audit = new AuditService(this.deps.pool);
     await audit.write({
       actorId: actor,
-      action: 'marbete.update',
+      // 'marbete.reveal' is added to the audit_action SQL enum by
+      // migration 0008_audit_action_reveal.sql. The shared AuditAction
+      // Zod enum intentionally stays in sync with the SQL enum on a
+      // per-PR basis; cast here until the next shared-package bump.
+      action: 'marbete.reveal' as AuditAction,
       entityType: 'marbete',
       entityId: row.public_uid,
       metadata: { motivo: req.motivo, comentario: req.comentario ?? null },
