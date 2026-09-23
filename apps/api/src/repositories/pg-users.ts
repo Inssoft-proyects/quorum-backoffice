@@ -46,4 +46,19 @@ export class PgUserRepo {
   async updateLastLogin(id: number): Promise<void> {
     await this.client.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [id]);
   }
+
+  /**
+   * Replace a user's stored password hash. Used by the auth service for
+   * transparent on-login upgrades from legacy bcrypt to argon2id (see
+   * `apps/api/src/services/auth-service.ts`).
+   *
+   * The `users` table has no `updated_at` column (see migration
+   * `0005_auth.sql`); only `password_hash` is updated.
+   */
+  async updatePasswordHash(userId: number, newHash: string): Promise<void> {
+    await this.client.query(
+      `UPDATE users SET password_hash = $1 WHERE id = $2`,
+      [newHash, userId],
+    );
+  }
 }

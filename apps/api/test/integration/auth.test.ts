@@ -21,6 +21,7 @@ import { Pool } from 'pg';
 import path from 'node:path';
 import bcrypt from 'bcrypt';
 import { buildApp } from '../../src/app';
+import { hashPassword } from '../../src/lib/password';
 import { migrate } from '../../src/migrations';
 
 const TEST_DATABASE_URL =
@@ -307,6 +308,89 @@ describe('auth routes (integration, real PG + Redis)', () => {
         headers: { cookie: 'sid=this-is-not-a-real-token' },
       });
       expect(r.statusCode).toBe(401);
+    });
+  });
+
+  describe('argon2id migration (WU5)', () => {
+    /**
+     * Insert a user whose password_hash is a pre-computed string (bcrypt or
+     * argon2id). Used by the migration tests below. Returns the inserted
+     * user id.
+     */
+    async function seedUserWithHash(
+      pool: Pool,
+      email: string,
+      hash: string,
+      role: 'admin' | 'operator' | 'auditor' = 'operator',
+    ): Promise<number> {
+      const r = await pool.query<{ id: number }>(
+        `INSERT INTO users (email, password_hash, role)
+         VALUES (lower($1), $2, $3)
+         RETURNING id`,
+        [email, hash, role],
+      );
+      const id = r.rows[0]?.id;
+      if (!id) throw new Error('user_seed_failed');
+      return id;
+    }
+
+    it('upgrades a legacy bcrypt hash to argon2id on successful login', async () => {
+      const email = `migrate-up-${Date.now()}@example.test`;
+      const password = 'M1gr@tePw!';
+      const bcryptHash = await bcrypt.hash(password, BCRYPT_COST);
+      expect(bcryptHash.startsWith('$2')).toBe(true);
+      await seedUserWithHash(pool, email, bcryptHash);
+
+      // Baseline: stored hash is a bcrypt hash before login.
+      const before = await pool.query<{ password_hash: string }>(
+        `SELECT password_hash FROM users WHERE email = lower($1)`,
+        [email],
+      );
+      expect(before.rows[0]?.password_hash).toBe(bcryptHash);
+
+      // Successful login.
+      const r = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ email, password }),
+      });
+      expect(r.statusCode).toBe(200);
+
+      // After login, the stored hash must have been transparently
+      // re-written as an argon2id PHC string.
+      const after = await pool.query<{ password_hash: string }>(
+        `SELECT password_hash FROM users WHERE email = lower($1)`,
+        [email],
+      );
+      const newHash = after.rows[0]?.password_hash;
+      expect(newHash).toBeDefined();
+      expect(newHash).not.toBe(bcryptHash);
+      expect(newHash?.startsWith('$argon2id$')).toBe(true);
+    });
+
+    it('does not re-write an already-argon2id hash on successful login (idempotent)', async () => {
+      const email = `migrate-keep-${Date.now()}@example.test`;
+      const password = 'Idemp0tentPw!';
+      const argonHash = await hashPassword(password);
+      expect(argonHash.startsWith('$argon2id$')).toBe(true);
+      await seedUserWithHash(pool, email, argonHash);
+
+      // Login.
+      const r = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ email, password }),
+      });
+      expect(r.statusCode).toBe(200);
+
+      // Hash must be byte-identical to what we seeded.
+      const after = await pool.query<{ password_hash: string }>(
+        `SELECT password_hash FROM users WHERE email = lower($1)`,
+        [email],
+      );
+      expect(after.rows[0]?.password_hash).toBe(argonHash);
     });
   });
 });

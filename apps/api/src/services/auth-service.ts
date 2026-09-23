@@ -16,7 +16,7 @@ import type pg from 'pg';
 import type { FastifyBaseLogger } from 'fastify';
 import type { LoginRequest, MeResponse, UserRole } from '@quorum-backoffice/shared';
 import { AppError } from '../lib/errors';
-import { verifyPassword } from '../lib/password';
+import { hashPassword, isLegacyBcryptHash, verifyPassword } from '../lib/password';
 import { generateSessionToken } from '../lib/session-token';
 import { hitLoginRateLimit, resetLoginRateLimit, type RedisLike } from '../lib/rate-limit';
 import { PgUserRepo } from '../repositories/pg-users';
@@ -113,6 +113,25 @@ export class AuthService {
     if (!ok) {
       await this.recordFailure(email, 'wrong_password', meta);
       throw new AppError('invalid_credentials', 'invalid email or password', 401);
+    }
+
+    // Transparent hash upgrade: if the user signed in with a legacy
+    // bcrypt hash, re-hash with argon2id and persist. Best-effort: a
+    // failed UPDATE here must not block the login.
+    if (ok && isLegacyBcryptHash(user.password_hash)) {
+      try {
+        const upgraded = await hashPassword(req.password);
+        await this.users.updatePasswordHash(user.id, upgraded);
+        this.log.info(
+          { userId: user.id, email: user.email },
+          'password_hash_upgraded_argon2id',
+        );
+      } catch (err) {
+        this.log.warn(
+          { err, userId: user.id, email: user.email },
+          'password_hash_upgrade_failed_non_blocking',
+        );
+      }
     }
 
     // Issue a session.

@@ -109,3 +109,20 @@ export interface ListMarbetesResponse {
   offset: number;
   items: MarbeteDetailResponse[];
 }
+
+// ---- Reveal (WU #1) ----
+// Audit-only read: returns the unmasked publicUid so admins can read out
+// the full identifier to a student/auditor. The original scanned code is
+// never recoverable (only code_hash is stored).
+export const RevealMarbeteRequest = z.object({
+  motivo: z.string().min(3).max(500),
+  comentario: z.string().max(500).optional(),
+});
+export type RevealMarbeteRequest = z.infer<typeof RevealMarbeteRequest>;
+
+export interface RevealMarbeteResponse {
+  /** The full publicUid, e.g. "m-AB12CD". */
+  code: string;
+  /** ISO 8601 timestamp of the reveal. */
+  revealedAt: string;
+}

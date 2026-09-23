@@ -17,6 +17,7 @@ import {
   DeleteMarbeteRequest,
   ListAuditFilter,
   ListMarbetesFilter,
+  RevealMarbeteRequest,
   UpdateMarbeteRequest,
   type AuditEntry,
   type CreateDispositivoRequest,
@@ -30,6 +31,7 @@ import {
   type MarbeteCountersResponse,
   type MarbeteDetailResponse,
   type MeResponse,
+  type RevealMarbeteResponse,
   type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
 
@@ -268,6 +270,20 @@ export async function updateMarbete(
 ): Promise<MarbeteDetailResponse> {
   return apiPatchWithOtp<MarbeteDetailResponse>(
     `/api/v1/marbetes/${id}`,
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+export async function revealMarbete(
+  id: number,
+  req: RevealMarbeteRequest,
+  otpCode: string,
+  cookie?: string,
+): Promise<RevealMarbeteResponse> {
+  return apiPostWithOtp<RevealMarbeteResponse>(
+    `/api/v1/marbetes/${id}/reveal`,
     req,
     otpCode,
     cookie,

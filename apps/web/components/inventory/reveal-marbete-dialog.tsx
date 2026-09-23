@@ -14,12 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ApiError, revealMarbete } from '@/lib/api-client';
 
 export interface RevealMarbeteDialogProps {
   marbeteId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Called with the (mocked) full code when the user submits the form. */
+  /** Called with the full publicUid once the server confirms the reveal. */
   onRevealed: (fullCode: string) => void;
 }
 
@@ -33,12 +34,11 @@ const REASONS: ReadonlyArray<{ value: string; label: string }> = [
 /**
  * "Revelar marbete" dialog (maquette v2).
  *
- * NOTE: There is no backend endpoint for the reveal flow yet. This dialog
- * is wired as a UX skeleton — submitting calls `onRevealed` with a derived
- * `ABCDEF-${id}` placeholder, the parent shows a success toast, and the
- * actual API integration will replace this client-side mock. We mark the
- * shape of the request (motivo + comentario) so the future endpoint can be
- * added without changing the UI.
+ * WU #1 (WU #1 in HANDOFF): Calls POST /api/v1/marbetes/:id/reveal and
+ * returns the full publicUid via onRevealed. The original scanned code is
+ * never recoverable (only code_hash is stored), so "reveal" simply lifts
+ * the mask applied by maskCode(publicUid). The motivation is recorded in
+ * audit_log; the response carries the unmasked publicUid.
  */
 export function RevealMarbeteDialog({
   marbeteId,
@@ -74,15 +74,22 @@ export function RevealMarbeteDialog({
     setLoading(true);
     setError(null);
     try {
-      // Backend integration pending — emit a deterministic placeholder so
-      // the parent UI can react (toast / row update). The shape of the data
-      // matches what the (future) reveal endpoint is expected to accept.
-      const placeholder = `CRD-${String(marbeteId).padStart(4, '0')}-${Date.now()}`;
-      onRevealed(placeholder);
+      const response = await revealMarbete(
+        marbeteId,
+        { motivo: reason, comentario: comment.length > 0 ? comment : undefined },
+        '', // OTP header; UI does not collect one. Server enforces only if AUTH_OTP_REQUIRED=true.
+      );
+      onRevealed(response.code);
       reset();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al revelar.');
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'No se pudo revelar el marbete.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
