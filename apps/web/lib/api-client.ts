@@ -13,6 +13,7 @@
 
 import type { z } from 'zod';
 import {
+  BulkCreateMarbetesRequest,
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
   ListAuditFilter,
@@ -20,6 +21,7 @@ import {
   RevealMarbeteRequest,
   UpdateMarbeteRequest,
   type AuditEntry,
+  type BulkCreateMarbetesResponse,
   type CreateDispositivoRequest,
   type DeleteDispositivoRequest,
   type DispositivoDetailResponse,
@@ -284,6 +286,25 @@ export async function revealMarbete(
 ): Promise<RevealMarbeteResponse> {
   return apiPostWithOtp<RevealMarbeteResponse>(
     `/api/v1/marbetes/${id}/reveal`,
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+// ---- Marbetes bulk upload (WU #3 / Polish WU v4) ----
+//
+// Admin-only transactional create of up to 200 marbetes in a single
+// call. Per-row outcomes are returned in `successes` / `failures` so
+// partial successes are observable; the dialog displays the summary
+// before the parent re-fetches via onSaved().
+export async function bulkCreateMarbetes(
+  req: z.input<typeof BulkCreateMarbetesRequest>,
+  otpCode: string,
+  cookie?: string,
+): Promise<BulkCreateMarbetesResponse> {
+  return apiPostWithOtp<BulkCreateMarbetesResponse>(
+    '/api/v1/marbetes/bulk',
     req,
     otpCode,
     cookie,

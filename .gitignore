@@ -54,3 +54,9 @@ next-env.d.ts
 # Nested design-asset repos that confuse the review engine
 /diseno/maqueta_Inec/
 /diseno/design/
+
+# Playwright artifacts (test output, html report, traces)
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+apps/*/test-results/

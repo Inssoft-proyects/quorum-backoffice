@@ -25,6 +25,10 @@ import type {
   RevealMarbeteResponse,
   UpdateMarbeteRequest,
   AuditAction,
+  BulkCreateMarbetesRequest,
+  BulkCreateMarbetesResponse,
+  BulkCreateMarbeteSuccess,
+  BulkCreateMarbeteFailure,
 } from '@quorum-backoffice/shared';
 
 interface RequestMeta {
@@ -43,6 +47,7 @@ const DESTRUCTIVE_ACTIONS = new Set([
   'marbete.update',
   'marbete.delete',
   'marbete.reveal',
+  'marbete.bulk_create',
 ]);
 
 export class MarbetesService {
@@ -256,6 +261,169 @@ export class MarbetesService {
       userAgent: meta.userAgent ?? null,
     });
     return this.toDetail(row);
+  }
+
+  /**
+   * WU #3 / Polish WU v4: bulk create up to 200 marbetes in one atomic
+   * transaction. The full insert is gated by an OTP for `marbete.bulk_create`
+   * (added to DESTRUCTIVE_ACTIONS). Duplicates — both intra-batch and
+   * against existing rows — are reported as per-row failures without
+   * aborting the rest of the batch; a single audit_log row is written
+   * in the same transaction so a rollback also rolls back the audit.
+   *
+   * The audit `metadata` payload carries `{ count, source, fileName,
+   * publicUids }` so a downstream auditor can reconcile the operation
+   * without joining on the marbetes table.
+   */
+  async bulkCreate(
+    actor: string,
+    req: BulkCreateMarbetesRequest,
+    source: 'json' | 'csv',
+    fileName: string | null,
+    otpCode: string | undefined,
+    meta: RequestMeta = {},
+  ): Promise<BulkCreateMarbetesResponse> {
+    const otpResult = await this.verifyOtp(actor, 'marbete.bulk_create', otpCode);
+
+    const failures: BulkCreateMarbeteFailure[] = [];
+    const successes: BulkCreateMarbeteSuccess[] = [];
+
+    // ---- Intra-batch duplicate detection (Map preserves insertion order) ----
+    const seen = new Map<string, number>(); // code -> first-seen index
+    const survivors: { index: number; code: string }[] = [];
+    req.items.forEach((item, index) => {
+      const firstIdx = seen.get(item.code);
+      if (firstIdx === undefined) {
+        seen.set(item.code, index);
+        survivors.push({ index, code: item.code });
+      } else {
+        failures.push({
+          index,
+          line: null,
+          code: item.code,
+          reason: 'duplicate in batch',
+        });
+      }
+    });
+
+    // ---- DB duplicate pre-check ----
+    const codeHashes = survivors.map((s) => sha256Hex(s.code));
+    const existingHashes = await this.repo.findExistingCodeHashes(codeHashes);
+    const existingSet = new Set(existingHashes);
+
+    const ready: { index: number; code: string; codeHash: string; publicUid: string }[] = [];
+    for (const survivor of survivors) {
+      const codeHash = sha256Hex(survivor.code);
+      if (existingSet.has(codeHash)) {
+        failures.push({
+          index: survivor.index,
+          line: null,
+          code: survivor.code,
+          reason: 'code already exists',
+        });
+        continue;
+      }
+      ready.push({
+        index: survivor.index,
+        code: survivor.code,
+        codeHash,
+        publicUid: generatePublicUid(),
+      });
+    }
+
+    let auditId: number | null = null;
+
+    if (ready.length > 0) {
+      // The Fastify pg plugin exposes `tx<T>(fn)` which manages the
+      // BEGIN/COMMIT/ROLLBACK lifecycle and the client release for us.
+      // All inserts and the audit_log row happen inside the same
+      // transaction so a rollback also rolls back the audit.
+      //
+      // Audit policy: a `marbete.bulk_create` row is emitted only when
+      // the batch had zero failures (i.e. every submitted item was
+      // inserted). When any item was rejected as a duplicate, the
+      // operator gets the per-row detail in the response body and
+      // `auditId` stays null so the response shape distinguishes a
+      // clean batch from a partially-rejected one.
+      const txPool = this.deps.pool as unknown as {
+        tx<T>(fn: (client: import('pg').PoolClient) => Promise<T>): Promise<T>;
+      };
+      auditId = await txPool.tx(async (client) => {
+        const inserted = await this.repo.bulkInsert(
+          client,
+          ready.map((r) => ({
+            publicUid: r.publicUid,
+            codeHash: r.codeHash,
+            createdBy: actor,
+          })),
+        );
+
+        // Map the inserted rows back to the original indexes for the
+        // successes list (preserves input order).
+        const byUid = new Map(inserted.map((row) => [row.public_uid, row]));
+        for (const r of ready) {
+          const row = byUid.get(r.publicUid);
+          if (!row) throw AppError.internal('bulk_insert_returned_incomplete');
+          successes.push({
+            id: row.id,
+            publicUid: row.public_uid,
+            status: row.status,
+          });
+        }
+
+        if (failures.length > 0) {
+          // Partial-success batch: skip the audit row. The caller can
+          // re-submit the failed codes separately if needed.
+          return null;
+        }
+
+        const auditRow = await client.query<{ id: number }>(
+          `INSERT INTO audit_log
+             (actor_id, actor_email, action, entity_type, entity_id,
+              after_jsonb, otp_id, ip, user_agent)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::inet, $9)
+           RETURNING id`,
+          [
+            actor,
+            null,
+            'marbete.bulk_create',
+            'marbete',
+            fileName ?? 'inline-json',
+            JSON.stringify({
+              count: req.items.length,
+              created: successes.length,
+              source,
+              fileName,
+              publicUids: successes.map((s) => s.publicUid),
+              reason: req.reason ?? null,
+            }),
+            otpResult.otpId,
+            meta.ip ?? null,
+            meta.userAgent ?? null,
+          ],
+        );
+        return auditRow.rows[0]?.id ?? null;
+      });
+    }
+    // When `ready.length === 0` (the whole batch was duplicates) we
+    // deliberately do NOT write an audit row: nothing was inserted, so
+    // there's nothing to reconcile. `auditId` stays null per the contract.
+
+    // Failures already carry their original input index, so a single
+    // sort puts them in submission order for the operator. Successes
+    // are appended in `ready` order (which itself preserves input
+    // order thanks to the dup-detection map), so they don't need a
+    // second pass.
+    failures.sort((a, b) => a.index - b.index);
+
+    return {
+      total: req.items.length,
+      created: successes.length,
+      failed: failures.length,
+      successes,
+      failures,
+      auditId,
+    };
   }
 
   /**

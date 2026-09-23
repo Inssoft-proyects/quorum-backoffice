@@ -55,6 +55,9 @@ describe('migrations runner (integration, real PG)', () => {
       '0004_audit.sql',
       '0005_auth.sql',
       '0006_students_active.sql',
+      '0007_audit_archival.sql',
+      '0008_audit_action_reveal.sql',
+      '0009_audit_action_bulk.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -69,6 +72,9 @@ describe('migrations runner (integration, real PG)', () => {
       '0004_audit.sql',
       '0005_auth.sql',
       '0006_students_active.sql',
+      '0007_audit_archival.sql',
+      '0008_audit_action_reveal.sql',
+      '0009_audit_action_bulk.sql',
     ]);
   });
 

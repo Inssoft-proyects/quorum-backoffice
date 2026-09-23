@@ -8,6 +8,7 @@ import { PlusCircle, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AddMarbeteDialog,
+  BulkUploadDialog,
   MetricCard,
   Pagination,
   RevealMarbeteDialog,
@@ -20,7 +21,6 @@ import { MarbetesTable } from './marbetes-table';
 interface Props {
   items: MarbeteDetailResponse[];
   userRole: UserRole;
-  total: number;
 }
 
 /**
@@ -36,13 +36,14 @@ interface Props {
  * to "warning" ("Próxima a vencer"), anything past due flips to "danger"
  * ("Vencida") — matching the maquette's column chip pattern.
  */
-export function MarbetesPageClient({ items, userRole, total }: Props) {
+export function MarbetesPageClient({ items, userRole }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'available' | 'assigned' | 'attention'>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
   const [adding, setAdding] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [revealing, setRevealing] = useState<MarbeteDetailResponse | null>(null);
   const [revoking, setRevoking] = useState<MarbeteDetailResponse | null>(null);
 
@@ -157,11 +158,7 @@ export function MarbetesPageClient({ items, userRole, total }: Props) {
     setAdding(true);
   }
   function handleUploadClick() {
-    // Cargar marbetes (bulk upload) is out of scope for this redesign;
-    // the maquette includes the button as a placeholder. Toast instead.
-    if (typeof window !== 'undefined') {
-      window.alert('Función "Cargar marbetes" próximamente disponible.');
-    }
+    setBulkOpen(true);
   }
 
   const [lastRevealedCode, setLastRevealedCode] = useState<string | null>(null);
@@ -323,6 +320,11 @@ export function MarbetesPageClient({ items, userRole, total }: Props) {
           if (!o) setRevoking(null);
         }}
         onRevoked={handleRevoked}
+      />
+      <BulkUploadDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        onSaved={refresh}
       />
     </div>
   );

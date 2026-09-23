@@ -35,6 +35,8 @@ export function StudentLookup({ value, onChange, disabled }: Props) {
     typeof value === 'number' ? value : null,
   );
 
+  // `state` is intentionally excluded from deps: updating it inside
+  // this effect would re-trigger the effect and create a fetch loop.
   useEffect(() => {
     if (lookupId === null) {
       setStudent(null);
@@ -63,8 +65,7 @@ export function StudentLookup({ value, onChange, disabled }: Props) {
     return () => {
       cancelled = true;
     };
-    // `state` is intentionally excluded from deps: updating it inside
-    // this effect would re-trigger the effect and create a fetch loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lookupId]);
 
   function commitLookup(id: number | null) {

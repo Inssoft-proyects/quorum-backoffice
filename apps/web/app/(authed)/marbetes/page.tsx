@@ -54,6 +54,6 @@ export default async function MarbetesPage({
   void counters;
 
   return (
-    <MarbetesPageClient items={list.items} userRole={user.role} total={list.total} />
+    <MarbetesPageClient items={list.items} userRole={user.role} />
   );
 }

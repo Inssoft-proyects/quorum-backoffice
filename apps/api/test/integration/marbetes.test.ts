@@ -636,3 +636,301 @@ describe('reveal endpoint (WU #1)', () => {
   });
 });
 
+/**
+ * WU #3 / Polish WU v4: bulk upload endpoint.
+ *
+ * The suite mirrors the WU #1 reveal suite's setup pattern (drop tables,
+ * migrate, buildApp, install mocked OTP fetch) and covers:
+ *
+ *   T1. Happy path: POST /bulk accepts 3 codes, returns 3 successes, the
+ *       audit_log row is tagged `marbete.bulk_create`, and the audit_id
+ *       returned in the response body matches the DB row.
+ *   T2. Intra-batch duplicate: 2 identical codes in the same request yield
+ *       1 success + 1 failure (`duplicate in batch`), `auditId` is null
+ *       (nothing was actually inserted beyond the unique one), and the
+ *       DB has exactly 1 row.
+ *   T3. Pre-existing code: a row is inserted via the regular POST endpoint,
+ *       then the bulk endpoint receives the same code -> 1 failure with
+ *       `code already exists`, `auditId` null, no second row in the DB.
+ *   T4. RBAC: an operator cannot hit the endpoint (403). Mirrors the
+ *       rbac.test.ts pattern: seed an operator, log in, use the cookie.
+ *   T5. Bad OTP: invalid OTP -> 401 otp_invalid; nothing persisted.
+ *   T6. CSV variant: POST /bulk-csv with a header row + 2 codes yields
+ *       2 successes and the audit entity_id is the original fileName.
+ */
+describe('bulk create (WU #3)', () => {
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  let pool: Pool;
+  let operatorCookie: string;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
+    await pool.query(`
+      DROP TABLE IF EXISTS sessions CASCADE;
+      DROP TABLE IF EXISTS users CASCADE;
+      DROP TABLE IF EXISTS audit_log CASCADE;
+      DROP TABLE IF EXISTS dispositivos CASCADE;
+      DROP TABLE IF EXISTS marbetes CASCADE;
+      DROP TABLE IF EXISTS students_cache CASCADE;
+      DROP TYPE IF EXISTS user_role CASCADE;
+      DROP TYPE IF EXISTS audit_action CASCADE;
+      DROP TYPE IF EXISTS dispositivo_status CASCADE;
+      DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS _migrations CASCADE;
+    `);
+    await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
+
+    const bcryptMod = await import('bcrypt');
+    const hash = await bcryptMod.hash('Op3r@Pass', 10);
+    const opEmail = `bulk-operator-${Date.now()}@example.test`;
+    await pool.query(
+      `INSERT INTO users (email, password_hash, role) VALUES (lower($1), $2, 'operator')`,
+      [opEmail, hash],
+    );
+
+    app = await buildApp({ config: TEST_ENV });
+    const fetchMock = makeOtpFetch((body) => {
+      const code = (body as { code?: string }).code;
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
+      return { status: 401, body: { error: 'invalid' } };
+    });
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ email: opEmail, password: 'Op3r@Pass' }),
+    });
+    if (loginRes.statusCode !== 200) {
+      throw new Error(`operator_login_failed: ${loginRes.statusCode} ${loginRes.body}`);
+    }
+    const setCookie = loginRes.headers['set-cookie'];
+    const arr = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    const sidCookie = arr.find((c) => c.startsWith('sid='));
+    if (!sidCookie) throw new Error('operator_login_no_cookie');
+    operatorCookie = sidCookie.split(';')[0] ?? '';
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await pool.end();
+  });
+
+  function adminHeaders(): Record<string, string> {
+    return {
+      'x-test-actor': 'tester',
+      'x-otp-code': VALID_OTP,
+      'content-type': 'application/json',
+    };
+  }
+
+  function operatorHeaders(): Record<string, string> {
+    return {
+      cookie: operatorCookie,
+      'x-otp-code': VALID_OTP,
+      'content-type': 'application/json',
+    };
+  }
+
+  function invalidOtpHeaders(): Record<string, string> {
+    return {
+      'x-test-actor': 'tester',
+      'x-otp-code': '999999',
+      'content-type': 'application/json',
+    };
+  }
+
+  it('T1: POST /bulk accepts 3 codes and emits a single audit_log row', async () => {
+    const payload = {
+      items: [
+        { code: 'BULK-HAPPY-001' },
+        { code: 'BULK-HAPPY-002' },
+        { code: 'BULK-HAPPY-003' },
+      ],
+      reason: 'end-of-day stock intake',
+    };
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes/bulk',
+      headers: adminHeaders(),
+      payload: JSON.stringify(payload),
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as {
+      total: number;
+      created: number;
+      failed: number;
+      successes: { id: number; publicUid: string; status: string }[];
+      failures: unknown[];
+      auditId: number | null;
+    };
+    expect(body.total).toBe(3);
+    expect(body.created).toBe(3);
+    expect(body.failed).toBe(0);
+    expect(body.successes).toHaveLength(3);
+    expect(body.successes.every((s) => s.status === 'active')).toBe(true);
+    expect(body.auditId).not.toBeNull();
+
+    const audit = await pool.query<{ id: number; action: string; entity_id: string }>(
+      `SELECT id, action::text AS action, entity_id FROM audit_log WHERE id = $1`,
+      [body.auditId],
+    );
+    expect(audit.rows[0]?.action).toBe('marbete.bulk_create');
+    expect(audit.rows[0]?.entity_id).toBe('inline-json');
+
+    const rows = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM marbetes WHERE code_hash IN (
+        SELECT code_hash FROM marbetes WHERE public_uid = ANY($1::text[])
+      )`,
+      [body.successes.map((s) => s.publicUid)],
+    );
+    expect(Number(rows.rows[0]?.count)).toBe(3);
+  });
+
+  it('T2: POST /bulk with 2 identical codes returns 1 success + 1 failure, auditId null', async () => {
+    const payload = {
+      items: [
+        { code: 'BULK-DUPE-001' },
+        { code: 'BULK-DUPE-001' },
+      ],
+    };
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes/bulk',
+      headers: adminHeaders(),
+      payload: JSON.stringify(payload),
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as {
+      total: number;
+      created: number;
+      failed: number;
+      successes: { publicUid: string }[];
+      failures: { index: number; code: string; reason: string }[];
+      auditId: number | null;
+    };
+    expect(body.total).toBe(2);
+    expect(body.created).toBe(1);
+    expect(body.failed).toBe(1);
+    expect(body.auditId).toBeNull();
+    expect(body.successes[0]?.publicUid).toMatch(/^m-/);
+    expect(body.failures[0]?.reason).toBe('duplicate in batch');
+    expect(body.failures[0]?.code).toBe('BULK-DUPE-001');
+
+    const dbCount = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM marbetes`,
+    );
+    // T1 already inserted 3; T2 inserts 1 (the unique one) for a total of 4.
+    expect(Number(dbCount.rows[0]?.count)).toBe(4);
+  });
+
+  it('T3: POST /bulk pre-seeded with same code returns 1 failure "code already exists", auditId null', async () => {
+    // Pre-seed a single marbete with a known code via the regular endpoint.
+    const pre = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: adminHeaders(),
+      payload: JSON.stringify({ code: 'BULK-EXISTS-001' }),
+    });
+    expect(pre.statusCode).toBe(201);
+
+    const payload = {
+      items: [
+        { code: 'BULK-FRESH-001' },
+        { code: 'BULK-EXISTS-001' },
+      ],
+    };
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes/bulk',
+      headers: adminHeaders(),
+      payload: JSON.stringify(payload),
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as {
+      total: number;
+      created: number;
+      failed: number;
+      successes: { publicUid: string }[];
+      failures: { code: string; reason: string }[];
+      auditId: number | null;
+    };
+    expect(body.total).toBe(2);
+    expect(body.created).toBe(1);
+    expect(body.failed).toBe(1);
+    expect(body.auditId).toBeNull();
+    expect(body.failures[0]?.code).toBe('BULK-EXISTS-001');
+    expect(body.failures[0]?.reason).toBe('code already exists');
+
+    const dupCount = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM marbetes WHERE code_hash = encode(sha256('BULK-EXISTS-001'::bytea), 'hex')`,
+    );
+    expect(Number(dupCount.rows[0]?.count)).toBe(1);
+  });
+
+  it('T4: POST /bulk returns 403 for an operator (non-admin)', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes/bulk',
+      headers: operatorHeaders(),
+      payload: JSON.stringify({ items: [{ code: 'BULK-403-001' }] }),
+    });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it('T5: POST /bulk returns 401 for invalid OTP and persists nothing', async () => {
+    const before = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM marbetes`,
+    );
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes/bulk',
+      headers: invalidOtpHeaders(),
+      payload: JSON.stringify({ items: [{ code: 'BULK-BADOTP-001' }] }),
+    });
+    expect(r.statusCode).toBe(401);
+    const body = r.json() as { code: string };
+    expect(body.code).toBe('otp_invalid');
+
+    const after = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM marbetes`,
+    );
+    expect(Number(after.rows[0]?.count)).toBe(Number(before.rows[0]?.count));
+  });
+
+  it('T6: POST /bulk-csv accepts RFC-4180 CSV with header row and returns 2 successes', async () => {
+    const csv = 'code\nCSV-BULK-001\nCSV-BULK-002\n';
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes/bulk-csv',
+      headers: adminHeaders(),
+      payload: JSON.stringify({
+        text: csv,
+        fileName: 'marbetes-intake-2024.csv',
+        reason: 'csv upload',
+      }),
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as {
+      total: number;
+      created: number;
+      failed: number;
+      successes: { publicUid: string; status: string }[];
+      failures: unknown[];
+      auditId: number | null;
+    };
+    expect(body.total).toBe(2);
+    expect(body.created).toBe(2);
+    expect(body.failed).toBe(0);
+    expect(body.successes.map((s) => s.publicUid)).toHaveLength(2);
+    expect(body.auditId).not.toBeNull();
+
+    const audit = await pool.query<{ entity_id: string }>(
+      `SELECT entity_id FROM audit_log WHERE id = $1`,
+      [body.auditId],
+    );
+    expect(audit.rows[0]?.entity_id).toBe('marbetes-intake-2024.csv');
+  });
+});
+

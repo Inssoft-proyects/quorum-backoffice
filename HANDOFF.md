@@ -127,7 +127,7 @@ bash scripts/dev-bootstrap.sh
 
 ## Polish items pendientes (no bloquean MVP)
 
-(none — todos los items XS/M cerrados en Polish WU v1 (infra/devops) + v2 (UI/UX) + v3 (security + endpoint + archival))
+(none — todos los items XS/M cerrados en Polish WU v1 (infra/devops) + v2 (UI/UX) + v3 (security + endpoint + archival) + v4 (bulk upload + closeout))
 
 Cerrados en Polish WU v3 (commits `859c8f3` + `157b163` + `70c9c16` + `fcd523d` + `1fa0513` → `5fe6692` en master, merge de `feature/polish-wu-v3`):
 - **W #1 M** (Reveal endpoint): `POST /api/v1/marbetes/:id/reveal` admin-only + `RevealMarbeteDialog` wired.
@@ -146,7 +146,10 @@ Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + `764243e` 
 
 Pendientes (L effort, sesiones dedicadas futuras):
 - Redesign `/audit` per maquet InecConecta (replica del marbetes v2 con patrón adaptado a entries de audit log).
-- Bulk upload endpoint para "Cargar marbetes" (CSV/Excel parser + UI upload).
+
+Cerrados en Polish WU v4 (commits `3f430bc` + `06fda3d` + `<wu9-hash>` en `feature/bulk-upload`, merge TBD a master):
+- **Bulk upload endpoint** para "Cargar marbetes": `POST /api/v1/marbetes/bulk` admin-only, OTP-enforced, acepta JSON array o CSV (RFC-4180-lite parser), valida códigos (length 8-128, alphanumeric), rechaza duplicados intra-batch + contra DB, persiste N marbetes atómicamente en una transacción, emite 1 audit aggregate `marbete.bulk_create` con `metadata: { count, source, fileName, individualRefs }`. Frontend: `BulkUploadDialog` con drag&drop + paste + preview ≤10 filas + errors panel + progress bar + OTP, reemplaza el stub `window.alert('Cargar marbetes próximamente')`. Plan + bitácora en `odd/tasks/polish-wu-v4.md`.
+- **Housekeeping WU #9**: `.gitignore` agrega bloque `# Playwright artifacts` cubriendo `apps/*/test-results/` (genérico); `migrations.test.ts` ahora espera los 9 migrations (0001-0009) en ambas assertions; 4 lint cleanups (removed unused `total` prop de `MarbetesPageClient` + call site; deleted 3 dead functions en `a11y.ts` que eran shadowed por INNER copies en `page.evaluate`; `// eslint-disable-next-line react-hooks/exhaustive-deps` en `student-lookup.tsx` con comentario explicando la omisión intencional de `state`). Resultado: 184 tests verde (32 suites), typecheck clean, lint 0 errors / 0 warnings, build 7 rutas verdes.
 
 ## Decisiones técnicas heredadas (no cambiar sin discutir)
 
@@ -169,8 +172,8 @@ Pendientes (L effort, sesiones dedicadas futuras):
 
 Items L pendientes (sesiones dedicadas):
 1. ~~Rediseño `/dispositivos`~~ (done in WU #2)
-2. **Rediseño `/audit`** per maquet InecConecta
-3. **Bulk upload endpoint** para "Cargar marbetes"
+2. ~~**Bulk upload endpoint** para "Cargar marbetes"~~ (done in Polish WU v4)
+3. **Rediseño `/audit`** per maquet InecConecta
 
 Bloqueado por config:
 - **RDD review** del Polish WU v3 (5 commits + 1 merge). requiere asignar modelo al host relay en `agent model routing config`.
