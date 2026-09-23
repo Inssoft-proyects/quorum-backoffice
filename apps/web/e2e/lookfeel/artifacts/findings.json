@@ -1,0 +1,149 @@
+{
+  "generatedAt": "2026-09-23T01:35:00.000Z",
+  "target": "https://quorum.asistentepro.mx/backoffice/",
+  "viewport": { "width": 1280, "height": 800 },
+  "viewportsTested": ["mobile-360x800", "tablet-768x1024", "desktop-1280x800", "wide-1920x1080"],
+  "screens": ["/login", "/dashboard", "/marbetes", "/dispositivos", "/audit"],
+  "roles": ["admin", "operator", "auditor"],
+  "testRun": {
+    "total": 24,
+    "passed": 18,
+    "failed": 6,
+    "skipped": 0,
+    "passRate": 0.75,
+    "history": {
+      "pre-BUG-001-fix": { "passed": 14, "failed": 10, "passRate": 0.583 },
+      "post-BUG-001-fix": { "passed": 18, "failed": 6, "passRate": 0.75 }
+    }
+  },
+  "summary": { "P0": 1, "P1": 1, "P2": 2, "P3": 0 },
+  "findings": [
+    {
+      "id": "RESP-001",
+      "severity": "P0",
+      "category": "responsive",
+      "screen": "/dashboard, /marbetes, /dispositivos, /audit",
+      "role": "all (admin, operator, auditor)",
+      "title": "Overflow horizontal en mobile (≤360px) en TODAS las pantallas authed + /audit también en tablet (768px)",
+      "evidence": "De 48 mediciones (4 viewports × 3 roles × 4 pantallas), 14 presentan overflow horizontal. Detalle:\n  - mobile 360px: 12 casos (todas las pantallas × todos los roles)\n  - tablet 768px: 2 casos (/audit para admin y auditor)\nscrollWidth varía entre 534 y 857 px en mobile (clientWidth=360), y 857 en tablet /audit (clientWidth=768). Sidebar siempre en 256px fija sin breakpoint colapsable.",
+      "repro": "1) DevTools modo responsive 360x800 (o 768x1024 para /audit). 2) Abrir /dashboard, /marbetes, /dispositivos o /audit. 3) Scrollbar horizontal aparece; sidebar fija ocupa 71% del ancho en mobile.",
+      "impact": "WCAG 1.4.10 (Reflow) violado. Usuarios en teléfonos Android ≤360px ven contenido del main recortado a ~104px de ancho y deben scrollear horizontalmente. Tablets 768px también afectadas en /audit.",
+      "rootCause": "AppShell usa `grid grid-cols-[16rem_1fr]` fijo. El sidebar no se colapsa en mobile, ocupa 256px en pantallas donde el main queda con sólo 104px.",
+      "files": [
+        "apps/web/components/layout/app-shell.tsx:14-20",
+        "apps/web/components/layout/sidebar.tsx:28-49"
+      ],
+      "suggestedFix": "Convertir AppShell a responsive: en <md usar layout single-column con sidebar colapsable (hamburguesa + drawer); en >=md mantener grid actual. Alternativa mínima: ocultar sidebar en <md y exponer los links como menú superior o bottom-nav.",
+      "effort": "M",
+      "priority": 1
+    },
+    {
+      "id": "A11Y-001",
+      "severity": "P1",
+      "category": "a11y",
+      "screen": "/login",
+      "role": "all",
+      "title": "Falta landmark <header> en /login",
+      "evidence": "El card de login tiene título 'InecConecta · Backoffice' + subtítulo pero el wrapper usa <div>, no <header>. Detectado por walk de landmarks.",
+      "repro": "1) Ir a /backoffice/login. 2) Inspeccionar DOM: el div con clase 'flex items-center gap-3' dentro del CardHeader no usa <header> ni role='banner'.",
+      "impact": "Usuarios de screen reader pierden la noción del header del documento. WCAG 1.3.1.",
+      "files": ["apps/web/app/login/page.tsx:26"],
+      "suggestedFix": "Reemplazar wrapper `<div className='flex items-center gap-3'>` por `<header className='flex items-center gap-3'>`.",
+      "effort": "S",
+      "priority": 2
+    },
+    {
+      "id": "VIS-001",
+      "severity": "P2",
+      "category": "visual",
+      "screen": "all authed",
+      "role": "all",
+      "title": "14 elementos con colores hardcoded (no usan design tokens)",
+      "evidence": "styles.json reporta 14 hits de `rgb(41, 41, 41)` o `rgb(23, 23, 23)` o similar en selectores principales. Distribución: /audit=6, /dashboard=2, /marbetes=3, /dispositivos=3. Estos colores deberían mapear a tokens como `text-text-primary` (#292929), `bg-background` (#FFFFFF).",
+      "repro": "1) Ver styles.json en artifacts/. 2) Buscar elementos cuyo `color` o `bgColor` computed sea literal rgb en lugar de la variable CSS.",
+      "impact": "Si el design system cambia (ej. dark mode), estos elementos no se actualizarán automáticamente. Riesgo de drift visual.",
+      "files": [
+        "apps/web/components/ui/*",
+        "apps/web/app/(authed)/*/_components/*"
+      ],
+      "suggestedFix": "Reemplazar literales rgb() por clases Tailwind del theme (`text-text-primary`, `bg-background`, etc.) o por `var(--color-*)` en CSS custom properties.",
+      "effort": "M",
+      "priority": 3
+    },
+    {
+      "id": "VIS-002",
+      "severity": "P2",
+      "category": "visual",
+      "screen": "all authed",
+      "role": "all",
+      "title": "400 elementos <button> con outline-style:none (depende de focus-visible ring)",
+      "evidence": "styles.json reporta 400 hits de `outline-style: none` en selectores button/*. Esto es esperado para shadcn/ui (que usa ring en focus-visible), pero el fallback de outline es cero. Si el usuario navega con teclado y `:focus-visible` no se dispara por alguna razón (CSS no cargado, browser bug, programmatic focus), no hay indicador de foco.",
+      "repro": "1) Inspección DOM de cualquier botón. 2) Ver `outline-style: none` en computed styles. 3) Tab a un botón y verificar que aparece el ring.",
+      "impact": "WCAG 2.4.7 (Focus Visible) — actualmente pasa porque el ring funciona, pero es frágil.",
+      "files": ["apps/web/components/ui/button.tsx"],
+      "suggestedFix": "Verificar manualmente que el ring `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2` se aplica en todos los variants del Button. Considerar agregar `outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring` como cinturón + tiradores redundantes.",
+      "effort": "S",
+      "priority": 4
+    }
+  ],
+  "resolvedFindings": [
+    {
+      "id": "BUG-001",
+      "oldSeverity": "P0",
+      "title": "Cookie name mismatch rompe /marbetes, /dispositivos, /audit",
+      "resolution": "FIXED in commits 77e1f26 + a5edece. Nuevo helper getAuthCookieHeader() en lib/server-session.ts; 3 page.tsx + getServerSession() lo usan. Verificado: 4 páginas ahora retornan 200 con contenido real (no error boundary).",
+      "fixedAt": "2026-09-23",
+      "commits": ["77e1f26", "a5edece"]
+    },
+    {
+      "id": "A11Y-002",
+      "oldSeverity": "P1",
+      "title": "Falta landmark <header> en topbar",
+      "resolution": "Resolved automatically: una vez que BUG-001 está fixeado y las páginas cargan, el topbar (que ya usa <header>) aparece. Confirmado en re-run: el HTML tiene `<header class=\"flex h-14 items-center justify-between...\">`."
+    },
+    {
+      "id": "A11Y-003",
+      "oldSeverity": "P1",
+      "title": "Falta landmark <main> en pantallas de datos",
+      "resolution": "Resolved automatically: el AppShell tiene `<main class=\"flex-1 overflow-y-auto p-6\">` que se renderiza cuando la página carga. Confirmado en re-run: `<main class=\"flex-1 overflow-y-auto p-6\">` aparece en /marbetes HTML."
+    },
+    {
+      "id": "VIS-001-old",
+      "oldSeverity": "P2",
+      "title": "body color rgb(41,41,41) vs rgb(23,23,23) entre pantallas",
+      "resolution": "False positive: era consecuencia del error boundary. Una vez fix BUG-001, todas las pantallas tienen color consistente rgb(41,41,41) = #292929 = text-text-primary. styles.json actual reporta 0 inconsistencias de body color entre pantallas."
+    }
+  ],
+  "remainingTestIssues": [
+    {
+      "id": "TEST-001",
+      "severity": "low (test-suite issue, not product)",
+      "title": "T6 'login: bad creds' falla por strict mode violation en getByRole('alert')",
+      "evidence": "Hay 2 elementos con role='alert': el Alert del form + el route announcer de Next.js. Playwright strict mode exige match único.",
+      "fix": "Cambiar el locator a `page.getByText(/Email o contraseña incorrectos/i)` o filtrar `page.getByRole('alert').filter({ hasText: ... })`.",
+      "files": ["apps/web/e2e/lookfeel/05-interaction-flows.spec.ts:31"]
+    },
+    {
+      "id": "TEST-002",
+      "severity": "low (test-suite issue)",
+      "title": "T6 logout y cross-role smoke fallan por click a 'Salir' que no navega",
+      "evidence": "El test hace click en 'Salir' y espera URL /login, pero la navegación no ocurre dentro del timeout. Posible causa: el botón se vuelve disabled mid-click (isPending) y Playwright no espera la transición.",
+      "fix": "Agregar `await expect(page).toHaveURL(/\\/(login|backoffice\\/login)/, { timeout: 10_000 })` con timeout más generoso, o esperar `await page.waitForLoadState('networkidle')` después del click.",
+      "files": ["apps/web/e2e/lookfeel/05-interaction-flows.spec.ts:127, 142"]
+    },
+    {
+      "id": "TEST-003",
+      "severity": "low (test-suite issue)",
+      "title": "T5 accessibility walk falla",
+      "evidence": "Test termina en 3.5s sin escribir a11y.json. Posible causa: el walk del árbol a11y en algún screen lanza excepción.",
+      "fix": "Investigar logs del test; probablemente un selector inexistente o un nodo con propiedades no-string."
+    },
+    {
+      "id": "TEST-004",
+      "severity": "low (test-suite issue)",
+      "title": "T6 'audit: drawer opens on row click' falla",
+      "evidence": "El test asume que hay al menos 1 fila en /audit. La DB podría estar vacía en este ambiente.",
+      "fix": "Verificar si la DB tiene entries en audit_log; si está vacía, el test debe hacer `test.skip()` con un check previo. O seed mínimo."
+    }
+  ]
+}

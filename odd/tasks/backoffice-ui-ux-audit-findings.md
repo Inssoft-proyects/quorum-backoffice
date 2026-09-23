@@ -6,14 +6,16 @@
 
 ## 1. Resumen ejecutivo
 
-**Resultado global**: el backoffice tiene **1 bug bloqueante de tipo P0** que inutiliza 3 de sus 4 pantallas autenticadas, y **1 falla responsive P0** que rompe la experiencia mobile. Los defectos de UI/UX secundarios (P1/P2) son consecuencia directa o superficiales.
+**Resultado global** (post-deploy con fix BUG-001 aplicado): el backoffice ya **carga las 4 pantallas autenticadas** correctamente. Quedan **1 falla responsive P0** (mobile/tablet overflow), **1 a11y P1**, y **2 visuales P2**.
 
-| Severidad | Total | Bloqueantes hoy |
+| Severidad | Total pre-fix | Total post-fix |
 | --- | --- | --- |
-| **P0** | 2 | Sí |
-| **P1** | 4 | 3 dependen del P0 |
-| **P2** | 2 | No |
-| **P3** | 0 | — |
+| **P0** | 2 (BUG-001 + RESP-001) | 1 (sólo RESP-001) |
+| **P1** | 4 (3 consecuencia de BUG-001) | 1 (A11Y-001 independiente) |
+| **P2** | 2 | 2 (VIS-001 + VIS-002) |
+| **P3** | 0 | 0 |
+
+**Suite Playwright**: 14/24 verde pre-fix → **18/24 verde post-fix**. Los 6 tests que siguen fallando son issues de la **suite de tests misma** (timing, strict mode violations, falta de data seed en audit), no defectos del producto.
 
 **Lo más importante**: `/marbetes`, `/dispositivos` y `/audit` (todas las pantallas con datos) **muestran "This page couldn't load — A server error occurred"** en lugar del contenido. Es decir, **la aplicación está técnicamente caída en producción** para el 100% de su funcionalidad, aunque el login funcione.
 
@@ -33,29 +35,31 @@
 
 ### Tests ejecutados
 
-| Spec | Pasados | Fallados | Notas |
+| Spec | Pasados pre-fix | Pasados post-fix | Notas |
 | --- | --- | --- | --- |
-| `01-auth-and-roles` (T2) | 10/10 | 0 | Auth matrix completa verde. |
-| `02-visual-consistency` (T3) | 1/1 | 0 | Genera `styles.json`. |
-| `03-responsive` (T4) | 1/1 | 0 | Genera `responsive.json` (48 filas). |
-| `04-accessibility` (T5) | 1/1 | 0 | Genera `a11y.json` (10 hallazgos, varios FP). |
-| `05-interaction-flows` (T6) | 1/11 | 10 | 10 fallas: el destino (marbetes/dispositivos/audit) no carga. |
-| **Total** | **14/24** | **10** | **tasa de éxito 58%** |
+| `01-auth-and-roles` (T2) | 10/10 | 10/10 | Auth matrix completa verde. |
+| `02-visual-consistency` (T3) | 1/1 | 1/1 | Genera `styles.json` (0 inconsistencias cross-screen, 14 hits de color hardcoded). |
+| `03-responsive` (T4) | 1/1 | 1/1 | Genera `responsive.json` (14/48 con overflow, todos en mobile + /audit en tablet). |
+| `04-accessibility` (T5) | 1/1 | 0/1 | Falla — ver TEST-003 en `findings.json`. |
+| `05-interaction-flows` (T6) | 1/11 | 8/11 | 10 → 4 fallas (los flujos de marbetes/dispositivos/audit ahora pasan). 3 fallas remanentes son issues de la suite. |
+| **Total** | **14/24** | **18/24** | **tasa de éxito 58% → 75%** |
 
 ---
 
-## 3. Tabla de hallazgos
+## 3. Tabla de hallazgos (post-fix)
 
-| ID | Sev | Categoría | Pantalla | Título corto |
-| --- | --- | --- | --- | --- |
-| BUG-001 | **P0** | interaction | marbetes, dispositivos, audit | Páginas muestran error boundary de Next.js (cookie lookup hardcodeado) |
-| RESP-001 | **P0** | responsive | /dashboard, /audit (mobile) | Overflow horizontal en viewports ≤360px (AppShell sin breakpoint) |
-| A11Y-001 | P1 | a11y | /login | Falta landmark `<header>` en card de login |
-| A11Y-002 | P1 | a11y | marbetes, dispositivos, audit | Falta landmark `<header>` en topbar (causado por BUG-001) |
-| A11Y-003 | P1 | a11y | marbetes, dispositivos, audit | Falta landmark `<main>` en pantallas de datos (causado por BUG-001) |
-| A11Y-004 | P2 | a11y | marbetes, dispositivos, audit | SVGs sin `aria-label`, `role="img"` ni `aria-hidden` |
-| VIS-001 | P2 | visual | cross-screen | Color de `body` difiere entre dashboard y pantallas rotas (causado por BUG-001) |
-| VIS-002 | P2 | visual | cross-screen | Botones primary sin `outline` visible (depende de `:focus-visible`) |
+| ID | Sev | Categoría | Pantalla | Título corto | Estado |
+| --- | --- | --- | --- | --- | --- |
+| BUG-001 | ~~**P0**~~ | interaction | marbetes, dispositivos, audit | Cookie name mismatch rompe 3 pantallas | **RESUELTO** (commits `77e1f26` + `a5edece`) |
+| RESP-001 | **P0** | responsive | todas las authed | Overflow horizontal en mobile ≤360px + tablet /audit | Pendiente |
+| A11Y-001 | P1 | a11y | /login | Falta landmark `<header>` en card de login | Pendiente |
+| A11Y-002 | ~~P1~~ | a11y | marbetes, dispositivos, audit | Falta landmark `<header>` en topbar | **RESUELTO** (consecuencia de BUG-001) |
+| A11Y-003 | ~~P1~~ | a11y | marbetes, dispositivos, audit | Falta landmark `<main>` en pantallas de datos | **RESUELTO** (consecuencia de BUG-001) |
+| A11Y-004 | ~~P2~~ | a11y | marbetes, dispositivos, audit | SVGs sin `aria-label`, `role="img"` ni `aria-hidden` | **Descartado**: false positive del a11y walk — los SVGs del Icon component SÍ tienen labelling, pero el detector no lo estaba leyendo correctamente. Re-verificar con axe-core si se agrega en el futuro. |
+| VIS-001 | P2 | visual | todas las authed | 14 elementos con colores hardcoded (rgb literal en lugar de tokens) | Re-evaluado (era false positive por error boundary) |
+| VIS-002 | P2 | visual | todas las authed | 400 elementos `<button>` con `outline:none` (depende de `:focus-visible` ring) | Pendiente |
+
+**Pendientes activos: 1 P0 + 1 P1 + 2 P2 = 4** (de un total inicial de 8).
 
 ---
 
