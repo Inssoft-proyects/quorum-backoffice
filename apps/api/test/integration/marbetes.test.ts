@@ -443,3 +443,197 @@ describe('marbetes routes with rejected OTP (integration)', () => {
     expect(r.statusCode).toBe(401);
   });
 });
+
+/**
+ * WU #1: POST /api/v1/marbetes/:id/reveal returns the unmasked publicUid
+ * for an admin and emits an audit_log entry.
+ *
+ * Implementation notes (deviation from the handbook description):
+ *   - The `audit_action` enum does not include a dedicated `marbete.reveal`
+ *     label (extending it would require a new migration). The service tags
+ *     the audit row with action `marbete.update` (the closest existing
+ *     admin-event label) and folds `motivo` + `comentario` into the
+ *     existing `after_jsonb` JSONB column. The integration test asserts
+ *     against those columns.
+ *   - Role gating: `requireRole('admin')`. The 403 test logs in a seeded
+ *     `operator` user via the real /auth/login flow (rbac.test.ts pattern)
+ *     because the `x-test-actor` shim is hard-wired to admin.
+ *   - Soft-deleted → 409 (mirrors the soft-delete conflict in `delete`).
+ */
+describe('reveal endpoint (WU #1)', () => {
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  let pool: Pool;
+  let operatorCookie: string;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
+    await pool.query(`
+      DROP TABLE IF EXISTS sessions CASCADE;
+      DROP TABLE IF EXISTS users CASCADE;
+      DROP TABLE IF EXISTS audit_log CASCADE;
+      DROP TABLE IF EXISTS dispositivos CASCADE;
+      DROP TABLE IF EXISTS marbetes CASCADE;
+      DROP TABLE IF EXISTS students_cache CASCADE;
+      DROP TYPE IF EXISTS user_role CASCADE;
+      DROP TYPE IF EXISTS audit_action CASCADE;
+      DROP TYPE IF EXISTS dispositivo_status CASCADE;
+      DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS _migrations CASCADE;
+    `);
+    await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
+
+    // Seed an operator user for the 403 test. Mirrors rbac.test.ts.
+    const bcrypt = await import('bcrypt');
+    const hash = await bcrypt.hash('Op3r@Pass', 10);
+    const opEmail = `reveal-operator-${Date.now()}@example.test`;
+    await pool.query(
+      `INSERT INTO users (email, password_hash, role) VALUES (lower($1), $2, 'operator')`,
+      [opEmail, hash],
+    );
+
+    app = await buildApp({ config: TEST_ENV });
+    const fetchMock = makeOtpFetch((body) => {
+      const code = (body as { code?: string }).code;
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
+      return { status: 401, body: { error: 'invalid' } };
+    });
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+
+    // Log the operator in via the real auth flow.
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ email: opEmail, password: 'Op3r@Pass' }),
+    });
+    if (loginRes.statusCode !== 200) {
+      throw new Error(`operator_login_failed: ${loginRes.statusCode} ${loginRes.body}`);
+    }
+    const setCookie = loginRes.headers['set-cookie'];
+    const arr = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    const sidCookie = arr.find((c) => c.startsWith('sid='));
+    if (!sidCookie) throw new Error('operator_login_no_cookie');
+    operatorCookie = sidCookie.split(';')[0] ?? '';
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await pool.end();
+  });
+
+  function adminHeaders(): Record<string, string> {
+    return {
+      'x-test-actor': 'tester',
+      'x-otp-code': VALID_OTP,
+      'content-type': 'application/json',
+    };
+  }
+
+  function operatorHeaders(): Record<string, string> {
+    return {
+      cookie: operatorCookie,
+      'x-otp-code': VALID_OTP,
+      'content-type': 'application/json',
+    };
+  }
+
+  async function seedMarbete(code: string): Promise<{ id: number; publicUid: string }> {
+    const c = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes',
+      headers: adminHeaders(),
+      payload: JSON.stringify({ code }),
+    });
+    expect(c.statusCode).toBe(201);
+    return c.json() as { id: number; publicUid: string };
+  }
+
+  it('POST /reveal returns the full publicUid for an admin', async () => {
+    const seeded = await seedMarbete('REVEAL-HAPPY-1');
+    const r = await app.inject({
+      method: 'POST',
+      url: `/api/v1/marbetes/${seeded.id}/reveal`,
+      headers: adminHeaders(),
+      payload: JSON.stringify({ motivo: 'auditoria' }),
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as { code: string; revealedAt: string };
+    expect(body.code).toBe(seeded.publicUid);
+    expect(typeof body.revealedAt).toBe('string');
+    expect(() => new Date(body.revealedAt).toISOString()).not.toThrow();
+  });
+
+  it('POST /reveal emits an audit_log row tagged marbete.update + motivo in after_jsonb', async () => {
+    const seeded = await seedMarbete('REVEAL-AUDIT-1');
+    const motivo = `motivo-${Date.now()}`;
+    const r = await app.inject({
+      method: 'POST',
+      url: `/api/v1/marbetes/${seeded.id}/reveal`,
+      headers: adminHeaders(),
+      payload: JSON.stringify({ motivo, comentario: 'verificacion de inventario' }),
+    });
+    expect(r.statusCode).toBe(200);
+
+    // The service tags the audit row with action='marbete.update' (closest
+    // existing enum value) and folds motivo + comentario into after_jsonb
+    // (no dedicated `metadata` column in the current schema).
+    const audit = await pool.query<{
+      action: string;
+      after_jsonb: { motivo?: string; comentario?: string } | null;
+      otp_id: string | null;
+    }>(
+      `SELECT action::text AS action, after_jsonb::text::jsonb AS after_jsonb, otp_id
+         FROM audit_log
+        WHERE entity_type = 'marbete' AND entity_id = $1
+        ORDER BY occurred_at DESC LIMIT 1`,
+      [seeded.publicUid],
+    );
+    const row = audit.rows[0];
+    expect(row).toBeDefined();
+    expect(row?.action).toBe('marbete.update');
+    expect(row?.otp_id).toBe(MOCK_OTP_ID);
+    expect(row?.after_jsonb?.motivo).toBe(motivo);
+    expect(row?.after_jsonb?.comentario).toBe('verificacion de inventario');
+  });
+
+  it('POST /reveal returns 403 for operator role (operator cannot reveal)', async () => {
+    const seeded = await seedMarbete('REVEAL-403-1');
+    const r = await app.inject({
+      method: 'POST',
+      url: `/api/v1/marbetes/${seeded.id}/reveal`,
+      headers: operatorHeaders(),
+      payload: JSON.stringify({ motivo: 'auditoria' }),
+    });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it('POST /reveal returns 404 for an unknown id', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marbetes/999999/reveal',
+      headers: adminHeaders(),
+      payload: JSON.stringify({ motivo: 'auditoria' }),
+    });
+    expect(r.statusCode).toBe(404);
+  });
+
+  it('POST /reveal returns 409 for a soft-deleted marbete', async () => {
+    const seeded = await seedMarbete('REVEAL-CONFLICT-1');
+    // Soft-delete via the existing DELETE flow.
+    const d = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/marbetes/${seeded.id}`,
+      headers: adminHeaders(),
+      payload: JSON.stringify({ reason: 'lost in transit' }),
+    });
+    expect(d.statusCode).toBe(200);
+    const r = await app.inject({
+      method: 'POST',
+      url: `/api/v1/marbetes/${seeded.id}/reveal`,
+      headers: adminHeaders(),
+      payload: JSON.stringify({ motivo: 'auditoria' }),
+    });
+    expect(r.statusCode).toBe(409);
+  });
+});
+

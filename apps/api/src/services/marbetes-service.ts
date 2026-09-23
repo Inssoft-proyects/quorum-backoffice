@@ -21,6 +21,8 @@ import type {
   MarbeteCountersResponse,
   MarbeteDetailResponse,
   MarbeteStatus,
+  RevealMarbeteRequest,
+  RevealMarbeteResponse,
   UpdateMarbeteRequest,
 } from '@quorum-backoffice/shared';
 
@@ -39,6 +41,7 @@ const DESTRUCTIVE_ACTIONS = new Set([
   'marbete.create',
   'marbete.update',
   'marbete.delete',
+  'marbete.reveal',
 ]);
 
 export class MarbetesService {
@@ -252,6 +255,48 @@ export class MarbetesService {
       userAgent: meta.userAgent ?? null,
     });
     return this.toDetail(row);
+  }
+
+  /**
+   * WU #1: audit-only read that returns the unmasked publicUid.
+   *
+   * The marbete is NOT mutated. The original scanned code is never recoverable
+   * (only code_hash is stored), so "reveal" simply lifts the mask so an
+   * admin can read out the full identifier to a student or auditor.
+   *
+   * Side effects: a single audit_log entry with the supplied motivo +
+   * comentario folded into `after_jsonb`. The OTP scope `marbete.reveal`
+   * is forwarded to OtpClient.verify when AUTH_OTP_REQUIRED is enabled.
+   */
+  async reveal(
+    actor: string,
+    id: number,
+    req: RevealMarbeteRequest,
+    otpCode: string | undefined,
+    meta: RequestMeta = {},
+  ): Promise<RevealMarbeteResponse> {
+    const otpResult = await this.verifyOtp(actor, 'marbete.reveal', otpCode);
+
+    const row = await this.repo.findById(id);
+    if (!row) throw AppError.notFound(`marbete ${id} not found`);
+    if (row.deleted_at) throw AppError.conflict('marbete already deleted');
+
+    const audit = new AuditService(this.deps.pool);
+    await audit.write({
+      actorId: actor,
+      action: 'marbete.update',
+      entityType: 'marbete',
+      entityId: row.public_uid,
+      metadata: { motivo: req.motivo, comentario: req.comentario ?? null },
+      otpId: otpResult.otpId,
+      ip: meta.ip ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
+
+    return {
+      code: row.public_uid,
+      revealedAt: new Date().toISOString(),
+    };
   }
 
   private async toDetail(

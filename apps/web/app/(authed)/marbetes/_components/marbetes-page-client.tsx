@@ -164,7 +164,10 @@ export function MarbetesPageClient({ items, userRole, total }: Props) {
     }
   }
 
-  const handleRevealed = (_fullCode: string) => {
+  const [lastRevealedCode, setLastRevealedCode] = useState<string | null>(null);
+
+  const handleRevealed = (fullCode: string) => {
+    setLastRevealedCode(fullCode);
     refresh();
   };
 
@@ -276,6 +279,17 @@ export function MarbetesPageClient({ items, userRole, total }: Props) {
           onDelete={(m) => setRevoking(m)}
           onEdit={(m) => setRevealing(m)}
         />
+
+      {lastRevealedCode !== null ? (
+        <div
+          className="mt-4 rounded-md border border-secondary-500 bg-success-bg p-3 text-success-text"
+          role="status"
+          aria-live="polite"
+          data-testid="reveal-confirmation-banner"
+        >
+          Código revelado: <strong data-testid="reveal-confirmation-code">{lastRevealedCode}</strong>
+        </div>
+      ) : null}
 
         <Pagination
           currentPage={safePage}

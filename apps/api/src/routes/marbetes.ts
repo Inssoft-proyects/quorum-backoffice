@@ -13,6 +13,7 @@ import {
   DeleteMarbeteRequest,
   ListMarbetesFilter,
   MarbeteIdParam,
+  RevealMarbeteRequest,
   UpdateMarbeteRequest,
 } from '@quorum-backoffice/shared';
 import { MarbetesService } from '../services/marbetes-service';
@@ -108,6 +109,22 @@ export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void
       const meta = metaFromRequest(req);
       const svc = getService();
       return svc.delete(actor, id, body, otp, meta);
+    },
+  );
+
+  // WU #1: admin-only audit read that returns the unmasked publicUid.
+  // Mutates nothing in the marbetes table; only writes an audit_log entry.
+  app.post<{ Params: { id: string } }>(
+    '/api/v1/marbetes/:id/reveal',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const { id } = MarbeteIdParam.parse(req.params);
+      const body = RevealMarbeteRequest.parse(req.body);
+      const actor = actorFromRequest(req);
+      const otp = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.reveal(actor, id, body, otp, meta);
     },
   );
 }
