@@ -21,7 +21,6 @@ import { MarbetesTable } from './marbetes-table';
 interface Props {
   items: MarbeteDetailResponse[];
   userRole: UserRole;
-  total: number;
 }
 
 /**
@@ -37,7 +36,7 @@ interface Props {
  * to "warning" ("Próxima a vencer"), anything past due flips to "danger"
  * ("Vencida") — matching the maquette's column chip pattern.
  */
-export function MarbetesPageClient({ items, userRole, total }: Props) {
+export function MarbetesPageClient({ items, userRole }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'available' | 'assigned' | 'attention'>('all');
