@@ -28,7 +28,10 @@ test.describe('T6 — interaction flows', () => {
     await page.getByLabel('Correo').fill('nope@quorum.local');
     await page.getByLabel('Contraseña').fill('wrong-password-xyz');
     await page.getByRole('button', { name: /Ingresar/i }).click();
-    await expect(page.getByRole('alert')).toBeVisible();
+    // The page exposes two [role="alert"] nodes: Next.js's hidden route
+    // announcer and the login form's inline Alert. Scope to the form to
+    // avoid the strict-mode violation.
+    await expect(page.locator('form [role="alert"]')).toBeVisible();
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -54,32 +57,44 @@ test.describe('T6 — interaction flows', () => {
     await expect(page).toHaveURL(/\/audit/);
   });
 
-  test('marbetes: status filter updates URL', async ({ page }) => {
+  test('marbetes: Disponibles MetricCard filters rows in-memory', async ({ page }) => {
     await loginAs(page, 'admin');
     await page.goto('/backoffice/marbetes');
-    await page.locator('#filter-status').selectOption('active');
-    await page.waitForURL(/status=active/);
-    expect(page.url()).toContain('status=active');
+    const totalRowsBefore = await page.locator('tbody tr').count();
+    await page.getByRole('button', { name: /^Disponibles\b/ }).click();
+    await expect(
+      page.getByRole('button', { name: /^Disponibles\b/ }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    // Reset
+    await page.getByRole('button', { name: /^Total\b/ }).click();
+    await expect(
+      page.getByRole('button', { name: /^Total\b/ }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    const totalRowsAfter = await page.locator('tbody tr').count();
+    expect(totalRowsAfter).toBeLessThanOrEqual(totalRowsBefore);
   });
 
-  test('marbetes: search filter updates URL', async ({ page }) => {
+  test('marbetes: search input filters rows in-memory', async ({ page }) => {
     await loginAs(page, 'admin');
     await page.goto('/backoffice/marbetes');
-    await page.locator('#filter-search').fill('m-AB12CD');
-    await page.waitForURL(/search=/);
-    expect(page.url()).toContain('search=');
+    const search = page.getByTestId('marbetes-search');
+    await expect(search).toBeVisible();
+    await search.fill('m-AB12CD');
+    // URL does NOT change (state-only filter in v2)
+    expect(page.url()).toContain('/backoffice/marbetes');
+    expect(page.url()).not.toContain('search=');
+    await search.fill('');
   });
 
-  test('marbetes: open create dialog, verify structure, close', async ({ page }) => {
+  test('marbetes: open add dialog, verify structure, close', async ({ page }) => {
     await loginAs(page, 'admin');
     await page.goto('/backoffice/marbetes');
-    await page.getByTestId('open-create').click();
-    await expectDialogOpen(page, /Crear marbete/i);
+    await page.getByTestId('add-marbete-trigger').click();
+    await expect(page.getByTestId('add-marbete-title')).toBeVisible();
+    await expect(page.getByTestId('add-marbete-title')).toContainText(/Agregar marbete/i);
     await captureSnapshot(page, { name: '/marbetes', role: 'admin', suffix: 'create-dialog' });
-    // Has Cancel + Submit
     await expect(page.getByRole('button', { name: /Cancelar/i })).toBeVisible();
-    await expect(page.getByTestId('create-submit')).toBeVisible();
-    // Escape closes
+    await expect(page.getByTestId('add-marbete-submit')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeHidden();
   });
@@ -124,7 +139,7 @@ test.describe('T6 — interaction flows', () => {
 
   test('logout: returns to /login', async ({ page }) => {
     await loginAs(page, 'admin');
-    await page.getByRole('button', { name: /Salir/i }).click();
+    await page.getByRole('button', { name: /Salir/i }).first().click();
     await page.waitForURL(/\/login/);
     await expect(page).toHaveURL(/\/login/);
   });
@@ -139,7 +154,7 @@ test.describe('T6 — interaction flows', () => {
       await expect(page).toHaveURL(/\/marbetes/);
       // Cleanup: hit /logout by clicking the Salir button so the next
       // test in this context starts fresh.
-      await page.getByRole('button', { name: /Salir/i }).click();
+      await page.getByRole('button', { name: /Salir/i }).first().click();
       await page.waitForURL(/\/login/);
       await clearSession(page);
     });

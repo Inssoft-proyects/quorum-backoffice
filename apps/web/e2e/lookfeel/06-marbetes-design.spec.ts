@@ -64,8 +64,8 @@ test.describe('T6 — marbetes design v2', () => {
     // First char is a letter or digit (e.g. "C***41").
     await expect(page.getByText(/^[A-Z0-9]\*\*\*\d{2,3}$/).first()).toBeVisible();
 
-    // Privacy chip
-    await expect(page.getByText('Oculto').first()).toBeVisible();
+    // Privacy chip (aria-label only, no accessible text outside the icon)
+    await expect(page.getByLabel('Oculto').first()).toBeVisible();
 
     // Status chips
     await expect(
@@ -87,6 +87,11 @@ test.describe('T6 — marbetes design v2', () => {
 
     // Save starts disabled.
     await expect(page.getByTestId('add-marbete-submit')).toBeDisabled();
+    // Close the dialog so the next test (Reveal dialog) starts from a
+    // clean state. The maquette v2 keeps the dialog open by default after
+    // the assertion — this Escape avoids state leakage between consecutive
+    // tests in this spec.
+    await page.keyboard.press('Escape');
   });
 
   test('Reveal dialog opens with motivo select', async ({ page }) => {

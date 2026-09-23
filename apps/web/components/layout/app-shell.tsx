@@ -14,9 +14,9 @@ export function AppShell({ user, children }: { user: MeResponse; children: React
   return (
     <div className="grid min-h-screen grid-cols-1 bg-background md:grid-cols-[16rem_1fr]">
       <Sidebar user={user} className="hidden md:flex" />
-      <div className="flex flex-col">
+      <div className="flex min-w-0 flex-col">
         <Topbar user={user} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
     </div>
   );

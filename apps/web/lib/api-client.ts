@@ -183,7 +183,10 @@ export async function login(body: LoginRequest, cookie?: string): Promise<MeResp
 }
 
 export async function logout(cookie?: string): Promise<void> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  // No body sent; omit content-type so Fastify doesn't try to parse an
+  // empty JSON document (which it would reject with 500). The route
+  // handler reads only the session cookie.
+  const headers: Record<string, string> = {};
   if (cookie) headers['cookie'] = cookie;
   const res = await fetch(`${API_BASE}/api/v1/auth/logout`, {
     method: 'POST',
