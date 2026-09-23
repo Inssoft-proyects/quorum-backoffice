@@ -6,18 +6,36 @@ Pega este bloque en una sesión nueva de Pi para retomar el trabajo.
 
 # Estado del proyecto al cierre de la sesión anterior
 
-**Quorum Backoffice MVP COMPLETO + infraestructura de producción montada en `/backoffice/` bajo `quorum.asistentepro.mx`.**
+**Quorum Backoffice MVP COMPLETO + auditoría UI/UX ejecutada + marbetes rediseñados per maquette.**
 
 ## Lo que ya está hecho (NO volver a hacer)
 
 - ✅ **13 Work Units** entregados: WU0–WU13
-- ✅ **36 commits** en `feature/wu0-bootstrap`, todos pusheados a `origin`
+- ✅ **8 commits adicionales** en `feature/wu0-bootstrap`, todos pusheados a `origin`
 - ✅ **PR #1 abierto**: https://github.com/Inssoft-proyects/quorum-backoffice/pull/1
-- ✅ **148/148 tests verde** (85 API integration + 63 web RTL unit)
+- ✅ **148/148 tests verde** (85 API + 63 web RTL unit)
+- ✅ **5/5 Playwright tests del rediseño** verde
 - ✅ **10 recepciones RDD** ejecutadas, todas auto-aprobadas tier `low` / non-executable
 - ✅ **Build production limpio** (Next.js 16.3.5 + Turbopack, 7 rutas en `/backoffice/`)
 - ✅ **nginx vhost** (`infra/nginx/quorum.asistentepro.mx.conf`) con Let's Encrypt + security headers
 - ✅ **RUNBOOK.md** operativo completo
+- ✅ **Marbetes rediseñados** per maquette del área de diseño (commit `98ac08f`)
+- ✅ **BUG-001 resuelto** (cookie mismatch en SSR data fetches — `77e1f26` + `a5edece`)
+- ✅ **Tailwind CSS utilities completas** (era bug de @source en Tailwind 4 + Turbopack — fix inline en `globals.css`)
+
+## Commits nuevos al cierre (todos pusheados)
+
+```
+1082bb1 test(lookfeel): align 06-marbetes-design spec with implementation
+642449c docs(audit): update bitácora of marbetes v2 redesign with final state
+98ac08f feat(web): redesign /marbetes per design team's InecConecta maquette
+e66fca9 docs(audit): update findings report with post-fix state
+a5edece fix(web): make getServerSession forward the real auth cookie name
+802066b chore: ignore nested design-asset repos + add BUG-001 deploy runbook
+77e1f26 fix(web): forward correct auth cookie name in SSR data fetches (BUG-001)
+fd97871 fix(web): resolve TypeScript errors in UI/UX audit suite
+1cccb24 test(web): add UI/UX audit Playwright suite + findings report
+```
 
 ## URL de acceso desde tu PC
 
@@ -31,7 +49,7 @@ https://quorum.asistentepro.mx/backoffice/login
 
 ## Ramas
 
-- `feature/wu0-bootstrap` (HEAD): todo el trabajo, 36 commits
+- `feature/wu0-bootstrap` (HEAD `1082bb1`): todo el trabajo
 - `master` (default remoto): base vacía del repo
 
 ## Archivos clave del proyecto
@@ -42,30 +60,47 @@ https://quorum.asistentepro.mx/backoffice/login
 │   ├── api/                    # Fastify 5 + Node 22 + PG 18 + Redis 8
 │   │   ├── migrations/          # 6 migrations (0001-0006)
 │   │   ├── src/                 # routes, services, repositories, plugins
-│   │   └── package.json         # "main": "dist/server.js"  ← BUG: tsc outputs to dist/src/server.js
-│   └── web/                     # Next.js 15 App Router + React 19 + shadcn/ui
+│   │   └── package.json         # main: dist/src/server.js
+│   └── web/                     # Next.js 16 App Router + React 19 + shadcn/ui
 │       ├── app/
 │       │   ├── login/           # login form real
 │       │   └── (authed)/        # route group con layout que valida sesión
 │       │       ├── dashboard/
-│       │       ├── marbetes/    # CRUD completo (WU8)
-│       │       ├── dispositivos/ # CRUD completo (WU9)
-│       │       └── audit/       # viewer read-only (WU10)
-│       ├── components/          # layout + shadcn/ui wrappers
-│       ├── lib/                 # api-client, server-session, auth-context
-│       ├── e2e/                 # Playwright (7 tests, autor + config-valid)
-│       └── next.config.ts       # basePath: '/backoffice'
+│       │       ├── marbetes/    # REDISEÑADO per maquette v2 (commit 98ac08f)
+│       │       ├── dispositivos/ # UI anterior, sin rediseñar
+│       │       └── audit/        # UI anterior, sin rediseñar
+│       ├── components/
+│       │   ├── inventory/        # NEW: 10 componentes del rediseño
+│       │   ├── layout/           # AppShell, Sidebar, Topbar, LogoutButton
+│       │   └── ui/               # shadcn wrappers (button, card, dialog, select, textarea, ...)
+│       ├── lib/
+│       │   ├── api-client.ts     # fetch wrappers
+│       │   ├── auth-context.ts   # client auth state
+│       │   └── server-session.ts # getServerSession() + getAuthCookieHeader() (usado en SSR)
+│       ├── e2e/lookfeel/         # Playwright suite (24 tests totales)
+│       │   ├── 01-05 specs       # audit suite original
+│       │   ├── 06-marbetes-design.spec.ts # rediseño v2 (5 tests)
+│       │   └── helpers/          # a11y, contrast, login, snapshot, viewports
+│       ├── app/globals.css       # tokens + @layer components maquette
+│       └── next.config.ts        # basePath: '/backoffice'
 ├── packages/shared/             # Zod DTOs + RBAC helpers
 ├── infra/
-│   └── nginx/
-│       ├── quorum.asistentepro.mx.conf   # vhost (104 LOC)
-│       └── README.md                     # operational guide (224 LOC)
-├── RUNBOOK.md                    # operator-facing docs
-├── HANDOFF.md                    # este archivo
-├── odd/
-│   ├── tasks/quorum-backoffice-mvp.md  # plan + bitácora (13 WUs documentados)
-│   └── status-snapshot-2025-11-21.md  # snapshot del estado al cierre de WU11
-└── package.json                   # workspaces root (api, web, shared)
+│   ├── nginx/quorum.asistentepro.mx.conf
+│   └── systemd/{api,web}.service
+├── diseno/                      # Brand tokens + icon library + MAQUETTE del área de diseño
+│   ├── design/                  # PNG/JPEG referencias (color tokens, screens mockups)
+│   ├── design/png-x2/           # Iconos InecConecta
+│   ├── maqueta_Inec/Inec/       # MAQUETTE HTML: inventario-credenciales.html + CSS
+│   └── (legacy png-x2/, __MACOSX/ pre-existentes)
+├── odd/tasks/
+│   ├── quorum-backoffice-mvp.md          # plan + bitácora (13 WUs documentados)
+│   ├── backoffice-ui-ux-audit.md          # plan ODD del audit
+│   ├── backoffice-ui-ux-audit-findings.md # informe de hallazgos + plan de remediación
+│   ├── marbetes-inventory-v2.md           # plan + bitácora del rediseño
+│   └── deploy-bug-001.md                 # script de deploy con verificaciones
+├── RUNBOOK.md                            # operador-facing docs
+├── HANDOFF.md                            # este archivo
+└── package.json                           # workspaces root (api, web, shared)
 ```
 
 ## Verificación al iniciar nueva sesión
@@ -73,7 +108,7 @@ https://quorum.asistentepro.mx/backoffice/login
 ```bash
 cd /planQuorum/dev/quorum-backoffice
 git status                    # debe estar clean en feature/wu0-bootstrap
-git log --oneline | head 5    # debe terminar en 94cbac8 (WU13) o más reciente
+git log --oneline | head 5    # debe terminar en 1082bb1 (marbetes v2 tests)
 npm install                   # 757+ paquetes
 npm test                      # 148/148 verde (corre ambos workspaces)
 
@@ -86,39 +121,42 @@ cd apps/api && npm run typecheck && npm run lint
 cd apps/web && npm run typecheck && npm run lint
 cd apps/web && npm run build    # verifica 7 rutas
 
-# Si Redis o PG no están vivos:
+# Si Redis o PG no están vivos (en este host):
 bash scripts/dev-bootstrap.sh
 ```
 
 ## Polish items pendientes (no bloquean MVP)
 
-Estos son opcionales y pueden hacerse en WUs de polish posteriores:
-
-1. **apps/api `package.json` `main`**: cambiar de `dist/server.js` a `dist/src/server.js`. El systemd unit del nginx README ya usa el path correcto (`/usr/bin/node dist/src/server.js`), pero `npm start` directo fallaría. Fix trivial de 1 línea.
-2. **infra/systemd/ como archivos**: los unit templates para api+web están inline en `infra/nginx/README.md` §5. Extraerlos a `infra/systemd/quorum-backoffice-{api,web}.service` como archivos committed.
-3. **ESLint flat config para apps/web**: `next lint` fue removido en Next.js 16. El lint script actual es un placeholder `tsc --noEmit`. Para restaurar ESLint real: `npm install -D eslint eslint-config-next` + crear `apps/web/eslint.config.js` flat config.
-4. **Playwright e2e seed script**: los 7 tests de Playwright están authored + config-valid, pero requieren usuarios seed (admin/operator/auditor con bcrypt hashes) para ejecutarse de verdad. Automatizar el seed en un script.
-5. **Migración bcrypt → argon2id**: bcrypt cost-12 está bien para 2025, pero argon2id es OWASP-recomendado. Migration script + auth-service update.
-6. **Política de archivado para audit_log**: >1 año → cold storage. La tabla crece sin límite; necesita partition strategy o archival job.
+1. **RESP-001 P0** (mobile responsive): AppShell con sidebar colapsable en <md. Effort M. Pendiente.
+2. **A11Y-001 P1**: agregar `<header>` semántico en card de /login. Effort S. Pendiente.
+3. **VIS-002 P2**: audit focus-visible en botones. Effort S. Pendiente.
+4. **Endpoint `POST /api/v1/marbetes/:id/reveal`** (Revelar marbete necesita backend). Effort M.
+5. **Bulk upload endpoint** para el botón "Cargar marbetes". Effort L.
+6. Migración bcrypt → argon2id (OWASP 2025+).
+7. Política de archivado para `audit_log` (>1 año → cold storage).
 
 ## Decisiones técnicas heredadas (no cambiar sin discutir)
 
 - **Port convention**: DEV 3xx (api 3100, web 3002), PROD 4xx (api 4100, web 4002)
 - **Stack backend**: Node 22 + Fastify 5 + PG 18 + Redis 8 + Zod + Pino + prom-client + bcrypt cost-12
-- **Stack frontend**: Next.js 15 App Router + React 19 + Tailwind 4 + shadcn/ui + lucide-react
+- **Stack frontend**: Next.js 16 App Router + React 19 + Tailwind 4 + shadcn/ui + lucide-react
 - **Shared**: Zod DTOs en `packages/shared/src/dto/<entity>.ts`; api consume desde `dist/`
 - **Audit log**: append-only enforced via `REVOKE UPDATE,DELETE,TRUNCATE FROM PUBLIC` en la migration 0004
 - **OTP**: header `X-OTP-Code` (6 dígitos) en operaciones destructivas; service llama `OtpClient.verify({subject,scope,code})`
 - **Roles**: admin (3) > auditor (2) > operator (1). Jerarquía numérica via `ROLE_HIERARCHY` + `hasAtLeastRole`
 - **canvasUserId**: marbetes se asignan por matrícula Canvas (no por PK interno). Lookup en `students_cache` con 422 si no existe o inactivo.
 - **Cookies**: `AUTH_COOKIE_NAME=__Host-sid` en prod (Secure + Path=/); tokens son 32B base64url aleatorios
-- **Review budget**: ≤400 líneas por WU; exceder legítimamente (ej. WU3a/b, WU6a, WU8b2)
-- **RDD aplicado**: 10 recepciones exitosas, todas tier `low` / non-executable doc-only. Si el usuario pide más review explícito de código de features, abrir PR con lenses R1-R4.
+- **Server-side cookie forwarding**: TODAS las pages autenticadas DEBEN usar `await getAuthCookieHeader()` de `@/lib/server-session` para llamadas API (verificado en `app/(authed)/{marbetes,dispositivos,audit}/page.tsx`)
+- **Next.js build env**: `NEXT_PUBLIC_API_URL=https://quorum.asistentepro.mx/backoffice` debe estar seteado en build time (se inlinea en el bundle)
+- **Tailwind 4 + Turbopack**: requiere `@source` directives explícitas en `globals.css` para detectar utilities (verificado en commit `802066b`)
+- **Review budget**: ≤400 líneas por WU
+- **RDD aplicado**: 10 recepciones exitosas, todas tier `low` / non-executable doc-only. Para feat commits: lenses R1-R4.
 
 ## Próximos pasos sugeridos (elegir uno)
 
-### A) Mergear PR + desplegar en VPS
+### A) Merge PR #1 + deploy en VPS
 ```bash
+gh pr merge 1 --squash   # o rebase + merge según preferencia
 # Una vez mergeado a master, en el VPS:
 cd /opt/quorum-backoffice && git pull
 npm install && npm run --workspaces --if-present build
@@ -129,11 +167,24 @@ cd apps/api && npm run migrate
 sudo systemctl enable --now quorum-backoffice-api quorum-backoffice-web
 ```
 
-### B) Polish WU (ESLint + systemd files + dist path fix)
+### B) Polish WU (RESP-001 mobile responsive + A11Y-001 + VIS-002)
 Cualquier combinación de los 6 polish items arriba.
 
-### C) Continuar features
-El MVP cubre todos los features del plan §2. Si el usuario quiere features nuevas (ej. notificaciones por email de eventos de auditoría, multi-tenant, integración con quorum-otp en lugar de mock), son WUs nuevos.
+### C) Endpoint faltante: POST /api/v1/marbetes/:id/reveal
+Implementar en `apps/api/src/routes/marbetes.ts` con la firma:
+```ts
+POST /api/v1/marbetes/:id/reveal
+Body: { otpCode?: string }  // OTP solo si AUTH_OTP_REQUIRED=true
+Response: { code: string }  // código completo
+```
+Side effect: insert en `audit_log` con action='marbete.reveal', metadata con motivo.
+Después wire-ar `RevealMarbeteDialog` para llamar al endpoint.
+
+### D) Continuar con redesign de /dispositivos y /audit
+Aplicar el mismo patrón de componentes inventory/* a las otras 2 pantallas.
+
+### E) Cerrar el ciclo RDD review
+Correr `gentle_review inspect` + `start` para los 8 commits nuevos. El user debe dar consent en la UI host-owned.
 
 ## Convenciones para nuevas sesiones
 
@@ -142,14 +193,62 @@ El MVP cubre todos los features del plan §2. Si el usuario quiere features nuev
 - **Worker timeout**: los workers pueden colgarse en bash por 30+ min. Si pasa, verificar `git status` y terminar manualmente.
 - **Tests verification**: siempre re-correr tests/typecheck/lint localmente después de una delegación (los workers reportan success pero vale confirmar).
 - **PR**: `gh pr create --base master --head feature/wu0-bootstrap` (master es el default branch de este repo, no main).
+- **Deploy staging**: `cp /planQuorum/.../apps/web/components/inventory/* /opt/quorum-backoffice/apps/web/components/inventory/` después `cd /opt/quorum-backoffice/apps/web && sudo -E env NEXT_PUBLIC_API_URL=https://quorum.asistentepro.mx/backoffice npm run build` después `kubectl delete pod -n quorum-backoffice <web-pod> --force --grace-period=0`. Esperar ~25s y validar con curl.
+- **Sesión Pi**: tiene acceso SSH al cluster k3s pero NO al VPS de prod. Deploy a prod es manual.
 
 ## Bitácora viva
 
-`odd/tasks/quorum-backoffice-mvp.md` §12 tiene el estado actual de los 13 WUs con commit hashes. Actualizar después de cada WU cerrado (es ODD rule).
+`odd/tasks/quorum-backoffice-mvp.md` §12 tiene el estado de los 13 WUs originales.
+`odd/tasks/marbetes-inventory-v2.md` §8 tiene el estado del rediseño v2.
+`odd/tasks/backoffice-ui-ux-audit.md` tiene el plan del audit.
+`odd/tasks/backoffice-ui-ux-audit-findings.md` tiene los hallazgos + plan de remediación.
+
+Actualizar después de cada WU cerrado (es ODD rule).
 
 ## Memoria de decisiones clave
 
-Las decisiones arquitectónicas están guardadas en `mem_save` con `topic_key` por WU (`quorum-backoffice-wu{N}-{concern}`). Recuperar contexto con `mem_search` + `topic_key` específico.
+Topics Engram activos (recuperar con `mem_search --topic_key`):
+- `quorum-backoffice` — overview del proyecto
+- `quorum-backoffice-cookie-name-mismatch` — bug BUG-001 (resuelto)
+- `quorum-backoffice-ui-ux-audit` — hallazgos originales del audit
+- `quorum-backoffice-marbetes-v2-inventory` — rediseño del inventario
+- `quorum-backoffice-session-2026-09-23` — snapshot al cierre de esta sesión
+
+---
+
+# PROMPT REUTILIZABLE — para pegar al iniciar nueva sesión Pi
+
+```
+Continuá el trabajo del Quorum Backoffice. Contexto:
+
+- Repo: /planQuorum/dev/quorum-backoffice (git)
+- Branch: feature/wu0-bootstrap (HEAD 1082bb1, pusheado)
+- PR abierto: https://github.com/Inssoft-proyects/quorum-backoffice/pull/1
+- Staging: https://quorum.asistentepro.mx/backoffice/ (k3s cluster, deploy manual vía sync a /opt/quorum-backoffice + kubectl delete pod)
+- Documentación viva:
+  - HANDOFF.md (este archivo) — punto de entrada
+  - odd/tasks/quorum-backoffice-mvp.md §12 — bitácora 13 WUs originales
+  - odd/tasks/marbetes-inventory-v2.md §8 — bitácora rediseño v2
+  - odd/tasks/backoffice-ui-ux-audit-findings.md — hallazgos + plan de remediación
+- Memoria Engram: buscar con topic_key 'quorum-backoffice' o 'quorum-backoffice-marbetes-v2-inventory'
+
+Lo que ya está hecho:
+- MVP completo con 148/148 tests verde
+- Marbetes rediseñados per maquette (UI v2 con 4 metric cards, donut charts, 3 dialogs)
+- BUG-001 (cookie mismatch) resuelto
+- Tailwind CSS utilities completas (bug @source resuelto)
+
+[REEMPLAZAR ESTA SECCIÓN CON LA ACTIVIDAD ESPECÍFICA QUE NECESITÉS]
+
+Por ejemplo:
+- "Implementá RESP-001 (AppShell mobile responsive). Esfuerzo M. Pattern de referencia en la maquette del área de diseño."
+- "Implementá el endpoint POST /api/v1/marbetes/:id/reveal y wire-ar el RevealMarbeteDialog."
+- "Aplicá el rediseño de marbetes a /dispositivos y /audit siguiendo el mismo patrón."
+- "Cerrá el RDD review sobre los 8 commits nuevos. Gentile-ai review mode status está on (global)."
+- "Mergéá PR #1 con gh pr merge 1 --squash y verificá el deploy en VPS."
+
+Procedé y no pares hasta terminar. Si necesitás algo, preguntá.
+```
 
 ---
 
@@ -157,8 +256,10 @@ Las decisiones arquitectónicas están guardadas en `mem_save` con `topic_key` p
 
 Pegá una línea como estas y el contexto está completo:
 
-> "Continuá con el polish WU: ESLint flat config en apps/web + extraer infra/systemd/ como archivos. La rama es `feature/wu0-bootstrap`, los tests están verdes (148/148), el PR #1 sigue abierto."
+> "Continuá con el polish item RESP-001 (AppShell mobile responsive). Esfuerzo M. La rama es `feature/wu0-bootstrap`, los tests están verdes, el PR #1 sigue abierto. Las metric cards del rediseño ya están implementadas en `apps/web/components/inventory/`."
 
-> "Mergéá el PR #1 con `gh pr merge --squash` y abrí la siguiente sesión desde master."
+> "Implementá el endpoint `POST /api/v1/marbetes/:id/reveal` y conectá el `RevealMarbeteDialog` para que llame al backend. Esfuerzo M."
 
-> "Hacé el polish item 1: cambiar `apps/api/package.json` `main` de `dist/server.js` a `dist/src/server.js` y commiteá."
+> "Aplicá el rediseño de marbetes v2 al screen `/dispositivos` siguiendo el mismo patrón de componentes inventory/. Reusá MetricCard, DonutChart, StatusChip, IdBadge, MaskedNumber, SortHeader, Pagination."
+
+> "Cerrá el RDD review sobre los 8 commits nuevos de la rama `feature/wu0-bootstrap`."
