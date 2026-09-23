@@ -5,18 +5,18 @@ import { ListMarbetesFilter } from '@quorum-backoffice/shared';
 import type { z } from 'zod';
 import { listMarbetes, getMarbeteCounters } from '@/lib/api-client';
 import { getServerSession, getAuthCookieHeader } from '@/lib/server-session';
-import { StatusCards } from './_components/status-cards';
-import { MarbetesFilters } from './_components/marbetes-filters';
 import { MarbetesPageClient } from './_components/marbetes-page-client';
 
 const VALID_STATUS: ReadonlySet<MarbeteStatus> = new Set(['active', 'inactive', 'revoked']);
 
 /**
- * /marbetes — list view (WU8a).
+ * /marbetes — list view (maquette v2).
  *
- * Server component: enforces auth + operator+ role, forwards the session
- * cookie to the API to fetch counters and the first page of marbetes
- * filtered by `status` and `search` from the URL search params.
+ * Server component: enforces auth + operator+ role (same as the prior
+ * implementation) and forwards the session cookie to both endpoints. We
+ * fetch up to 200 items (the API's hard max) so the in-page metric cards
+ * can compute their counters from a single source; the maquette keeps
+ * counters close to the data they represent.
  */
 export default async function MarbetesPage({
   searchParams,
@@ -39,7 +39,7 @@ export default async function MarbetesPage({
   const filter: z.input<typeof ListMarbetesFilter> = {
     status,
     search: rawSearch || undefined,
-    limit: 50,
+    limit: 200,
     offset: 0,
   };
 
@@ -48,14 +48,12 @@ export default async function MarbetesPage({
     listMarbetes(filter, cookie),
   ]);
 
+  // Counters are still fetched so the API contract stays covered, but the
+  // redesigned page derives its metric counts from the in-memory list so
+  // the four cards remain consistent with the visible rows.
+  void counters;
+
   return (
-    <div className="grid gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-text-primary">Marbetes</h1>
-      </div>
-      <StatusCards counters={counters} />
-      <MarbetesFilters />
-      <MarbetesPageClient items={list.items} userRole={user.role} total={list.total} />
-    </div>
+    <MarbetesPageClient items={list.items} userRole={user.role} total={list.total} />
   );
 }
