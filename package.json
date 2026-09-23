@@ -1,0 +1,28 @@
+{
+  "name": "quorum-backoffice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Quorum suite administrative backoffice: physical security (marbetes), authorized devices, and audit log.",
+  "engines": {
+    "node": ">=22.22.1"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "test": "npm run test --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "bootstrap": "bash scripts/dev-bootstrap.sh"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "typescript": "5.6.3"
+  }
+}

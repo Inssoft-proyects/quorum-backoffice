@@ -1,0 +1,36 @@
+{
+  "name": "@quorum-backoffice/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zod DTOs and shared types for the backoffice suite.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./dto/marbete": {
+      "types": "./dist/dto/marbete.d.ts",
+      "default": "./dist/dto/marbete.js"
+    },
+    "./dto/auth": {
+      "types": "./dist/dto/auth.d.ts",
+      "default": "./dist/dto/auth.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo 'shared: lint deferred to consumer' && exit 0",
+    "format": "prettier --write \"src/**/*.{ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,json}\""
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}
