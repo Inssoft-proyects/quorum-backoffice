@@ -27,7 +27,7 @@ export default async function LoginPage() {
       <main className="flex min-h-screen items-center justify-center bg-muted px-4 py-12">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <div className="flex items-center gap-3">
+            <header className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-500 text-white">
                 <Icon name="id-card" variant="inherit" size={22} aria-label="InecConecta" />
               </span>
@@ -35,7 +35,7 @@ export default async function LoginPage() {
                 <CardTitle className="text-text-primary">InecConecta · Backoffice</CardTitle>
                 <CardDescription>Acceso administrativo</CardDescription>
               </div>
-            </div>
+            </header>
           </CardHeader>
           <CardContent>
             <LoginForm />
