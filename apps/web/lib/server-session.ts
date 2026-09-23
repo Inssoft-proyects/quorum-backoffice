@@ -19,7 +19,9 @@ export async function getServerSession(): Promise<MeResponse | null> {
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
-    return await me(`sid=${token}`);
+    const cookieHeader = await getAuthCookieHeader();
+    if (!cookieHeader) return null;
+    return await me(cookieHeader);
   } catch {
     return null;
   }
