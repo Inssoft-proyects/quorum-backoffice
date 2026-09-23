@@ -127,13 +127,15 @@ bash scripts/dev-bootstrap.sh
 
 ## Polish items pendientes (no bloquean MVP)
 
-1. **RESP-001 P0** (mobile responsive): AppShell con sidebar colapsable en <md. Effort M. Pendiente.
-2. **A11Y-001 P1**: agregar `<header>` semántico en card de /login. Effort S. Pendiente.
-3. **VIS-002 P2**: audit focus-visible en botones. Effort S. Pendiente.
-4. **Endpoint `POST /api/v1/marbetes/:id/reveal`** (Revelar marbete necesita backend). Effort M.
-5. **Bulk upload endpoint** para el botón "Cargar marbetes". Effort L.
-6. Migración bcrypt → argon2id (OWASP 2025+).
-7. Política de archivado para `audit_log` (>1 año → cold storage).
+1. **Endpoint `POST /api/v1/marbetes/:id/reveal`** (Revelar marbete necesita backend). Effort M.
+2. **Bulk upload endpoint** para el botón "Cargar marbetes". Effort L.
+3. Migración bcrypt → argon2id (OWASP 2025+).
+4. Política de archivado para `audit_log` (>1 año → cold storage).
+
+Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + 764243e en `feature/wu0-bootstrap`):
+- **RESP-001 P0** (mobile responsive): AppShell con sidebar colapsable en <md.
+- **A11Y-001 P1**: landmark `<header>` en card de /login.
+- **VIS-002 P2**: focus-visible audit + styles en .metric-card, .sort-button, .row-action, .table-pagination__toggle.
 
 ## Decisiones técnicas heredadas (no cambiar sin discutir)
 
@@ -167,8 +169,8 @@ cd apps/api && npm run migrate
 sudo systemctl enable --now quorum-backoffice-api quorum-backoffice-web
 ```
 
-### B) Polish WU (RESP-001 mobile responsive + A11Y-001 + VIS-002)
-Cualquier combinación de los 6 polish items arriba.
+### B) Polish WU v3 (reveal endpoint + bulk upload + bcrypt→argon2id + audit_log archival)
+Cualquier combinación de los 4 polish items restantes arriba (en orden: endpoint reveal, bulk upload, bcrypt→argon2id, audit_log archival).
 
 ### C) Endpoint faltante: POST /api/v1/marbetes/:id/reveal
 Implementar en `apps/api/src/routes/marbetes.ts` con la firma:
