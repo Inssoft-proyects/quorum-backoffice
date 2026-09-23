@@ -1,115 +1,170 @@
 'use client';
+
+import * as React from 'react';
 import type { DispositivoDetailResponse, UserRole } from '@quorum-backoffice/shared';
 import { hasAtLeastRole } from '@quorum-backoffice/shared';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Ban, Pencil } from 'lucide-react';
+import { IdBadge, SortHeader, StatusChip, type SortState } from '@/components/inventory';
 
 interface Props {
   items: DispositivoDetailResponse[];
   userRole: UserRole;
+  /** Current sort applied to the table. Optional for test-render parity. */
+  sort?: SortState | null;
+  /** Notifies the parent of a sort cycle (asc → desc → none). */
+  onSortChange?: (s: SortState | null) => void;
   onEdit: (item: DispositivoDetailResponse) => void;
   onRevoke: (item: DispositivoDetailResponse) => void;
   isPending?: boolean;
 }
 
-type BadgeVariant = 'default' | 'destructive';
-
-function statusVariant(status: DispositivoDetailResponse['status']): BadgeVariant {
-  return status === 'active' ? 'default' : 'destructive';
+function statusChip(status: DispositivoDetailResponse['status']) {
+  if (status === 'active') return { variant: 'available' as const, label: 'Activo' };
+  return { variant: 'danger' as const, label: 'Revocado' };
 }
 
-function statusLabel(status: DispositivoDetailResponse['status']): string {
-  return status === 'active' ? 'Activo' : 'Revocado';
+function formatDate(iso: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  // Maquet uses the es-MX short month + 4-digit year pattern.
+  return d.toLocaleDateString('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 /**
- * Renders the dispositivos list as a shadcn table.
+ * Redesigned dispositivos list (maquette v2).
  *
- * Differences vs MarbetesTable:
- *   - Serial number is shown in FULL (not masked); the serial is the
- *     identification token and is not a secret.
- *   - No student column (dispositivos are not assigned to students).
- *   - Status enum is active/revoked only (no inactive).
- *   - Edit + Revoke actions are gated by admin role; Revoke is hidden for
- *     already-revoked rows.
+ * Renders ID (DIS-####) / Serial / Marca / Modelo / Estado / Registrado
+ * / Acciones. The serial is shown in full (it's the device's hardware
+ * identifier, not a secret). Action column shows "Editar" and "Revocar"
+ * (the maquet icons) and is gated by admin role. Edit + Revoke are
+ * hidden for revoked rows — only "Activo" rows are mutable.
+ *
+ * `sort` and `onSortChange` are optional so existing tests can render
+ * the table with the pre-v2 prop shape. In production the page client
+ * always wires them.
  */
-export function DispositivosTable({ items, userRole, onEdit, onRevoke, isPending }: Props) {
+export function DispositivosTable({
+  items,
+  userRole,
+  sort,
+  onSortChange,
+  onEdit,
+  onRevoke,
+  isPending,
+}: Props) {
   const canManage = hasAtLeastRole(userRole, 'admin');
+  const currentSort: SortState | null = sort ?? null;
+  const changeSort = onSortChange ?? (() => {});
+
+  function handleSort(key: string) {
+    let next: SortState | null;
+    if (!currentSort || currentSort.key !== key) {
+      next = { key, direction: 'asc' };
+    } else if (currentSort.direction === 'asc') {
+      next = { key, direction: 'desc' };
+    } else {
+      next = null;
+    }
+    changeSort(next);
+  }
+
   if (items.length === 0) {
     return (
       <div
         className="rounded-md border border-dashed border-border p-8 text-center text-text-muted"
         data-testid="empty-state"
       >
-        No hay dispositivos que coincidan con el filtro.
+        No hay dispositivos registrados.
       </div>
     );
   }
+
   return (
-    <div className="rounded-md border border-border bg-card">
-      <Table data-testid="dispositivos-table">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Serial</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Marca</TableHead>
-            <TableHead>Modelo</TableHead>
-            <TableHead>Creado por</TableHead>
-            <TableHead className="text-right">Acciones</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.map((d) => (
-            <TableRow key={d.id} data-testid={`dispositivo-row-${d.id}`}>
-              <TableCell className="font-mono text-sm">{d.serialNumber}</TableCell>
-              <TableCell>
-                <Badge variant={statusVariant(d.status)}>{statusLabel(d.status)}</Badge>
-              </TableCell>
-              <TableCell>
-                {d.brand ? d.brand : <span className="text-text-muted">—</span>}
-              </TableCell>
-              <TableCell>
-                {d.model ? d.model : <span className="text-text-muted">—</span>}
-              </TableCell>
-              <TableCell className="text-sm text-text-muted">{d.createdBy}</TableCell>
-              <TableCell className="text-right">
-                {canManage ? (
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onEdit(d)}
-                      disabled={isPending}
-                      data-testid={`edit-${d.id}`}
-                    >
-                      Editar
-                    </Button>
-                    {d.status === 'active' ? (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => onRevoke(d)}
-                        disabled={isPending}
-                        data-testid={`revoke-${d.id}`}
-                      >
-                        Revocar
-                      </Button>
+    <div className="table-shell" data-testid="dispositivos-table">
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <SortHeader label="ID" sortKey="id" currentSort={currentSort} onSort={handleSort} />
+              <SortHeader label="Serial" sortKey="serial" currentSort={currentSort} onSort={handleSort} />
+              <SortHeader label="Marca" sortKey="brand" currentSort={currentSort} onSort={handleSort} />
+              <SortHeader label="Modelo" sortKey="model" currentSort={currentSort} onSort={handleSort} />
+              <SortHeader label="Estado" sortKey="status" currentSort={currentSort} onSort={handleSort} />
+              <SortHeader
+                label="Registrado"
+                sortKey="createdAt"
+                currentSort={currentSort}
+                onSort={handleSort}
+              />
+              <th scope="col">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((d) => {
+              const chip = statusChip(d.status);
+              const disId = `DIS-${String(d.id).padStart(4, '0')}`;
+              return (
+                <tr key={d.id} data-testid={`dispositivo-row-${d.id}`}>
+                  <td data-label="ID">
+                    <IdBadge value={disId} />
+                  </td>
+                  <td data-label="Serial" className="data-table__credential">
+                    {d.serialNumber}
+                  </td>
+                  <td data-label="Marca">
+                    {d.brand ? d.brand : <span className="text-text-muted">—</span>}
+                  </td>
+                  <td data-label="Modelo">
+                    {d.model ? d.model : <span className="text-text-muted">—</span>}
+                  </td>
+                  <td data-label="Estado">
+                    <StatusChip variant={chip.variant}>{chip.label}</StatusChip>
+                  </td>
+                  <td
+                    data-label="Registrado"
+                    className="data-table__validity-date"
+                  >
+                    {formatDate(d.createdAt)}
+                  </td>
+                  <td data-label="Acciones">
+                    {canManage && d.status === 'active' ? (
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="row-action"
+                          onClick={() => onEdit(d)}
+                          disabled={isPending}
+                          data-testid={`edit-${d.id}`}
+                          aria-label="Editar"
+                        >
+                          <Pencil className="row-action__icon" aria-hidden />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className="row-action row-action--danger"
+                          onClick={() => onRevoke(d)}
+                          disabled={isPending}
+                          data-testid={`revoke-${d.id}`}
+                          aria-label="Revocar"
+                        >
+                          <Ban className="row-action__icon" aria-hidden />
+                          Revocar
+                        </button>
+                      </div>
                     ) : null}
-                  </div>
-                ) : null}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

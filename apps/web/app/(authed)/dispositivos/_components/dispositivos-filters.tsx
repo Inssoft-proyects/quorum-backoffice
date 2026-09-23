@@ -1,7 +1,8 @@
 'use client';
+
+import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTransition, type ChangeEvent } from 'react';
-import { Input } from '@/components/ui/input';
 
 const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'Todos' },
@@ -9,20 +10,34 @@ const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'revoked', label: 'Revocados' },
 ];
 
+interface Props {
+  /** Current search param (server-derived). Used for the input default value. */
+  search: string;
+  /**
+   * Pre-formatted label rendered in the `.inventory-search__count`
+   * slot. The page client decides how to combine the filtered count and
+   * the server-side total.
+   */
+  countLabel: string;
+}
+
 /**
- * Reads and writes the dispositivos list filters through the URL search
- * params so that filtered views are shareable / bookmarkable. Uses
- * startTransition to keep the UI responsive while the server component
- * re-renders.
+ * Reads and writes the dispositivos list filters (status + search) through
+ * the URL search params so filtered views are shareable / bookmarkable.
+ * Uses startTransition to keep the UI responsive while the server
+ * component re-renders.
  *
- * Mirror of marbetes-filters.tsx, adapted to the dispositivos status enum
- * (active / revoked only — no inactive for dispositivos).
+ * Maquet v2 styling: the status select adopts the `.custom-select`
+ * maquette trigger pattern (plain `<select>` with the
+ * `.custom-select__trigger` class — no JS-driven menu needed) and the
+ * search input is rendered in the `.inventory-search` shell with the
+ * `inventory-section__header` row wrapper. Rendered as a child of
+ * DispositivosPageClient.
  */
-export function DispositivosFilters() {
+export function DispositivosFilters({ search, countLabel }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const status = searchParams.get('status') ?? '';
-  const search = searchParams.get('search') ?? '';
   const [isPending, startTransition] = useTransition();
 
   function updateParam(key: string, value: string) {
@@ -40,37 +55,42 @@ export function DispositivosFilters() {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3" data-testid="dispositivos-filters">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="filter-status" className="text-xs text-text-muted">
-          Estado
-        </label>
-        <select
-          id="filter-status"
-          value={status}
-          onChange={handleStatus}
-          disabled={isPending}
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-        >
-          {STATUS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex min-w-[200px] flex-1 flex-col gap-1">
-        <label htmlFor="filter-search" className="text-xs text-text-muted">
-          Buscar por serial
-        </label>
-        <Input
-          id="filter-search"
-          type="search"
-          placeholder="SN-XXXX-1234"
-          defaultValue={search}
-          onChange={handleSearch}
-          disabled={isPending}
-        />
+    <div className="inventory-section__header">
+      <h2>Dispositivos registrados</h2>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="custom-select" style={{ minWidth: '10rem' }}>
+          <select
+            id="filter-status"
+            value={status}
+            onChange={handleStatus}
+            disabled={isPending}
+            className="custom-select__trigger"
+            data-testid="filter-status"
+          >
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="inventory-search" role="search">
+          <span className="inventory-search__icon" aria-hidden />
+          <input
+            className="inventory-search__input"
+            type="search"
+            autoComplete="off"
+            placeholder="Buscar por serial, marca o modelo"
+            defaultValue={search}
+            onChange={handleSearch}
+            disabled={isPending}
+            data-testid="dispositivos-search"
+            aria-label="Buscar dispositivo"
+          />
+          <span className="inventory-search__count" aria-live="polite">
+            {countLabel}
+          </span>
+        </div>
       </div>
     </div>
   );

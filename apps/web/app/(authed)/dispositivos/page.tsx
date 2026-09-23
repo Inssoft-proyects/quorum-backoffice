@@ -4,21 +4,24 @@ import { hasAtLeastRole, ListDispositivosFilter } from '@quorum-backoffice/share
 import type { z } from 'zod';
 import { listDispositivos } from '@/lib/api-client';
 import { getServerSession, getAuthCookieHeader } from '@/lib/server-session';
-import { DispositivosFilters } from './_components/dispositivos-filters';
 import { DispositivosPageClient } from './_components/dispositivos-page-client';
 
 const VALID_STATUS: ReadonlySet<DispositivoStatus> = new Set(['active', 'revoked']);
 
 /**
- * /dispositivos — list view (WU9).
+ * /dispositivos — list view (maquette v2).
  *
- * Server component: enforces auth + operator+ role, forwards the session
- * cookie to the API to fetch the first page of dispositivos filtered by
- * `status` and `search` from the URL search params.
+ * Server component: enforces auth + operator+ role and forwards the
+ * session cookie to the API. We fetch up to 200 items (the API's hard
+ * max) so the in-page metric cards can derive their counters from a
+ * single source — the maquette keeps counters close to the data they
+ * represent.
  *
- * Mirror of marbetes/page.tsx minus the counters card (dispositivos have
- * no counters endpoint in MVP). Edit + revoke actions are gated to admin
- * inside the table component via `hasAtLeastRole(userRole, 'admin')`.
+ * The page client owns the full maquet rendering (header + actions +
+ * metric cards + filters + table + pagination + 3 dialogs), mirroring
+ * the marbetes v2 split. Filters stay inside the page client because
+ * they need URL-driven sync via `useSearchParams`, which is only
+ * available on client components.
  */
 export default async function DispositivosPage({
   searchParams,
@@ -41,19 +44,18 @@ export default async function DispositivosPage({
   const filter: z.input<typeof ListDispositivosFilter> = {
     status,
     search: rawSearch || undefined,
-    limit: 50,
+    limit: 200,
     offset: 0,
   };
 
   const list = await listDispositivos(filter, cookie);
 
   return (
-    <div className="grid gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-text-primary">Dispositivos</h1>
-      </div>
-      <DispositivosFilters />
-      <DispositivosPageClient items={list.items} userRole={user.role} total={list.total} />
-    </div>
+    <DispositivosPageClient
+      items={list.items}
+      userRole={user.role}
+      total={list.total}
+      search={rawSearch}
+    />
   );
 }
