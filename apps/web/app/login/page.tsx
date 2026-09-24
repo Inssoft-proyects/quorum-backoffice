@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getServerSession } from '@/lib/server-session';
 import { AuthProvider } from '@/lib/auth-context';
-import { LoginForm } from './login-form';
+import { LoginFormOtp } from './login-form-otp';
 import {
   Card,
   CardContent,
@@ -14,9 +14,10 @@ import { Icon } from '@/components/icons';
 /**
  * Login page (server component).
  *
- * If the caller already has a valid session cookie, redirect to /dashboard.
- * Otherwise render the login form wrapped in AuthProvider so the client form
- * can drive the API + state. Replaces the WU1b design-system placeholder.
+ * Polish WU v6 / A7: the form now drives the email + OTP flow. If the
+ * caller already has a valid session cookie, redirect to /dashboard.
+ * Otherwise render the form wrapped in AuthProvider so the client form
+ * can drive the API + state.
  */
 export default async function LoginPage() {
   const user = await getServerSession();
@@ -38,7 +39,7 @@ export default async function LoginPage() {
             </header>
           </CardHeader>
           <CardContent>
-            <LoginForm />
+            <LoginFormOtp />
           </CardContent>
         </Card>
       </main>

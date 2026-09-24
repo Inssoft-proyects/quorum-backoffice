@@ -4,13 +4,13 @@ describe('api-client', () => {
   it('login posts to /api/v1/auth/login and returns the user', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.method).toBe('POST');
-      expect(String(init?.body)).toBe(JSON.stringify({ email: 'a@b.com', password: 'pw' }));
+      expect(String(init?.body)).toBe(JSON.stringify({ email: 'a@b.com', otp: 'AB12CD' }));
       return new Response(JSON.stringify({ user: { id: 1, email: 'a@b.com', role: 'admin' } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
     }) as unknown as typeof fetch;
-    const u = await login({ email: 'a@b.com', password: 'pw' });
+    const u = await login({ email: 'a@b.com', otp: 'AB12CD' });
     expect(u).toEqual({ id: 1, email: 'a@b.com', role: 'admin' });
   });
 
@@ -19,7 +19,7 @@ describe('api-client', () => {
       new Response(JSON.stringify({ code: 'invalid_credentials', message: 'no' }), {
         status: 401,
       })) as unknown as typeof fetch;
-    await expect(login({ email: 'a@b.com', password: 'pw' })).rejects.toMatchObject({
+    await expect(login({ email: 'a@b.com', otp: 'AB12CD' })).rejects.toMatchObject({
       code: 'invalid_credentials',
       status: 401,
     });

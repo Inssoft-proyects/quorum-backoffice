@@ -33,21 +33,21 @@ describe('AuthContext', () => {
     expect(result.current.status).toBe('idle');
   });
 
-  it('login() sets error on 401', async () => {
+  it('login() sets error on 401 with invalid_otp', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
-      new Response(JSON.stringify({ code: 'invalid_credentials', message: 'no' }), {
+      new Response(JSON.stringify({ code: 'invalid_otp', message: 'no' }), {
         status: 401,
       })) as unknown as typeof fetch;
     const { result } = renderHook(() => useAuth(), { wrapper });
     await act(async () => {
       try {
-        await result.current.login('a@b.com', 'pass');
+        await result.current.login('a@b.com', 'AB12CD');
       } catch {
         /* expected */
       }
     });
     expect(result.current.user).toBeNull();
-    expect(result.current.error).toMatch(/incorrectos/i);
+    expect(result.current.error).toMatch(/incorrecto/i);
     expect(result.current.status).toBe('error');
   });
 

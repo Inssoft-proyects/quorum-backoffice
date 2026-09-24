@@ -20,6 +20,10 @@ export const AuditAction = z.enum([
   'auth.login',
   'auth.logout',
   'auth.failed',
+  // Polish WU v6: email + OTP login flow emits more granular auth events.
+  'auth.login.requested',
+  'auth.login.otp_verified',
+  'auth.login.failed',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

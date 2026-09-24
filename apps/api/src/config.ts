@@ -23,6 +23,19 @@ const ConfigSchema = z.object({
   AUTH_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_LOGIN_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
 
+  // SMTP (Polish WU v6: OTP delivery for email+OTP login). Required in
+  // production; optional in dev/test (mailer falls back to logged delivery).
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().positive().optional(),
+  SMTP_SECURE: z.coerce.boolean().default(false),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().email().default('no-reply@quorum.local'),
+  LOGIN_OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  LOGIN_OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  LOGIN_OTP_REQUEST_MAX_PER_EMAIL: z.coerce.number().int().positive().default(5),
+  LOGIN_OTP_REQUEST_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
+
   ALLOWED_ORIGIN: z.string().url().optional(),
 
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),

@@ -34,6 +34,7 @@ import { registerDispositivosRoutes } from './routes/dispositivos';
 import { registerAuditRoutes } from './routes/audit';
 import { registerAuthRoutes } from './routes/auth';
 import { registerStudentsRoutes } from './routes/students';
+import authDepsPlugin from './plugins/auth-deps';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -79,6 +80,10 @@ export async function buildApp(
   await app.register(pgPlugin);
   await app.register(redisPlugin);
   await app.register(cookie, { secret: app.config.SESSION_SECRET });
+  // OtpClient + Mailer (Polish WU v6). Must register AFTER config and
+  // BEFORE any route that calls AuthService, since the auth route
+  // resolves `app.otpClient` and `app.mailer` from the decorator.
+  await app.register(authDepsPlugin);
 
   // Session hydration (depends on pg + cookie; runs an onRequest hook
   // that must fire before any domain route reaches its handler).
