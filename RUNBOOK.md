@@ -45,6 +45,16 @@ Backoffice service.
 | `NODE_ENV` | no | development | `development|test|production` |
 | `BOOTSTRAP_ADMIN_EMAIL` | no | — | Optional: create initial admin on boot |
 | `BOOTSTRAP_ADMIN_PASSWORD` | no | — | Optional: initial admin password |
+| `SMTP_HOST` | prod only | — | Hostname of the SMTP relay used to deliver login OTPs |
+| `SMTP_PORT` | prod only | — | SMTP port (typically 587 for STARTTLS or 465 for TLS) |
+| `SMTP_SECURE` | no | false | `true` for implicit TLS (port 465) |
+| `SMTP_USER` | prod only | — | SMTP auth user |
+| `SMTP_PASS` | prod only | — | SMTP auth password |
+| `SMTP_FROM` | no | `no-reply@quorum.local` | From address on OTP emails |
+| `LOGIN_OTP_TTL_SECONDS` | no | 300 | OTP validity window |
+| `LOGIN_OTP_MAX_ATTEMPTS` | no | 5 | Max wrong codes per OTP |
+| `LOGIN_OTP_REQUEST_MAX_PER_EMAIL` | no | 5 | Max OTP requests per email / window |
+| `LOGIN_OTP_REQUEST_WINDOW_SECONDS` | no | 900 | 15 minutes |
 
 ### Web (`apps/web`)
 
@@ -84,7 +94,50 @@ INSERT INTO users (email, password_hash, role)
 VALUES ('admin@yourdomain', '$2b$12$...', 'admin');
 ```
 
-Then log in via `POST /api/v1/auth/login` and rotate the password.
+Then trigger an OTP for that address via `POST /api/v1/auth/login/request`
+and complete the login with the emailed 6-digit code via
+`POST /api/v1/auth/login`. The legacy `password` field on the login
+DTO is parsed but ignored — Polish WU v6 moved the surface to
+email + OTP and the `users.password_hash` column is preserved on
+disk for recovery but no longer verified.
+
+### OTP delivery (Polish WU v6 / A1)
+
+Login OTPs are issued by the sibling `quorum-otp` service and delivered
+to the user via SMTP from the backoffice. The two-step contract is:
+
+```http
+POST /api/v1/auth/login/request
+Content-Type: application/json
+{ "email": "admin@quorum.local" }
+
+→ 200 { "ok": true, "retryAfterSeconds": 60 }
+
+POST /api/v1/auth/login
+Content-Type: application/json
+{ "email": "admin@quorum.local", "otp": "K7QM3X" }
+
+→ 200 { "user": { ... } } + Set-Cookie: __Host-sid=...
+```
+
+- The OTP service issues the token (`POST /v1/otps`); the backoffice
+  receives it and forwards it to the user via SMTP.
+- Both steps are rate-limited per email: 5 OTP requests / 15 min and
+  5 verify attempts / 15 min.
+- `users.password_hash` is NOT touched by the login flow; it stays on
+  disk for legacy recovery but the column can be dropped in a future
+  WU once the migration is stable.
+- **Production failure modes:**
+  - `SMTP_*` missing → service throws `serviceUnavailable` at boot.
+    The API does NOT fall back to "log only" in production; the deploy
+    fails-closed.
+  - OTP service down → login request returns 503; verify returns 503.
+  - Mailer error after issue → audit `auth.login.requested` with
+    `entityId=delivery_failed:<otpId>` and the user-facing error is
+    a generic 503 (no SMTP host leakage).
+- **Dev convenience**: if `SMTP_HOST` is unset in dev/test, the
+  mailer logs the OTP at `warn` level. Look for
+  `smtp_dev_mode_otp_logged` in the logs to recover it locally.
 
 ### Rotate a session secret
 
