@@ -34,6 +34,8 @@ import {
   type MarbeteDetailResponse,
   type MeResponse,
   type RevealMarbeteResponse,
+  type RequestLoginRequest,
+  type RequestLoginResponse,
   type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
 
@@ -177,6 +179,26 @@ async function apiPatchWithOtp<T>(
 
 // ---- Auth (existing surface) ----
 
+/**
+ * Polish WU v6: request an OTP email for the login flow.
+ *
+ * Returns `{ ok: true, retryAfterSeconds }` on success (even when the
+ * email is unknown, to avoid leaking which addresses have accounts).
+ * Throws `ApiError` on transport failures or 5xx; 429 maps to
+ * `rate_limited` with the retry hint surfaced via the error details.
+ */
+export async function requestLoginOtp(
+  body: RequestLoginRequest,
+  cookie?: string,
+): Promise<RequestLoginResponse> {
+  return apiPost<RequestLoginResponse>('/api/v1/auth/login/request', body, cookie);
+}
+
+/**
+ * Polish WU v6: exchange (email, otp) for a session cookie. The legacy
+ * `password` field on `LoginRequest` is ignored by the backend — kept
+ * only so old clients do not break while migrating.
+ */
 export async function login(body: LoginRequest, cookie?: string): Promise<MeResponse> {
   const data = await apiPost<{ user: MeResponse }>('/api/v1/auth/login', body, cookie);
   return data.user;
