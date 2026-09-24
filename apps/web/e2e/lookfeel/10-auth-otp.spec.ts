@@ -58,24 +58,23 @@ test.describe('Auth OTP (Polish WU v6 / A9)', () => {
     await page.getByLabel('Correo').fill('admin@quorum.local');
     await page.getByTestId('login-request-otp').click();
     await expect(page.getByTestId('login-otp')).toBeVisible({ timeout: 10_000 });
-    // Paste a 6-digit code into the OtpInput's first box.
+    // Paste a deliberately invalid 6-digit code into the OtpInput's
+    // first box; the OtpInput's onPaste handler fills all six boxes in
+    // one go.
     const firstBox = page.getByLabel('Digit 1 of 6');
+    await firstBox.click();
     await firstBox.fill('0');
-    await firstBox.press('Control+A');
-    await page.keyboard.press('Delete');
-    // Use paste via clipboardData on the focused box.
     await page.evaluate(() => {
-      const evt = new ClipboardEvent('paste', { clipboardData: new DataTransfer() });
-      document.activeElement?.dispatchEvent(evt);
+      const input = document.activeElement as HTMLInputElement | null;
+      if (input) {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', '000000');
+        input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
+      }
     });
-    // Fallback: fill all six digit inputs directly.
-    for (let i = 1; i <= 6; i += 1) {
-      await page.getByLabel(`Digit ${i} of 6`).fill(String(i));
-    }
+    // Submit the OTP; the backend will respond 401 invalid_otp because
+    // the mock OTP service only accepts '123456'.
     await page.getByTestId('login-submit-otp').click();
-    // Either an error is shown (invalid_otp) or rate limit (when many
-    // attempts are made in the window). Both are non-navigating
-    // outcomes that exercise the same error-handling UI path.
     await expect(page.getByTestId('login-error')).toBeVisible({ timeout: 10_000 });
     // We never reached the dashboard.
     expect(new URL(page.url()).pathname).not.toContain('/dashboard');
