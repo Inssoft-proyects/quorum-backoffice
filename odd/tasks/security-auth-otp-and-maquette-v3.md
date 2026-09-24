@@ -136,11 +136,23 @@ Orden de ataque: **Auth OTP primero** (security-first), después maqueta.
 | A9 Playwright e2e | `cd96e99` | ✅ done |
 | A10 Docs + auditoría | `7cde86e` | ✅ done |
 | **Total Fase A**: | **9 commits, +205 tests verde** | ✅ completa |
-| B1 Limpieza working tree | TBD | pendiente |
-| B2 Audit visual /marbetes | TBD | pendiente |
-| B3 Audit visual /dispositivos + /audit | TBD | pendiente |
-| B4 Refactor LoginFormOtp a shadcn | TBD | pendiente |
-| B5 Refactor dialogs a shadcn | TBD | pendiente |
-| B6 Tests RTL post-refactor | TBD | pendiente |
-| B7 Playwright visual regression | TBD | pendiente |
-| B8 Docs + HANDOFF | TBD | pendiente |
+| B1 Limpieza working tree | `75e5e01` + `783b350` | ✅ done (44 archivos borrados: `__MACOSX/._*` + duplicate png-x2 + zip + image.png + package-lock regen) |
+| B2 Audit visual /marbetes | `7fe86d4` | ✅ done (copy ya alineado con HTML canon: heading + 4 cards + CTAs + tabla) |
+| B3 Audit visual /dispositivos + /audit | `7fe86d4` | ✅ done (dispositivos: Total / Activos / Revocados / Sin marca; audit: Total / Marbetes / Dispositivos / Autenticación) |
+| B4 Refactor LoginFormOtp a shadcn | `8f46a39` | ✅ done (Input + Label + Button + Alert + OtpInput shadcn primitives) |
+| B5 Refactor dialogs a shadcn | pre-existing | ✅ done (todos los dialogs usan shadcn Dialog; solo `<input type="file">` raw — convención shadcn) |
+| B6 Tests RTL post-refactor | `7fe86d4` | ✅ done (RTL 83/83 verde sin regresiones) |
+| B7 Playwright visual regression | `7fe86d4` | ✅ done (`11-maquette-v3.spec.ts` T11.1–T11.5: 5/5 verde contra standalone build local con screenshots) |
+| B8 Docs + HANDOFF | TBD | in progress |
+| **Total Fase B**: | **+3 commits, +5 Playwright tests** | ✅ completa |
+
+### Resumen total del PR Polish WU v6
+
+| Fase | Commits | Tests añadidos | Estado |
+|---|---|---|---|
+| **A** (Auth OTP) | 11 | +17 (12 RTL + 6 Playwright − 1 fix) | ✅ |
+| **B** (Maquette v3) | +3 | +5 Playwright | ✅ |
+| **TOTAL** | **14 commits** | **+22 tests verde** | **Listo para review y merge** |
+
+Rama: `feature/security-auth-otp` @ `7fe86d4`
+PR: https://github.com/Inssoft-proyects/quorum-backoffice/pull/3
