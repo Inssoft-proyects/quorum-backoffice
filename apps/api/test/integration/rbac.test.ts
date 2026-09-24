@@ -16,6 +16,8 @@ import path from 'node:path';
 import bcrypt from 'bcrypt';
 import { buildApp } from '../../src/app';
 import { migrate } from '../../src/migrations';
+import type { OtpClient } from '../../src/services/otp-client';
+import { createMailerForTest, type Mailer } from '../../src/services/mailer';
 
 const TEST_DATABASE_URL =
   process.env['DATABASE_URL_TEST'] ??
@@ -38,10 +40,14 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   AUTH_COOKIE_SECURE: 'false',
   AUTH_LOGIN_MAX_ATTEMPTS: '5',
   AUTH_LOGIN_WINDOW_SECONDS: '900',
+  LOGIN_OTP_TTL_SECONDS: '300',
+  LOGIN_OTP_MAX_ATTEMPTS: '5',
+  LOGIN_OTP_REQUEST_MAX_PER_EMAIL: '5',
+  LOGIN_OTP_REQUEST_WINDOW_SECONDS: '900',
 };
 
 const BCRYPT_COST = 10;
-const VALID_OTP = '123456';
+const VALID_OTP = 'AB12CD';
 
 interface UserFixture {
   id: number;
@@ -81,12 +87,35 @@ function makeOtpFetch(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-async function loginAndGetCookie(app: Awaited<ReturnType<typeof buildApp>>, email: string, password: string): Promise<string> {
+/**
+ * Fake OTP client used by RBAC tests. Always accepts any code so the
+ * tests can drive the login flow without a real quorum-otp service.
+ */
+class FakeOtpClient {
+  async issue(): Promise<{ ok: true; otpId: string; token: string; ttlSeconds: number }> {
+    return { ok: true, otpId: 'fake-rbac-otp', token: VALID_OTP, ttlSeconds: 300 };
+  }
+  async verify(args: { subject: string; scope: string; code: string }) {
+    if (args.code !== VALID_OTP) return { ok: false as const, reason: 'invalid' as const };
+    return { ok: true as const, otpId: 'fake-rbac-otp' };
+  }
+}
+
+async function loginAndGetCookie(app: Awaited<ReturnType<typeof buildApp>>, email: string, _password: string): Promise<string> {
+  // Step 1: request the OTP.
+  const reqR = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/login/request',
+    headers: { 'content-type': 'application/json' },
+    payload: JSON.stringify({ email }),
+  });
+  if (reqR.statusCode !== 200) throw new Error(`otp_request_failed status=${reqR.statusCode} body=${reqR.body}`);
+  // Step 2: submit the OTP.
   const r = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/login',
     headers: { 'content-type': 'application/json' },
-    payload: JSON.stringify({ email, password }),
+    payload: JSON.stringify({ email, otp: VALID_OTP }),
   });
   if (r.statusCode !== 200) throw new Error(`login_failed status=${r.statusCode} body=${r.body}`);
   const cookie = cookieFromSetCookie(r.headers['set-cookie'], 'sid');
@@ -123,6 +152,9 @@ describe('RBAC (integration, real PG + Redis)', () => {
     auditor = await seedUser(pool, `rbac-auditor-${Date.now()}@example.test`, 'Aud1t0rPass', 'auditor');
 
     app = await buildApp({ config: TEST_ENV });
+    // Polish WU v6: replace the real OtpClient/Mailer with hermetic fakes.
+    (app as unknown as { otpClient: OtpClient }).otpClient = new FakeOtpClient() as unknown as OtpClient;
+    (app as unknown as { mailer: Mailer }).mailer = createMailerForTest({ log: app.log });
     (globalThis as { fetch: typeof fetch }).fetch = makeOtpFetch();
   });
 

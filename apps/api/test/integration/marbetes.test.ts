@@ -18,6 +18,8 @@ import { Pool } from 'pg';
 import path from 'node:path';
 import { buildApp } from '../../src/app';
 import { migrate } from '../../src/migrations';
+import type { OtpClient } from '../../src/services/otp-client';
+import { createMailerForTest, type Mailer } from '../../src/services/mailer';
 
 const TEST_DATABASE_URL =
   process.env['DATABASE_URL_TEST'] ??
@@ -36,10 +38,35 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   CANVAS_PORTAL_API_TOKEN: 'test-canvas-token-1234567890',
   SESSION_SECRET: 'a'.repeat(64),
   SESSION_TTL_SECONDS: '3600',
+  AUTH_COOKIE_NAME: 'sid',
+  AUTH_COOKIE_SECURE: 'false',
+  AUTH_LOGIN_MAX_ATTEMPTS: '5',
+  AUTH_LOGIN_WINDOW_SECONDS: '900',
+  LOGIN_OTP_TTL_SECONDS: '300',
+  LOGIN_OTP_MAX_ATTEMPTS: '5',
+  LOGIN_OTP_REQUEST_MAX_PER_EMAIL: '5',
+  LOGIN_OTP_REQUEST_WINDOW_SECONDS: '900',
 };
 
 const VALID_OTP = '123456';
 const MOCK_OTP_ID = 'otp-test-fixed';
+
+/**
+ * Polish WU v6: FakeOtpClient issues a deterministic code and accepts any
+ * code equal to `VALID_OTP` on verify. The OTP_SERVICE_URL fetch mock
+ * below is still required for the x-otp-code header on destructive
+ * marbete operations (those go through OtpClient.verify from
+ * apps/api/src/routes/marbetes.ts).
+ */
+class FakeOtpClient {
+  async issue() {
+    return { ok: true as const, otpId: MOCK_OTP_ID, token: VALID_OTP, ttlSeconds: 300 };
+  }
+  async verify(args: { subject: string; scope: string; code: string }) {
+    if (args.code !== VALID_OTP) return { ok: false as const, reason: 'invalid' as const };
+    return { ok: true as const, otpId: MOCK_OTP_ID };
+  }
+}
 
 function makeOtpFetch(behaviour: (body: unknown) => { status: number; body: unknown }): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -496,13 +523,22 @@ describe('reveal endpoint (WU #1)', () => {
       return { status: 401, body: { error: 'invalid' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+    // Polish WU v6: replace the real OtpClient/Mailer with hermetic fakes.
+    (app as unknown as { otpClient: OtpClient }).otpClient = new FakeOtpClient() as unknown as OtpClient;
+    (app as unknown as { mailer: Mailer }).mailer = createMailerForTest({ log: app.log });
 
-    // Log the operator in via the real auth flow.
+    // Log the operator in via the real auth flow (Polish WU v6: email + OTP).
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login/request',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ email: opEmail }),
+    });
     const loginRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email: opEmail, password: 'Op3r@Pass' }),
+      payload: JSON.stringify({ email: opEmail, otp: VALID_OTP }),
     });
     if (loginRes.statusCode !== 200) {
       throw new Error(`operator_login_failed: ${loginRes.statusCode} ${loginRes.body}`);
@@ -695,12 +731,21 @@ describe('bulk create (WU #3)', () => {
       return { status: 401, body: { error: 'invalid' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+    // Polish WU v6: replace the real OtpClient/Mailer with hermetic fakes.
+    (app as unknown as { otpClient: OtpClient }).otpClient = new FakeOtpClient() as unknown as OtpClient;
+    (app as unknown as { mailer: Mailer }).mailer = createMailerForTest({ log: app.log });
 
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login/request',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ email: opEmail }),
+    });
     const loginRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email: opEmail, password: 'Op3r@Pass' }),
+      payload: JSON.stringify({ email: opEmail, otp: VALID_OTP }),
     });
     if (loginRes.statusCode !== 200) {
       throw new Error(`operator_login_failed: ${loginRes.statusCode} ${loginRes.body}`);
