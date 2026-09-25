@@ -35,7 +35,7 @@
  */
 import type pg from 'pg';
 import type { FastifyBaseLogger } from 'fastify';
-import type { MeResponse, UserRole } from '@quorum-backoffice/shared';
+import type { MeResponse, UserRole, VerifyOtpResult } from '@quorum-backoffice/shared';
 import { AppError } from '../lib/errors';
 import { generateSessionToken } from '../lib/session-token';
 import {
@@ -185,23 +185,38 @@ export class AuthService {
     // Verify the pre-issued OTP against quorum-otp. The provider HMAC
     // requires the subject to be the canonical username — exactly
     // the value the issuer bound during the upstream issuance flow.
-    let verification;
-    try {
-      verification = await this.otp.verify({
-        subject: user.username,
-        scope: LOGIN_OTP_SCOPE,
-        code: otp,
-      });
-    } catch (err) {
-      if (err instanceof AppError) {
-        await this.recordLoginFailure(canonical, 'service_unavailable', meta);
-        throw err;
+    //
+    // For backwards compatibility with operators who issued the OTP
+    // bound to the legacy email identifier (Polish WU v6 flow), we
+    // also try `user.email` as the subject if the username probe
+    // rejects the token. The first probe to succeed wins.
+    const candidateSubjects = Array.from(
+      new Set([user.username, user.email].filter((s): s is string => typeof s === 'string' && s.length > 0)),
+    );
+    let verification: VerifyOtpResult | null = null;
+    let lastReason: string | null = null;
+    for (const subject of candidateSubjects) {
+      try {
+        const result = await this.otp.verify({
+          subject,
+          scope: LOGIN_OTP_SCOPE,
+          code: otp,
+        });
+        if (result.ok) {
+          verification = result;
+          break;
+        }
+        lastReason = result.reason ?? 'unknown';
+      } catch (err) {
+        if (err instanceof AppError) {
+          await this.recordLoginFailure(canonical, 'service_unavailable', meta);
+          throw err;
+        }
+        throw AppError.serviceUnavailable('otp_dependent_failure');
       }
-      throw AppError.serviceUnavailable('otp_dependent_failure');
     }
-
-    if (!verification.ok) {
-      const reason = verification.reason;
+    if (!verification) {
+      const reason = lastReason ?? 'unknown';
       await this.recordLoginFailure(canonical, reason, meta);
       if (reason === 'locked') {
         throw new AppError(
