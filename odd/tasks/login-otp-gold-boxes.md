@@ -28,12 +28,27 @@ replicated across the rest of the login card.
   commits stay on this branch.
 
 ## Tasks
-1. [ ] Writer: extend `OtpInput` with alphanumeric mode + gold focus
+1. [x] Writer: extend `OtpInput` with alphanumeric mode + gold focus
       style; rework `login-form-otp.tsx` to use the boxes per design;
       polish `login/page.tsx` layout/accents; update/add unit tests.
-2. [ ] Verify: focused unit tests, lint/typecheck/build, Playwright
+2. [x] Verify: focused unit tests, lint/typecheck/build, Playwright
       lookfeel login spec.
-3. [ ] Work-unit commit(s) on the feature branch with evidence recorded.
+3. [x] Work-unit commit(s) on the feature branch with evidence recorded.
 
 ## Evidence
-- (commits recorded here after close)
+- Commit `8c796e8` on `feature/username-otp-dynamic-clean`
+  (7 files, +532/-75).
+- Unit: 102/102 green (23 suites), incl. 14 new OTP-box tests.
+- `tsc --noEmit` clean; eslint clean on touched files.
+- NOT verified: `npm run build` and Playwright lookfeel are blocked in
+  this pod (Next 16 Turbopack EACCES opening `.next/trace`). Re-run
+  `npx playwright test e2e/lookfeel/10-auth-otp.spec.ts` in a working
+  environment before deploy.
+- Native review: SKIPPED per user decision (facade rejected the
+  intended-untracked selection binding for the committed-range
+  candidate three times; no lineage created). Candidate can be reviewed
+  later via `gentle-ai review` CLI.
+- Follow-up notes: lookfeel spec updated to the 6-box UI
+  (`fillOtpBoxes` helper); `OtpInput` gained optional `id` prop
+  (first box) for label association; dialog callers unchanged
+  (numeric default).
