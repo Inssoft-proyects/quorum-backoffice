@@ -131,11 +131,14 @@ export function LoginFormOtp() {
             if (error) reset();
             // Editing the OTP field assumes the operator just
             // delivered a fresh code — restart the 5-minute window.
-            if (next.length > 0 && expired) {
+            // We restart on ANY edit (including clearing the field)
+            // so the operator can paste a new code without first
+            // deleting the old one.
+            if (expired) {
               setRemaining(OTP_TTL_SECONDS);
             }
           }}
-          disabled={loading || expired}
+          disabled={loading}
           className="text-center text-lg font-mono tracking-[0.2em] uppercase"
           aria-describedby="otp-hint"
           data-testid="login-otp"
@@ -150,7 +153,7 @@ export function LoginFormOtp() {
             className={
               expired
                 ? 'flex items-center gap-1 font-mono text-alert-error-text'
-                : remaining <= 60
+                : remaining <= Math.max(5, Math.floor(OTP_TTL_SECONDS / 5))
                   ? 'flex items-center gap-1 font-mono text-alert-warning-text'
                   : 'flex items-center gap-1 font-mono'
             }
