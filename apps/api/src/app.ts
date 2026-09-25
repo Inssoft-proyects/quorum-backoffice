@@ -80,9 +80,12 @@ export async function buildApp(
   await app.register(pgPlugin);
   await app.register(redisPlugin);
   await app.register(cookie, { secret: app.config.SESSION_SECRET });
-  // OtpClient + Mailer (Polish WU v6). Must register AFTER config and
-  // BEFORE any route that calls AuthService, since the auth route
-  // resolves `app.otpClient` and `app.mailer` from the decorator.
+  // OtpClient (username + pre-issued OTP login). Must register
+  // AFTER config and BEFORE any route that calls AuthService, since
+  // the auth route resolves `app.otpClient` from the decorator. The
+  // BackOffice no longer ships an SMTP mailer at boot: OTPs are
+  // issued out-of-band by the broader quorum ecosystem and only
+  // verified inside the API.
   await app.register(authDepsPlugin);
 
   // Session hydration (depends on pg + cookie; runs an onRequest hook

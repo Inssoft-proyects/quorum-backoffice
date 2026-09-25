@@ -1,29 +1,30 @@
 /**
  * WU6a integration tests: auth core (login, logout, me) + audit emissions
- * + rate limiting + disabled user handling.
+ * + rate limiting + disabled-user handling under the single-step
+ * username + pre-issued OTP contract.
  *
  * Coverage:
- *  - POST /api/v1/auth/login/request OK → 200 + audit + Mailer.send
- *  - POST /api/v1/auth/login/request unknown email → 200 (no enumeration)
- *  - POST /api/v1/auth/login/request disabled user → 403
- *  - POST /api/v1/auth/login/request rate-limited (per email) → 429
- *  - POST /api/v1/auth/login OK with valid OTP → 200 + Set-Cookie
- *  - POST /api/v1/auth/login wrong OTP → 401 + audit `auth.login.failed`
+ *  - POST /api/v1/auth/login OK with valid OTP → 200 + Set-Cookie + audit
+ *  - POST /api/v1/auth/login unknown username → 401 invalid_credentials
+ *  - POST /api/v1/auth/login cannot authenticate a row without an assigned username
  *  - POST /api/v1/auth/login disabled user → 403
- *  - POST /api/v1/auth/login 6th attempt rate-limited → 429
+ *  - POST /api/v1/auth/login rate-limited (per username) → 429
+ *  - POST /api/v1/auth/login wrong OTP → 401 invalid_credentials
+ *  - POST /api/v1/auth/login replayed/consumed OTP → 401 invalid_credentials
+ *  - POST /api/v1/auth/login OTP service lockout → 429
  *  - POST /api/v1/auth/login emits audit `auth.login.otp_verified` + `auth.login`
  *  - POST /api/v1/auth/logout with valid session → 200 + audit `auth.logout`
  *  - POST /api/v1/auth/logout without session → 401
- *  - GET /api/v1/auth/me with valid session → 200 + user info
- *  - GET /api/v1/auth/me without session → 401
+ *  - GET  /api/v1/auth/me with valid session → 200 + user info
+ *  - GET  /api/v1/auth/me without session → 401
  *
- * Polish WU v6: the auth surface moved from email+password to email+OTP.
- * The OtpClient and Mailer dependencies are swapped for fake doubles at
- * `beforeAll` so the integration suite is hermetic — no real SMTP or
- * quorum-otp service is required. `users.password_hash` is still seeded
- * with a real bcrypt hash to keep the legacy compatibility test for the
- * column intact (it is preserved on disk but never read by the login
- * flow).
+ * The single-step flow does NOT expose a `/auth/login/request` endpoint
+ * and does NOT call a mailer. Tests issue fake OTPs directly via a
+ * FakeOtpClient whose `verify` resolves the pre-bound code for the
+ * username subject, mirroring what an external issuer would have done
+ * out-of-band. `users.password_hash` is still seeded with a real bcrypt
+ * hash to keep the legacy column-compat test intact (the column is
+ * preserved on disk but never read by the login flow).
  */
 import { Pool } from 'pg';
 import path from 'node:path';
@@ -32,7 +33,6 @@ import { buildApp } from '../../src/app';
 import { hashPassword } from '../../src/lib/password';
 import { migrate } from '../../src/migrations';
 import type { OtpClient } from '../../src/services/otp-client';
-import { createMailerForTest, type Mailer } from '../../src/services/mailer';
 
 const TEST_DATABASE_URL =
   process.env['DATABASE_URL_TEST'] ??
@@ -47,6 +47,7 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   REDIS_URL: process.env['REDIS_URL'] ?? 'redis://127.0.0.1:6379',
   OTP_SERVICE_URL: 'http://127.0.0.1:65535',
   OTP_SERVICE_TOKEN: 'test-otp-token-1234567890',
+  OTP_SERVICE_NAME: 'quorum-backoffice',
   CANVAS_PORTAL_API_URL: 'http://127.0.0.1:65535',
   CANVAS_PORTAL_API_TOKEN: 'test-canvas-token-1234567890',
   SESSION_SECRET: 'a'.repeat(64),
@@ -55,28 +56,37 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   AUTH_COOKIE_SECURE: 'false',
   AUTH_LOGIN_MAX_ATTEMPTS: '5',
   AUTH_LOGIN_WINDOW_SECONDS: '900',
-  LOGIN_OTP_TTL_SECONDS: '300',
   LOGIN_OTP_MAX_ATTEMPTS: '5',
-  LOGIN_OTP_REQUEST_MAX_PER_EMAIL: '5',
   LOGIN_OTP_REQUEST_WINDOW_SECONDS: '900',
 };
 
 const BCRYPT_COST = 10; // lower than production (12) to keep tests fast
 
 interface SeedUser {
+  /** BackOffice role; preserved on every insert. */
+  role: 'admin' | 'operator' | 'auditor';
+  /**
+   * Canonical login identifier. Must be a valid BackOffice username
+   * (3-32 chars, alnum + . _ -); this is the subject the FakeOtpClient
+   * uses for verify(). Email is intentionally unused on the new contract.
+   */
+  username: string;
+  /** Email kept for legacy column-compat; login never reads it. */
   email: string;
   password: string;
-  role: 'admin' | 'operator' | 'auditor';
   disabled?: boolean;
+  /** When true, the row exists but `users.username IS NULL` (unmapped). */
+  unmapped?: boolean;
 }
 
 async function seedUser(pool: Pool, u: SeedUser): Promise<number> {
   const hash = await bcrypt.hash(u.password, BCRYPT_COST);
+  const usernameColumnValue = u.unmapped ? null : u.username;
   const r = await pool.query<{ id: number }>(
-    `INSERT INTO users (email, password_hash, role, disabled_at)
-     VALUES (lower($1), $2, $3, ${u.disabled ? 'now()' : 'NULL'})
+    `INSERT INTO users (email, username, password_hash, role, disabled_at)
+     VALUES (lower($1), $2, $3, $4, ${u.disabled ? 'now()' : 'NULL'})
      RETURNING id`,
-    [u.email, hash, u.role],
+    [u.email, usernameColumnValue, hash, u.role],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('user_seed_failed');
@@ -94,18 +104,22 @@ function cookieFromSetCookie(setCookie: string | string[] | undefined, name: str
 }
 
 /**
- * Fake OTP client: stores issued tokens in a Map keyed by email and
- * returns them on `verify()`. Tests can inspect `issued` to assert that
- * the right email got an OTP, and `consumed` to assert replay protection.
+ * Fake OTP client: tests pre-issue a deterministic OTP for each
+ * (scope, subject) pair by calling `issue()` directly — mirroring what
+ * the broader quorum ecosystem would have done out-of-band. `verify()`
+ * matches the pre-issued code, honours single-use replay protection,
+ * and supports `forceLock` to simulate the upstream provider returning
+ * a lockout. The login flow only calls `verify`, never `issue`; we keep
+ * `issue` here so the test fixture stays self-contained.
  */
 class FakeOtpClient {
   public readonly issued = new Map<string, { code: string; consumed: boolean }>();
   public forceReject = false;
   public forceLock = false;
 
-  async issue(args: { subject: string; scope: string; ttlSeconds?: number; maxAttempts?: number }) {
+  async issue(args: { subject: string; scope: string; ttlSeconds?: number; maxAttempts?: number }): Promise<{ ok: true; otpId: string; token: string; ttlSeconds: number }> {
     if (this.forceReject) {
-      return { ok: false as const, reason: 'service_error' as const };
+      return { ok: true as const, otpId: 'fake-otp-id', token: 'AB12CD', ttlSeconds: args.ttlSeconds ?? 300 };
     }
     const code = 'AB12CD'; // deterministic for assertions
     this.issued.set(`${args.scope}:${args.subject.toLowerCase()}`, { code, consumed: false });
@@ -117,7 +131,7 @@ class FakeOtpClient {
     };
   }
 
-  async verify(args: { subject: string; scope: string; code: string }) {
+  async verify(args: { subject: string; scope: string; code: string }): Promise<{ ok: true; otpId: string } | { ok: false; reason: 'invalid' | 'locked' | 'expired' | 'rate_limited' | 'unknown' }> {
     if (this.forceLock) {
       return { ok: false as const, reason: 'locked' as const };
     }
@@ -131,16 +145,19 @@ class FakeOtpClient {
   }
 }
 
-describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
+describe('auth routes (integration, real PG + Redis, single-step username + pre-issued OTP)', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   let pool: Pool;
   let seededAdminId: number;
   let _seededOperatorId: number;
   let fakeOtp: FakeOtpClient;
-  let fakeMailer: ReturnType<typeof createMailerForTest>;
-  const adminEmail = 'admin@example.test';
+  // Canonical usernames are the new login identifier. Emails are kept
+  // for the column-compat tests and the MeResponse payload.
+  const adminUsername = 'auth-admin';
+  const adminEmail = 'auth-admin@example.test';
   const adminPass = 'Adm1n!Pass';
-  const operatorEmail = 'operator@example.test';
+  const operatorUsername = 'auth-operator';
+  const operatorEmail = 'auth-operator@example.test';
   const operatorPass = 'Op3r@torPass';
   const OTP_CODE = 'AB12CD';
 
@@ -162,38 +179,41 @@ describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
     `);
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
 
-    seededAdminId = await seedUser(pool, { email: adminEmail, password: adminPass, role: 'admin' });
-    _seededOperatorId = await seedUser(pool, { email: operatorEmail, password: operatorPass, role: 'operator' });
+    seededAdminId = await seedUser(pool, {
+      username: adminUsername,
+      email: adminEmail,
+      password: adminPass,
+      role: 'admin',
+    });
+    _seededOperatorId = await seedUser(pool, {
+      username: operatorUsername,
+      email: operatorEmail,
+      password: operatorPass,
+      role: 'operator',
+    });
 
     app = await buildApp({ config: TEST_ENV });
 
-    // Swap real OtpClient / Mailer for hermetic fakes.
+    // Swap real OtpClient for a hermetic fake. There is no mailer in
+    // the new contract — the BackOffice never emails an OTP.
     fakeOtp = new FakeOtpClient();
-    fakeMailer = createMailerForTest({ log: app.log });
     (app as unknown as { otpClient: OtpClient }).otpClient = fakeOtp as unknown as OtpClient;
-    (app as unknown as { mailer: Mailer }).mailer = fakeMailer;
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
       new Response('not used', { status: 404 })) as unknown as typeof fetch;
   });
 
-  // Reset the per-email login/OTP-request rate-limit buckets between
-  // tests so the suite is order-independent. The keys live in Redis with
-  // a 15-min TTL; flushing them keeps every test deterministic.
+  // Reset per-username login rate-limit buckets between tests so the
+  // suite is order-independent. The Redis key is now keyed by the
+  // canonical username (see apps/api/src/lib/rate-limit.ts), not by
+  // email.
   beforeEach(async () => {
-    // Iterate over the keys we know we touch and delete them; SCAN
-    // would be safer but DEL on known keys is fine for the test DB.
     const keys = [
-      `login-rl:${adminEmail}`,
-      `login-rl:${operatorEmail}`,
-      `otp-req:${adminEmail}`,
-      `otp-req:${operatorEmail}`,
+      `login_attempts:${adminUsername}`,
+      `login_attempts:${operatorUsername}`,
     ];
     for (const k of keys) {
       await app.redis.del(k);
     }
-    // Also flush any per-(subject,scope) OTP-service lockout keys the
-    // FakeOtpClient exposes. The fake itself doesn't touch Redis, but
-    // a paranoid reset keeps the suite robust if the helper changes.
     fakeOtp.issued.clear();
   });
 
@@ -202,18 +222,16 @@ describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
     await pool.end();
   });
 
-  // Helper: drive the two-step flow for an existing seeded user.
-  async function requestOtp(email: string): Promise<number> {
-    const r = await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/login/request',
-      headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email }),
-    });
-    return r.statusCode;
+  /**
+   * Pre-issue an OTP for the given username subject. This stands in
+   * for what the broader quorum ecosystem would have delivered out of
+   * band; the BackOffice `/auth/login` route never issues codes.
+   */
+  async function issueOtp(username: string): Promise<void> {
+    await fakeOtp.issue({ subject: username, scope: 'login' });
   }
 
-  async function loginWithOtp(email: string, code: string = OTP_CODE): Promise<{
+  async function loginWithOtp(username: string, code: string = OTP_CODE): Promise<{
     statusCode: number;
     body: unknown;
     cookie: string | null;
@@ -222,7 +240,7 @@ describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
       method: 'POST',
       url: '/api/v1/auth/login',
       headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email, otp: code }),
+      payload: JSON.stringify({ username, otp: code }),
     });
     return {
       statusCode: r.statusCode,
@@ -231,214 +249,174 @@ describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
     };
   }
 
-  describe('POST /api/v1/auth/login/request', () => {
-    it('returns 200 for a known email, sends one OTP email, audits auth.login.requested', async () => {
-      const r = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login/request',
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email: adminEmail }),
-      });
-      expect(r.statusCode).toBe(200);
-      const body = r.json() as { ok: boolean; retryAfterSeconds: number };
-      expect(body.ok).toBe(true);
-      expect(typeof body.retryAfterSeconds).toBe('number');
-
-      expect(fakeMailer.lastSent).toHaveLength(1);
-      expect(fakeMailer.lastSent[0]?.to).toBe(adminEmail);
-      expect(fakeMailer.lastSent[0]?.code).toBe(OTP_CODE);
-
-      const audit = await pool.query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM audit_log
-          WHERE action = 'auth.login.requested' AND actor_id = $1`,
-        [adminEmail],
-      );
-      expect(Number(audit.rows[0]?.count)).toBeGreaterThanOrEqual(1);
-    });
-
-    it('returns 200 (no enumeration) for an unknown email but does NOT send any email', async () => {
-      const email = `unknown-${Date.now()}@example.test`;
-      const r = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login/request',
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email }),
-      });
-      expect(r.statusCode).toBe(200);
-      const body = r.json() as { ok: boolean; retryAfterSeconds: number };
-      expect(body.ok).toBe(true);
-      // No email is sent (and no Mailer.send call).
-      const sentForUnknown = fakeMailer.lastSent.filter((s) => s.to === email);
-      expect(sentForUnknown).toHaveLength(0);
-    });
-
-    it('returns 403 for a disabled user', async () => {
-      const email = `disabled-${Date.now()}@example.test`;
-      await seedUser(pool, { email, password: 'Pass123!', role: 'operator', disabled: true });
-      const r = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login/request',
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email }),
-      });
-      expect(r.statusCode).toBe(403);
-    });
-
-    it('returns 400 when email is missing', async () => {
-      const r = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login/request',
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({}),
-      });
-      expect(r.statusCode).toBe(400);
-    });
-
-    it('returns 429 after 5 OTP requests for the same email within the window', async () => {
-      const email = `req-rl-${Date.now()}@example.test`;
-      await seedUser(pool, { email, password: 'Pass123!', role: 'operator' });
-      for (let i = 0; i < 5; i += 1) {
-        const r = await app.inject({
-          method: 'POST',
-          url: '/api/v1/auth/login/request',
-          headers: { 'content-type': 'application/json' },
-          payload: JSON.stringify({ email }),
-        });
-        expect(r.statusCode).toBe(200);
-      }
-      const sixth = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login/request',
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email }),
-      });
-      expect(sixth.statusCode).toBe(429);
-      const body = sixth.json() as { code: string };
-      expect(body.code).toBe('rate_limited');
-    });
-  });
-
   describe('POST /api/v1/auth/login', () => {
     it('returns 200 + Set-Cookie on valid OTP and emits audit auth.login + auth.login.otp_verified', async () => {
-      await requestOtp(adminEmail);
-      const r = await loginWithOtp(adminEmail);
+      await issueOtp(adminUsername);
+      const r = await loginWithOtp(adminUsername);
       expect(r.statusCode).toBe(200);
       expect(r.cookie).not.toBeNull();
       expect(r.cookie).toMatch(/^sid=[A-Za-z0-9_-]+$/);
       const body = r.body as { user: { id: number; email: string; role: string } };
       expect(body.user.id).toBe(seededAdminId);
+      // Email is preserved on MeResponse for legacy UI/audit consumers
+      // even though the login identifier is now the username.
       expect(body.user.email).toBe(adminEmail);
       expect(body.user.role).toBe('admin');
 
+      // Audit emits actorId = canonical username (audit log records
+      // the login identifier, not the email).
       const otpAudit = await pool.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM audit_log
           WHERE action = 'auth.login.otp_verified' AND actor_id = $1`,
-        [adminEmail],
+        [adminUsername],
       );
       expect(Number(otpAudit.rows[0]?.count)).toBeGreaterThanOrEqual(1);
       const loginAudit = await pool.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM audit_log
           WHERE action = 'auth.login' AND actor_id = $1`,
-        [adminEmail],
+        [adminUsername],
       );
       expect(Number(loginAudit.rows[0]?.count)).toBeGreaterThanOrEqual(1);
     });
 
-    it('returns 401 on wrong OTP and emits audit auth.login.failed', async () => {
-      await requestOtp(adminEmail);
-      const r = await loginWithOtp(adminEmail, 'WRONG0');
+    it('returns 401 invalid_credentials for an unknown username (no enumeration)', async () => {
+      const r = await loginWithOtp('ghost-user');
       expect(r.statusCode).toBe(401);
       const body = r.body as { code: string };
-      expect(body.code).toBe('invalid_otp');
+      expect(body.code).toBe('invalid_credentials');
+
+      // Audit discriminates the cause in entityId; the actorId is the
+      // canonical username so brute-force sweeps are observable.
+      const audit = await pool.query<{ count: string; actor_id: string; entity_id: string }>(
+        `SELECT count(*)::text AS count, actor_id, entity_id
+           FROM audit_log
+          WHERE action = 'auth.login.failed' AND actor_id = $1
+          GROUP BY actor_id, entity_id`,
+        ['ghost-user'],
+      );
+      expect(Number(audit.rows[0]?.count)).toBeGreaterThanOrEqual(1);
+      expect(audit.rows[0]?.entity_id).toBe('unknown_user');
+    });
+
+    it('does not authenticate an account until a username is assigned', async () => {
+      await seedUser(pool, {
+        username: 'never-assigned',
+        email: `unmapped-${Date.now()}@example.test`,
+        password: 'Pass123!',
+        role: 'operator',
+        unmapped: true,
+      });
+      // Login accepts only a username, so an account row with username
+      // NULL is intentionally indistinguishable from an unknown username.
+      // Production rollout must assign the username out of band first.
+      const r = await loginWithOtp('never-assigned');
+      expect(r.statusCode).toBe(401);
+      expect((r.body as { code: string }).code).toBe('invalid_credentials');
+    });
+
+    it('returns 401 invalid_credentials on a wrong OTP and emits audit auth.login.failed', async () => {
+      await issueOtp(adminUsername);
+      const r = await loginWithOtp(adminUsername, 'WRONG0');
+      expect(r.statusCode).toBe(401);
+      const body = r.body as { code: string };
+      expect(body.code).toBe('invalid_credentials');
 
       const audit = await pool.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM audit_log
           WHERE action = 'auth.login.failed' AND actor_id = $1`,
-        [adminEmail],
+        [adminUsername],
       );
       expect(Number(audit.rows[0]?.count)).toBeGreaterThanOrEqual(1);
     });
 
-    it('returns 400 when OTP is malformed', async () => {
+    it('returns 400 when OTP is malformed (fails Zod validation)', async () => {
       const r = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/login',
         headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email: adminEmail, otp: 'abc' }),
+        payload: JSON.stringify({ username: adminUsername, otp: 'abc' }),
       });
       expect(r.statusCode).toBe(400);
     });
 
-    it('returns 401 when OTP was never requested (no issued token)', async () => {
-      const r = await loginWithOtp(operatorEmail);
+    it('returns 401 when no OTP was pre-issued for the username subject', async () => {
+      const r = await loginWithOtp(operatorUsername);
       expect(r.statusCode).toBe(401);
+      const body = r.body as { code: string };
+      expect(body.code).toBe('invalid_credentials');
     });
 
-    it('returns 403 when user is disabled at verify time', async () => {
-      const email = `disabled-verify-${Date.now()}@example.test`;
-      await seedUser(pool, { email, password: 'Pass123!', role: 'operator' });
-      await requestOtp(email);
-      // Disable the user between request and verify.
-      await pool.query(`UPDATE users SET disabled_at = now() WHERE email = lower($1)`, [email]);
-      const r = await loginWithOtp(email);
+    it('returns 403 user_disabled when the account is disabled', async () => {
+      const username = `auth-disabled-${Date.now()}`;
+      await seedUser(pool, {
+        username,
+        email: `${username}@example.test`,
+        password: 'Pass123!',
+        role: 'operator',
+        disabled: true,
+      });
+      await issueOtp(username);
+      const r = await loginWithOtp(username);
       expect(r.statusCode).toBe(403);
+      const body = r.body as { code: string };
+      expect(body.code).toBe('user_disabled');
     });
 
-    it('returns 429 when OTP service reports lockout', async () => {
+    it('returns 429 when the OTP service reports lockout', async () => {
+      await issueOtp(adminUsername);
       fakeOtp.forceLock = true;
-      const r = await loginWithOtp(adminEmail);
+      const r = await loginWithOtp(adminUsername);
       expect(r.statusCode).toBe(429);
+      const body = r.body as { code: string };
+      expect(body.code).toBe('rate_limited');
       fakeOtp.forceLock = false;
     });
 
-    it('returns 429 after exceeding 5 attempts in 15min on /login', async () => {
-      const email = `verify-rl-${Date.now()}@example.test`;
-      await seedUser(pool, { email, password: 'Pass123!', role: 'operator' });
-      await requestOtp(email);
+    it('returns 429 after exceeding 5 attempts in 15min on /login (per-username)', async () => {
+      const username = `auth-ratelimit-${Date.now()}`;
+      await seedUser(pool, {
+        username,
+        email: `${username}@example.test`,
+        password: 'Pass123!',
+        role: 'operator',
+      });
+      await issueOtp(username);
       for (let i = 0; i < 5; i += 1) {
-        const r = await loginWithOtp(email, 'WRONG0');
+        const r = await loginWithOtp(username, 'WRONG0');
         expect(r.statusCode).toBe(401);
       }
       const sixth = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/login',
         headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email, otp: OTP_CODE }),
+        payload: JSON.stringify({ username, otp: OTP_CODE }),
       });
       expect(sixth.statusCode).toBe(429);
     });
 
-    it('replay of a consumed OTP fails with invalid_otp', async () => {
-      const email = `replay-${Date.now()}@example.test`;
-      await seedUser(pool, { email, password: 'Pass123!', role: 'operator' });
-      await requestOtp(email);
-      const first = await loginWithOtp(email);
+    it('replay of a consumed OTP fails with invalid_credentials (single-use)', async () => {
+      const username = `auth-replay-${Date.now()}`;
+      await seedUser(pool, {
+        username,
+        email: `${username}@example.test`,
+        password: 'Pass123!',
+        role: 'operator',
+      });
+      await issueOtp(username);
+      const first = await loginWithOtp(username);
       expect(first.statusCode).toBe(200);
-      // The fake OTP marks the entry consumed; second verify is rejected.
-      const second = await loginWithOtp(email);
+      // FakeOtpClient marks the entry consumed; second verify is rejected.
+      const second = await loginWithOtp(username);
       expect(second.statusCode).toBe(401);
       const body = second.body as { code: string };
-      expect(body.code).toBe('invalid_otp');
-    });
-
-    it('accepts and ignores the legacy `password` field for back-compat', async () => {
-      const email = `legacy-pw-${Date.now()}@example.test`;
-      await seedUser(pool, { email, password: 'Pass123!', role: 'operator' });
-      await requestOtp(email);
-      const r = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login',
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email, otp: OTP_CODE, password: 'whatever' }),
-      });
-      expect(r.statusCode).toBe(200);
+      expect(body.code).toBe('invalid_credentials');
     });
   });
 
   describe('POST /api/v1/auth/logout', () => {
     it('returns 200 and clears the cookie for a valid session, emits audit auth.logout', async () => {
-      await requestOtp(operatorEmail);
-      const loginR = await loginWithOtp(operatorEmail);
+      await issueOtp(operatorUsername);
+      const loginR = await loginWithOtp(operatorUsername);
       const cookie = loginR.cookie;
       expect(cookie).not.toBeNull();
       const before = await pool.query<{ count: string }>(
@@ -471,8 +449,8 @@ describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
 
   describe('GET /api/v1/auth/me', () => {
     it('returns 200 + user info for a valid session', async () => {
-      await requestOtp(adminEmail);
-      const loginR = await loginWithOtp(adminEmail);
+      await issueOtp(adminUsername);
+      const loginR = await loginWithOtp(adminUsername);
       const cookie = loginR.cookie;
       expect(cookie).not.toBeNull();
       const r = await app.inject({
@@ -507,20 +485,21 @@ describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
 
   describe('users.password_hash column is preserved', () => {
     /**
-     * Polish WU v6: the login flow never reads password_hash, but the
-     * column is intentionally kept on disk for the bootstrap seed and
-     * potential legacy recovery. This test asserts the column still
-     * exists and is bcrypt-compatible (verifiable with bcrypt.compare).
+     * Polish WU v6 + username migration: the login flow never reads
+     * password_hash, but the column is intentionally kept on disk for
+     * the bootstrap seed and potential legacy recovery. This test
+     * asserts the column still exists and is bcrypt-compatible.
      */
     it('seeds a user with a bcrypt hash and the column remains readable', async () => {
-      const email = `legacy-${Date.now()}@example.test`;
+      const username = `pw-${Date.now()}`;
+      const email = `${username}@example.test`;
       const password = 'L3g@cyPw!';
       const hash = await bcrypt.hash(password, BCRYPT_COST);
       const r = await pool.query<{ password_hash: string }>(
-        `INSERT INTO users (email, password_hash, role)
-         VALUES (lower($1), $2, 'operator')
+        `INSERT INTO users (email, username, password_hash, role)
+         VALUES (lower($1), $2, $3, 'operator')
          RETURNING password_hash`,
-        [email, hash],
+        [email, username, hash],
       );
       const stored = r.rows[0]?.password_hash;
       expect(stored).toBeDefined();
@@ -531,14 +510,15 @@ describe('auth routes (integration, real PG + Redis, OTP flow)', () => {
 
   describe('argon2id migration target (no longer triggered on login)', () => {
     /**
-     * Polish WU v6 regression: legacy `verifyPassword` + transparent
-     * re-hash on login was removed because the login flow never reads
-     * password_hash any more. The argon2id migration target remains a
-     * valid PHC string format; this test only asserts that the helper
-     * still produces and verifies argon2id PHC strings (used elsewhere
-     * by future WUs, e.g. password reset).
+     * Polish WU v6 + username migration regression: the legacy
+     * `verifyPassword` + transparent re-hash on login was removed
+     * because the login flow never reads password_hash any more. The
+     * argon2id migration target remains a valid PHC string format; this
+     * test only asserts that the helper still produces and verifies
+     * argon2id PHC strings (used elsewhere by future WUs, e.g. password
+     * reset).
      */
-    it('hashPassword + verifyPassword round-trips an argon2id PHC string', async () => {
+    it('hashPassword produces an argon2id PHC string', async () => {
       const password = 'Arg0n2id!Pass';
       const hash = await hashPassword(password);
       expect(hash.startsWith('$argon2id$')).toBe(true);

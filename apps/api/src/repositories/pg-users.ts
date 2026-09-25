@@ -10,9 +10,14 @@ import type { UserRole } from '@quorum-backoffice/shared';
 
 type Client = pg.Pool | pg.PoolClient;
 
+const USER_COLUMNS =
+  'id, email, username, password_hash, role, created_at, last_login_at, disabled_at';
+
 export interface UserRow {
   id: number;
   email: string;
+  /** Canonical BackOffice login identifier; NULL until assigned. */
+  username: string | null;
   password_hash: string;
   role: UserRole;
   created_at: Date;
@@ -23,19 +28,36 @@ export interface UserRow {
 export class PgUserRepo {
   constructor(private readonly client: Client) {}
 
-  async findByEmail(email: string): Promise<UserRow | null> {
+  /**
+   * Resolve a BackOffice operator by their canonical login username.
+   *
+   * The lookup is case-insensitive (PostgreSQL citext-lite via LOWER())
+   * so the API can accept `admin` / `Admin` / `ADMIN` interchangeably.
+   * Returns null when the account exists but has no username assigned,
+   * letting the auth service surface a stable `user_unmapped` error
+   * without leaking that the row exists.
+   */
+  async findByUsername(username: string): Promise<UserRow | null> {
+    const canonical = username.trim().toLowerCase();
+    if (!canonical) return null;
     const r = await this.client.query<UserRow>(
-      `SELECT id, email, password_hash, role, created_at, last_login_at, disabled_at
+      `SELECT ${USER_COLUMNS}
          FROM users
-        WHERE email = $1`,
-      [email.toLowerCase()],
+        WHERE username IS NOT NULL
+          AND LOWER(username) = $1`,
+      [canonical],
     );
     return r.rows[0] ?? null;
   }
 
+  /**
+   * Resolve by primary key — unchanged, kept for other call sites that
+   * already operate on an authenticated identity (session hydration,
+   * last-login bump, etc).
+   */
   async findById(id: number): Promise<UserRow | null> {
     const r = await this.client.query<UserRow>(
-      `SELECT id, email, password_hash, role, created_at, last_login_at, disabled_at
+      `SELECT ${USER_COLUMNS}
          FROM users
         WHERE id = $1`,
       [id],
@@ -45,20 +67,5 @@ export class PgUserRepo {
 
   async updateLastLogin(id: number): Promise<void> {
     await this.client.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [id]);
-  }
-
-  /**
-   * Replace a user's stored password hash. Used by the auth service for
-   * transparent on-login upgrades from legacy bcrypt to argon2id (see
-   * `apps/api/src/services/auth-service.ts`).
-   *
-   * The `users` table has no `updated_at` column (see migration
-   * `0005_auth.sql`); only `password_hash` is updated.
-   */
-  async updatePasswordHash(userId: number, newHash: string): Promise<void> {
-    await this.client.query(
-      `UPDATE users SET password_hash = $1 WHERE id = $2`,
-      [newHash, userId],
-    );
   }
 }

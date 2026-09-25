@@ -4,6 +4,52 @@ Pega este bloque en una sesión nueva de Pi para retomar el trabajo.
 
 ---
 
+# Estado actual al cierre de la auditoría (sesión de revisión)
+
+> El resto del archivo describe sesiones previas (Polish WU v0–v6 y PRs asociados). Esta sección es la única descripción actual de la working tree al cierre de esta auditoría.
+
+## Working tree
+
+- **Rama**: `master` (tracking `origin/master`).
+- **HEAD**: `f2594836fa27e2e466039ea83126d93edf0fe0ad`.
+- **Estado**: dirty. Cambios sin commitear del draft de auth y de los archivos asociados; sin archivos staged.
+- **Untracked**: `.codegraph/`, `apps/api/migrations/0011_backoffice_username.sql`, `apps/api/test/unit/otp-client.test.ts`, `infra/nginx/backoffice.quorum.asistentepro.mx.conf`, `odd/tasks/backoffice-cors-same-origin.md`, `odd/tasks/backoffice-username-otp.md`.
+
+## Trabajo previo — CORS / reverse-proxy subdomain
+
+- Ver `odd/tasks/backoffice-cors-same-origin.md`: host dedicado `https://backoffice.quorum.asistentepro.mx`, proxy Nginx `/api/`, rebuild y deploy web, `nginx -t`, preflight real 204.
+- **Esta auditoría NO consultó producción en vivo.** El estado queda como **previamente reportado/validado, no re-verificado ahora**.
+
+## Trabajo en curso — Draft auth username + pre-issued Quorum OTP
+
+- Ver `odd/tasks/backoffice-username-otp.md`. Cambia API, UI, DTO/migration y tests del flujo email/request-code (descrito más abajo en §"Cerrados en Polish WU v6") a `{username, otp}`. Contrato `OtpClient` migrado a HMAC contra `../quorum-otp/` (read-only).
+- **Local, sin commitear, sin deployar.** No se aplicó `0011_backoffice_username.sql`. No se modificaron secrets ni pods. No se intentó login real.
+- **Validación local**: root typecheck verde; API unit 38/38; Web unit 85/85; Playwright sintético local: 2 passed, 1 skipped (login real omitido sin credenciales E2E).
+- **API integration suite**: NO corrida (los tests hacen `DROP TABLE`; requiere confirmación explícita de un DB descartable aislado).
+- **Deploy a producción**: bloqueado hasta autorización explícita. Orden seguro: (1) aplicar `0011_backoffice_username.sql` solo tras autorización; es nullable y no hace backfill, (2) mapear usernames de todas las cuentas que deban acceder, (3) confirmar que el usuario restauró el secreto HMAC en Kubernetes, (4) desplegar API/web y validar con cuenta/destino OTP autorizados. Ninguno de esos pasos de producción se ejecutó en este draft.
+
+## Issue de code review ABIERTO (no se fixeó en esta auditoría)
+
+- La rama `user_unmapped` del flujo auth es inalcanzable en la práctica: `PgUserRepo.findByUsername` filtra usernames `NULL`; esas cuentas caen en `invalid_credentials` y el audit registra `unknown_user`. Detalle en `odd/tasks/backoffice-username-otp.md` §6.
+
+## Cambios NO productivos
+
+- `apps/web/playwright.config.ts` sirve el harness local. `apps/web/e2e/lookfeel/playwright.config.ts` apunta al host BackOffice live para una futura auditoría y no se ejecutó. Ninguna de las dos configura el deploy de la aplicación.
+
+## Constraints duros para la próxima sesión
+
+- NO correr `git reset`/`restore`/`stash drop`/`checkout`, ni borrar archivos del working tree.
+- NO stage, commit, push, branch-switch ni deploy.
+- NO acceder a producción, base de datos ni secretos.
+- NO modificar `../quorum-otp/` ni el cluster k3s del API/web.
+- NO correr los integration tests de API sin antes confirmar explícitamente un DB descartable aislado.
+
+## Próximo paso recomendado
+
+Antes de cualquier edición de fuente, commit, deploy o migration, se debe confirmar alcance y autorización con el usuario. Esta sección documenta, no autoriza.
+
+---
+
 # Estado del proyecto al cierre de la sesión anterior
 
 **Quorum Backoffice MVP COMPLETO + auditoría UI/UX ejecutada + marbetes rediseñados per maquette.**

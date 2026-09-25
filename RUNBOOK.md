@@ -1,3 +1,19 @@
+> ⚠️ **Operator alert — read first.**
+>
+> **Working tree**: `master @ f2594836fa27e2e466039ea83126d93edf0fe0ad`, tracking `origin/master`. Dirty; no staged files. Auth-related source/tests, the migration `0011_backoffice_username.sql`, the CORS vhost, and the ODD task files are **uncommitted** in the tree.
+>
+> **Auth state — NOT the design below.** The auth flow, `SMTP_*`/`LOGIN_OTP_*` env vars, `POST /api/v1/auth/login/request` + `POST /api/v1/auth/login`, and the OTP delivery section describe the historical Polish WU v6 email + 2-step OTP design, merged into the current `master` baseline `f2594836`. The current working tree has an **uncommitted, undeployed** username + pre-issued OTP draft — see `odd/tasks/backoffice-username-otp.md`. It accepts `{username, otp}` and uses the `OtpClient` HMAC contract; `../quorum-otp/` is read-only; `0011_backoffice_username.sql` is untracked and **not recorded as applied**. The live production version and schema were not queried.
+>
+> **CORS / subdomain fix — separate scope.** `infra/nginx/backoffice.quorum.asistentepro.mx.conf` (untracked) and the prior task log `odd/tasks/backoffice-cors-same-origin.md` describe a `https://backoffice.quorum.asistentepro.mx` vhost with `/api/` proxy and a previously validated same-origin preflight. **The current audit did not re-verify production**; treat the prior task log as **previously reported/validated, not re-verified now**. The "Production deployment with nginx" section below still describes the older `quorum.asistentepro.mx` vhost pattern.
+>
+> **Open code review issue (not fixed in this audit).** The auth flow's `user_unmapped` branch is unreachable in practice — `PgUserRepo.findByUsername` filters `NULL` usernames, so NULL-mapped accounts receive `invalid_credentials` and the audit records `unknown_user`. Plan for that mapping gap if this local auth draft is continued.
+>
+> **Operations NOT to perform without explicit user authorization.** `git reset`/`restore`/`stash`/`checkout`; deletion of working-tree files; `git commit`/`push`; branch switches; migration application against any environment (incl. `0011_backoffice_username.sql`); production deploys; secret restoration in Kubernetes; touching `../quorum-otp/`; running the API integration suite (it drops tables) against a non-disposable DB; real login submissions; any pod restart that depends on uncommitted config.
+>
+> Next step: confirm scope and authorization with the user before any source edit, commit, deploy, or migration. See `HANDOFF.md` §"Estado actual al cierre de la auditoría" for the full audit report.
+
+---
+
 # Quorum Backoffice — Operations Runbook
 
 This runbook covers the day-to-day operational concerns for the Quorum

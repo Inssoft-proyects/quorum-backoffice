@@ -1,5 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
-import { clearSession, loginAs, SEED_USERS, type Role } from './helpers/login';
+import { test, expect, type Page, type Route } from '@playwright/test';
+import { clearSession, loginAs, type Role } from './helpers/login';
 import { captureSnapshot } from './helpers/snapshot';
 
 /**
@@ -8,7 +8,43 @@ import { captureSnapshot } from './helpers/snapshot';
  * Each test starts with a fresh browser context so cookies never leak
  * across role boundaries. Screenshots captured here double as the
  * visual baseline for T3 / T4.
+ *
+ * Authed screens are routed through the env-gated `loginAs` helper,
+ * which safely `test.skip()`s when the runner is missing explicit
+ * `E2E_<ROLE>_USERNAME` + `E2E_<ROLE>_OTP` values; the helper never
+ * invents or derives credentials, and never assumes an email. The
+ * only email-specific data we previously asserted was the topbar
+ * identifier and a `[role=alert]` text, both of which were tied to
+ * the legacy email + password flow that is gone.
  */
+
+/**
+ * Intercept POST `/api/v1/auth/login` and fulfill a synthetic JSON
+ * response, so UI-level invalid-login specs never hit the live API.
+ * Returns the recorded request bodies so callers can assert the
+ * exact `{ username, otp }` wire shape if needed.
+ */
+async function interceptAuthLogin(
+  page: Page,
+  status: number,
+  body: Record<string, unknown>,
+): Promise<{ bodies: Array<Record<string, unknown>> }> {
+  const bodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/v1/auth/login', async (route: Route) => {
+    const req = route.request();
+    try {
+      bodies.push(JSON.parse(req.postData() ?? '{}'));
+    } catch {
+      bodies.push({});
+    }
+    await route.fulfill({
+      status,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    });
+  });
+  return { bodies };
+}
 
 test.describe('T2 — auth & roles', () => {
   test('unauthenticated visit to /dashboard redirects to /login', async ({ page }) => {
@@ -16,10 +52,14 @@ test.describe('T2 — auth & roles', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('admin login lands on /dashboard with email in topbar', async ({ page }) => {
+  test('admin login lands on /dashboard with role badge in topbar', async ({ page }) => {
     await loginAs(page, 'admin');
     await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.locator('header')).toContainText(SEED_USERS.admin.email);
+    // Topbar exposes the user role as an explicit Badge; we assert
+    // that identifier instead of an email, because the migrated login
+    // is by username + OTP and no email is configured for the E2E
+    // roles. The badge text is whatever `user.role` reports.
+    await expect(page.locator('header')).toContainText('admin');
     await captureSnapshot(page, { name: '/dashboard', role: 'admin' });
   });
 
@@ -39,13 +79,17 @@ test.describe('T2 — auth & roles', () => {
     await captureSnapshot(page, { name: '/dashboard', role: 'operator' });
   });
 
-  test('invalid credentials show alert and keep URL on /login', async ({ page }) => {
+  test('invalid credentials surface login-error and keep URL on /login', async ({ page }) => {
+    // UI-only: the synthetic 401 keeps the request off the wire so
+    // the test never exercises a real lockout against the live API.
+    await interceptAuthLogin(page, 401, { error: 'invalid_credentials' });
+
     await page.goto('/backoffice/login');
-    await page.getByLabel('Correo').fill('nope@quorum.local');
-    await page.getByLabel('Contraseña').fill('wrong-password-xyz');
-    await page.getByRole('button', { name: /Ingresar/i }).click();
-    // Match the visible error alert (not Next.js' route announcer).
-    await expect(page.getByText(/Email o contraseña incorrectos/i)).toBeVisible();
+    await page.getByTestId('login-username').fill('nonexistent-user');
+    await page.getByTestId('login-otp').fill('WRONG1');
+    await page.getByTestId('login-submit').click();
+
+    await expect(page.getByTestId('login-error')).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -56,14 +100,15 @@ test.describe('T2 — auth & roles', () => {
   });
 
   // Smoke: the three authed screens render for an admin without errors.
-  // Dialogs are covered in T6; here we only confirm the page chrome.
+  // Dialogs are covered in T6; here we only confirm the page chrome
+  // and the role badge (no email is assumed because the migrated login
+  // flow is username + OTP only — no email is configured for E2E).
   const SMOKE_ROLES: Role[] = ['admin', 'auditor', 'operator'];
   for (const role of SMOKE_ROLES) {
     test(`smoke: ${role} can reach /dashboard`, async ({ page }) => {
       await loginAs(page, role);
       await expect(page.locator('main')).toBeVisible();
-      // Header must show the user email
-      await expect(page.locator('header')).toContainText(SEED_USERS[role].email);
+      await expect(page.locator('header')).toContainText(role);
       await clearSession(page);
     });
   }
