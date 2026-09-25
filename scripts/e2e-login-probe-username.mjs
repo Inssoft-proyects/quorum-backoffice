@@ -131,15 +131,10 @@ function issueOperatorOtp(secret) {
   if (formInfo.hasEmailInput) {
     throw new Error("FAIL: form should not contain email input anymore");
   }
-  if (!formInfo.hasCountdown) {
-    throw new Error("FAIL: 5-minute countdown missing");
+  if (formInfo.hasCountdown) {
+    throw new Error("FAIL: countdown element should not be present (TTL is owned by the upstream issuer)");
   }
-  if (!formInfo.countdownText.includes("Expira en")) {
-    throw new Error(
-      `FAIL: countdown text should say 'Expira en', got: ${formInfo.countdownText}`,
-    );
-  }
-  console.log("    ✓ PASS — username form + countdown visible");
+  console.log("    ✓ PASS — username + OTP form, no countdown (TTL owned by issuer)");
 
   // Step 3: fill username + OTP, submit
   console.log(`\n[3] POST /api/v1/auth/login (single-step, username + otp)`);
