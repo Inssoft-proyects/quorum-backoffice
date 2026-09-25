@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
+import { OtpInput } from '@/components/ui/otp-input';
 
 /**
  * Single-step username + pre-issued OTP login form.
@@ -21,8 +22,10 @@ import { Alert } from '@/components/ui/alert';
  * the verify call with a generic invalid_credentials message.
  *
  * The OTP code uses the OTP service's six-character uppercase
- * alphanumeric alphabet. We normalise typed input to uppercase so
- * the wire request matches what the provider verifies.
+ * alphanumeric alphabet. We render it via the shared `OtpInput`
+ * in `mode="alphanumeric"`, which forces uppercase, strips
+ * non-alphanumeric characters, and exposes `inputMode="text"` /
+ * `autoComplete="one-time-code"` for password-manager support.
  */
 export function LoginFormOtp() {
   const router = useRouter();
@@ -32,6 +35,9 @@ export function LoginFormOtp() {
   const [isPending, startTransition] = useTransition();
 
   const loading = status === 'loading' || isPending;
+  // The OtpInput in alphanumeric mode already normalises the wire
+  // alphabet (uppercase A–Z0–9) before calling onChange, so the value
+  // we receive is already the canonical uppercase string.
   const otpUpper = otp.toUpperCase();
   const otpReady = otpUpper.length === 6 && /^[A-Z0-9]+$/.test(otpUpper);
   const usernameReady = username.trim().length >= 3 && /^[A-Za-z0-9._-]+$/.test(username.trim());
@@ -48,7 +54,11 @@ export function LoginFormOtp() {
   }
 
   return (
-    <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
+    <form
+      className="flex flex-col items-stretch gap-5"
+      onSubmit={handleSubmit}
+      noValidate
+    >
       {error ? (
         <Alert variant="destructive" role="alert" data-testid="login-error">
           {error}
@@ -76,46 +86,56 @@ export function LoginFormOtp() {
         />
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="otp">Código dinámico</Label>
-        <Input
-          id="otp"
-          name="otp"
-          type="text"
-          inputMode="text"
-          autoComplete="one-time-code"
-          required
-          minLength={6}
-          maxLength={6}
-          pattern="[A-Z0-9]{6}"
-          placeholder="ABC123"
+      {/*
+        OTP zone, matched to `diseno/design/OPT_Dinamico.png`: centered
+        label above the boxes, centered six-box group with gold focus
+        ring, and a muted centered hint underneath. The `login-otp`
+        testid lives on the OtpInput group wrapper so existing
+        Testing Library queries keep working.
+      */}
+      <div className="flex flex-col items-center gap-2">
+        <Label
+          htmlFor="otp-1"
+          className="self-center text-center text-primary-500"
+        >
+          Código de acceso
+        </Label>
+        <OtpInput
+          mode="alphanumeric"
+          length={6}
+          id="otp-1"
           value={otpUpper}
-          onChange={(e) => {
-            // Force uppercase and strip anything that is not in the
-            // wire alphabet. The OTP service issues 6-char uppercase
-            // alphanumeric; uppercasing on input keeps the wire body
-            // identical regardless of caps-lock state.
-            const next = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-            setOtp(next);
+          onChange={(next) => {
+            // OtpInput already uppercases + alphabetises; keep a defensive
+            // re-normalisation so a future refactor cannot accidentally
+            // regress the wire contract (the backend verifies A–Z0–9
+            // uppercased only).
+            const safe = next.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            setOtp(safe);
             if (error) reset();
           }}
           disabled={loading}
-          className="text-center text-lg font-mono tracking-[0.2em] uppercase"
-          aria-describedby="otp-hint"
+          autoFocus={false}
+          aria-label="Código de acceso de 6 caracteres"
           data-testid="login-otp"
         />
-        <p id="otp-hint" className="text-xs text-text-muted">
+        <p
+          id="otp-hint"
+          className="text-center text-xs text-text-muted"
+        >
           Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).
         </p>
       </div>
 
       <Button
         type="submit"
+        className="w-full font-semibold"
+        size="lg"
         disabled={loading || !usernameReady || !otpReady}
         data-testid="login-submit"
       >
         <KeyRound className="h-4 w-4" aria-hidden />
-        {loading ? 'Verificando…' : 'Ingresar'}
+        {loading ? 'Verificando…' : 'Validar código'}
       </Button>
     </form>
   );

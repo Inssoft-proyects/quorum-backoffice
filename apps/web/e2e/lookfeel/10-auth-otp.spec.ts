@@ -63,6 +63,23 @@ async function interceptLogin(
   return { bodies };
 }
 
+/**
+ * Fill the 6 OTP boxes with `value` by focusing the first box and
+ * driving the shared keyboard. The OtpInput auto-advances focus after
+ * each accepted character, so a single `keyboard.type` fills the
+ * whole group. The alphanumeric mode (login) forces uppercase before
+ * the wire call, so a lowercase `value` is the same wire payload as
+ * its uppercase form.
+ */
+async function fillOtpBoxes(
+  page: import('@playwright/test').Page,
+  value: string,
+): Promise<void> {
+  const firstBox = page.getByRole('textbox', { name: 'Digit 1 of 6' });
+  await firstBox.click();
+  await page.keyboard.type(value);
+}
+
 test.describe('Auth OTP (Polish WU v6 / A9)', () => {
   test('T10.1 /backoffice/login renders with submit disabled until inputs are valid', async ({ page }) => {
     await page.goto('/backoffice/login');
@@ -93,7 +110,7 @@ test.describe('Auth OTP (Polish WU v6 / A9)', () => {
 
     await page.goto('/backoffice/login');
     await page.getByTestId('login-username').fill('admin');
-    await page.getByTestId('login-otp').fill('ABC123');
+    await fillOtpBoxes(page, 'ABC123');
     await expect(page.getByTestId('login-submit')).toBeEnabled();
     await page.getByTestId('login-submit').click();
 
@@ -117,7 +134,7 @@ test.describe('Auth OTP (Polish WU v6 / A9)', () => {
 
     await page.goto('/backoffice/login');
     await page.getByTestId('login-username').fill('admin');
-    await page.getByTestId('login-otp').fill('WRONG1');
+    await fillOtpBoxes(page, 'WRONG1');
     await page.getByTestId('login-submit').click();
 
     await expect(page.getByTestId('login-error')).toBeVisible({ timeout: 10_000 });
@@ -135,7 +152,7 @@ test.describe('Auth OTP (Polish WU v6 / A9)', () => {
     await page.getByTestId('login-username').fill('admin');
     // Mix of lowercase letters + digits; the form forces uppercase
     // before posting so the wire body always matches the OTP alphabet.
-    await page.getByTestId('login-otp').fill('ab12cd');
+    await fillOtpBoxes(page, 'ab12cd');
     await page.getByTestId('login-submit').click();
 
     expect(bodies).toHaveLength(1);
