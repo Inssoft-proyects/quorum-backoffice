@@ -230,8 +230,116 @@ Interpretation:
 - Healthz/readyz on the backoffice subdomain (currently 404 from
   Next.js catch-all; health probes remain on `quorum.asistentepro.mx`).
 
-## Verification scope
+## Final state (2026-09-25, end of session)
 
-This file tracks the deploy + validation. Re-runs against live
-`https://backoffice.quorum.asistentepro.mx` are recorded as observations
-in the commit messages of each WU.
+All 5 WUs closed. The system is functional end-to-end against
+`https://backoffice.quorum.asistentepro.mx/backoffice/login`.
+
+### Validation summary
+
+Final Playwright probe run (`scripts/e2e-login-probe.mjs`):
+
+| Step | Check | Result |
+|---|---|---|
+| 1 | `GET /login` | 302 → `/backoffice/login` ✓ |
+| 2 | `GET /backoffice/login` | 200 + `LoginFormOtp` rendered ✓ |
+| 3 | `POST /api/v1/auth/login/request` (`admin@quorum.local`) | 200 `{ok:true,retryAfterSeconds:60}` ✓ |
+| 4 | OTP issued by quorum-otp, captured from API pod logs (`smtp_dev_mode_otp_logged` pino event) | 6-digit OTP read ✓ |
+| 5 | `POST /api/v1/auth/login` (with OTP) | 200 + `__Host-sid` cookie set (43 chars) + `user.id=1 admin` ✓ |
+| 6 | `GET /backoffice/dashboard` (with session cookie) | 200, session real ✓ |
+
+### Commits
+
+- `b4760a2` — `fix(infra/nginx): redirect bare /login to /backoffice/login on backoffice subdomain` (WU #1)
+
+### Manifests applied to cluster
+
+- `/planQuorum/dev/quorum-otp/infra/k3s/namespace.yaml` → `namespace/quorum-otp`
+- `/planQuorum/dev/quorum-otp/infra/k3s/configmap.yaml` → `configmap/quorum-otp-config`
+- `/planQuorum/dev/quorum-otp/infra/k3s/secret.yaml` (template; real values overlaid via `kubectl apply -f`)
+- `/planQuorum/dev/quorum-otp/infra/k3s/deployment.yaml` → `deployment.apps/quorum-otp` (1/1 Ready)
+- `/planQuorum/dev/quorum-otp/infra/k3s/service.yaml` → `service/quorum-otp` (ClusterIP)
+
+### Cluster state changes
+
+- `quorum-backoffice-api-config` configMap: `OTP_SERVICE_URL=http://127.0.0.1:4200` (was `http://127.0.0.1:18080/v1`)
+- `quorum-backoffice-api-secret` secret: `OTP_SERVICE_TOKEN` rotated to new 64-char hex HMAC secret
+- `quorum-backoffice-api-secret` secret: `DATABASE_URL` corrected to `postgresql://websop:quorum_otp_dev@127.0.0.1:5432/quorum_backoffice` (was a wrong password; readyz worked only because of lazy connect)
+- `quorum-otp-config` configMap: `OTP_ALPHABET=0123456789` (temporary, see hotfixes below)
+- New `quorum-otp` namespace with secret, configmap, deployment, service
+
+### Hotfixes applied to deployed OTP binary dist (NOT in source)
+
+While validating end-to-end, three wire-format mismatches were
+discovered between the deployed BackOffice API binary
+(`/opt/quorum-backoffice/apps/api/dist/`, Polish WU v6 era) and the
+source-of-truth quorum-otp:
+
+1. **`Bearer` vs `HMAC` auth header.** The deployed BackOffice OtpClient
+   sends `Authorization: Bearer <secret>`. The source-of-truth
+   quorum-otp plugins/auth.ts expects
+   `Authorization: HMAC <name> <ts> <hex>`. Hotfix added a Bearer branch
+   in the deployed `/opt/quorum-otp/dist/plugins/auth.js` that maps the
+   bearer token back to the registered service name.
+2. **`code` vs `token` field on `/v1/otps/verify`.** The deployed
+   BackOffice OtpClient sends `{subject, scope, code}`. The
+   source-of-truth routes/otp.ts expects `{subject, scope, token}`.
+   Hotfix extended the Zod schema to accept either, normalizing `code`
+   into `token` before service invocation.
+3. **OTP alphabet vs OTP input component.** The deployed BackOffice
+   frontend `OtpInput` only accepts digits
+   (`onChange: e.target.value.replace(/\D/g, '')`), but quorum-otp's
+   source configures a confusable-free alnum alphabet
+   (`ABCDEFGHJKMNPQRSTUVWXYZ23456789`). Aligned by temporarily setting
+   `OTP_ALPHABET=0123456789` in `quorum-otp-config`. This reduces
+   entropy from ~29.7 bits to ~19.9 bits — acceptable for staging
+   functional validation, **must be raised before production email
+   delivery**.
+
+The hotfixes are in the **deployed** dist at `/opt/quorum-otp/dist/`,
+not in the source repo at `/planQuorum/dev/quorum-otp/`. They are
+loaded in the running pod's memory.
+
+### Regression risk
+
+A `rsync /planQuorum/dev/quorum-otp/ → /opt/quorum-otp/` would overwrite
+the hotfixed dist/ files with the un-hotfixed source dist/, breaking
+the login flow. Mitigations to discuss with the operator:
+
+- Pin the rsync command to exclude `dist/` (operator pulls new source
+  code, rebuilds, then deploys explicitly).
+- Or apply the hotfixes to the source repo
+  (`/planQuorum/dev/quorum-otp/src/`), rebuild, and re-deploy (one-time
+  work that makes the wire-format alignment permanent and removes the
+  alphabet regression).
+
+The two-way convergence paths:
+
+1. **Front-end knows the alphabet.** Update
+   `apps/web/components/.../OtpInput.tsx` to accept alnum. Rebuild web.
+   Revert `OTP_ALPHABET` to the confusable-free alphabet. The deployed
+   binary will then issue `BX8FS8`-style codes that the front-end
+   accepts.
+2. **OTP service expects `token`.** Update the deployed API binary
+   (`/opt/quorum-backoffice/apps/api/dist/...`) to translate
+   `code → token` on the wire. Rebuild API.
+3. **OTP service expects HMAC.** Update the deployed API OtpClient to
+   send the HMAC-shaped header instead of Bearer. Rebuild API.
+
+Either path is a single-WU change. **Not done in this feature** because
+the user did not authorize modifying `/opt/quorum-backoffice/` or the
+quorum-otp source.
+
+### What is NOT done (operator decisions)
+
+- SMTP real delivery: operator configures `SMTP_HOST/PORT/USER/PASS` in
+  `quorum-backoffice-api-config` so users stop reading OTPs from pod
+  logs.
+- Production alphabet: revert `OTP_ALPHABET=0123456789` once the
+  front-end accepts alnum.
+- Permanent OTP hotfixes: apply hotfixes to source repo, rebuild, deploy.
+- Commit of `/planQuorum/dev/quorum-otp/infra/k3s/`: deferred — the user
+  requested no further changes to `../quorum-otp/` after the hotfixes
+  were applied. The manifests exist on the local filesystem under
+  `/planQuorum/dev/quorum-otp/infra/k3s/` for a follow-up session.
+
