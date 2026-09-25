@@ -17,8 +17,11 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'npm run build && PORT=3100 npm start',
-    url: baseURL,
+    // Next standalone output is served by its generated server.js; `next start`
+    // explicitly refuses output: 'standalone' and would leave Playwright waiting.
+    command:
+      'npm run build && mkdir -p .next/standalone/apps/web/.next && cp -R .next/static .next/standalone/apps/web/.next/static && PORT=3100 HOSTNAME=127.0.0.1 node .next/standalone/apps/web/server.js',
+    url: `${baseURL}/backoffice/login`,
     timeout: 120_000,
     reuseExistingServer: !process.env['CI'],
     stdout: 'pipe',

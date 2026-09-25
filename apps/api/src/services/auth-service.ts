@@ -1,44 +1,41 @@
 /**
- * Auth service: login (email + OTP), logout, current-user resolution.
+ * Auth service: single-step username + pre-issued OTP login.
  *
- * Polish WU v6: replaces the legacy `email + password` login flow with
- * `email + OTP`. Two endpoints own the new flow:
+ * New flow (replaces the prior email+request-code flow):
  *
- *   - `requestLoginOtp(email)`:
- *       1. Rate-limit per email (`LOGIN_OTP_REQUEST_MAX_PER_EMAIL` /
- *          `LOGIN_OTP_REQUEST_WINDOW_SECONDS`).
- *       2. Look the user up; if unknown, respond 200 anyway with
- *          `retryAfterSeconds` so attackers cannot enumerate accounts.
- *          Audit `auth.login.requested` is still emitted with the
- *          email-as-subject so brute-force sweeps are observable.
- *       3. If the user is disabled, fail with 403 (no email is sent).
- *       4. Ask the OTP service for a 6-char alphanumeric token bound
- *          to (email, scope='login'), honouring OTP-service rate limits.
- *       5. Deliver the token to the user via the configured mailer
- *          (SMTP in production, logged to pino in dev).
+ *   `loginWithOtp(username, otp)`:
+ *     1. Rate-limit per username (`AUTH_LOGIN_MAX_ATTEMPTS` /
+ *        `AUTH_LOGIN_WINDOW_SECONDS`).
+ *     2. Look the user up by canonical username (case-insensitive).
+ *        - Unknown username: surface a stable `invalid_credentials`
+ *          so attackers cannot enumerate which usernames have
+ *          accounts.
+ *        - Account exists but has no `username` assigned: surface a
+ *          stable `user_unmapped` so the missing production mapping
+ *          is observable in the audit log without leaking the
+ *          existence of the row.
+ *        - Account disabled: surface 403 user_disabled.
+ *     3. Ask quorum-otp to verify the pre-issued (subject, scope)
+ *        OTP. The subject bound on the wire is the canonical
+ *        username (`lower(trim(username))`), NOT the email — this is
+ *        the contract the provider HMAC-verifies.
+ *     4. On success, issue a session cookie, audit
+ *        `auth.login.otp_verified`, then `auth.login`.
+ *     5. On failure, audit `auth.login.failed` with a discriminator
+ *        (`invalid_otp`, `locked`, etc.) in `entityId`.
  *
- *   - `loginWithOtp(email, otp)`:
- *       1. Ask the OTP service to verify the (email, scope, otp) tuple.
- *          Lockouts, replays, and per-OTP attempt caps are owned by
- *          the OTP service.
- *       2. On success, load the user, reject if disabled, issue a
- *          session, audit `auth.login.otp_verified`.
- *       3. On failure, audit `auth.login.failed` with the reason
- *          (`invalid_otp`, `locked`, `expired`, etc).
+ * BackOffice no longer issues OTPs itself and no longer reads
+ * `users.password_hash` at login. The legacy `login(LoginRequest)`
+ * wrapper was removed because its semantics (password field, email
+ * field) no longer match the wire contract; the only HTTP entry is
+ * `POST /api/v1/auth/login { username, otp }`.
  *
- * `login(req)` (the legacy email+password entry point) is preserved as
- * a thin wrapper around `loginWithOtp` that ignores the `password`
- * field. It exists so the existing `/api/v1/auth/login` route, its
- * tests, and old clients keep working while the migration completes.
- *
- * The `users.password_hash` column is **not** read by the new flow.
- * It is preserved on disk for legacy recovery and for the bootstrap
- * seed migration; future WUs may drop it once we have a documented
- * reset procedure.
+ * Provider 401/403 = dependency auth/service-unavailable; provider
+ * 409 = invalid user OTP.
  */
 import type pg from 'pg';
 import type { FastifyBaseLogger } from 'fastify';
-import type { LoginRequest, MeResponse, UserRole } from '@quorum-backoffice/shared';
+import type { MeResponse, UserRole } from '@quorum-backoffice/shared';
 import { AppError } from '../lib/errors';
 import { generateSessionToken } from '../lib/session-token';
 import {
@@ -50,7 +47,6 @@ import { PgUserRepo } from '../repositories/pg-users';
 import { PgSessionRepo } from '../repositories/pg-sessions';
 import { AuditService } from './audit-service';
 import { OtpClient } from './otp-client';
-import type { Mailer } from './mailer';
 
 interface RequestMeta {
   ip: string | null;
@@ -62,16 +58,10 @@ interface ServiceDeps {
   log: FastifyBaseLogger;
   redis: RedisLike;
   otp: OtpClient;
-  mailer: Mailer;
   sessionTtlSeconds: number;
-  /** Legacy password-login rate limit (5 / 15 min). Kept for tests. */
+  /** Legacy password-login rate limit (5 / 15 min). Reused for username login. */
   loginMaxAttempts: number;
   loginWindowSeconds: number;
-  /** Login-OTP specific knobs. */
-  loginOtpTtlSeconds: number;
-  loginOtpMaxAttempts: number;
-  loginOtpRequestMaxPerEmail: number;
-  loginOtpRequestWindowSeconds: number;
 }
 
 export interface LoginResult {
@@ -79,15 +69,20 @@ export interface LoginResult {
   sessionToken: string;
 }
 
-export interface RequestLoginResult {
-  /** Seconds the user should wait before requesting another OTP. */
-  retryAfterSeconds: number;
-}
-
 export const AUTH_TOKEN_AUDIT_PREFIX = 8;
 
-/** OTP scope bound to the login flow. */
+/** OTP scope bound to the username-login flow. quorum-otp issues
+ *  codes bound to (`<username>`, "login"). */
 export const LOGIN_OTP_SCOPE = 'login';
+
+/**
+ * Normalize a BackOffice username to the canonical wire form used as
+ * the `subject` in the quorum-otp API call. Trimmed and lower-cased
+ * so that `admin`/`Admin`/`ADMIN` all bind to the same OTP issuance.
+ */
+export function canonicaliseUsername(raw: string): string {
+  return raw.trim().toLowerCase();
+}
 
 export class AuthService {
   private readonly users: PgUserRepo;
@@ -95,15 +90,10 @@ export class AuthService {
   private readonly log: FastifyBaseLogger;
   private readonly redis: RedisLike;
   private readonly otp: OtpClient;
-  private readonly mailer: Mailer;
   private readonly pool: pg.Pool;
   private readonly sessionTtlSeconds: number;
   private readonly loginMaxAttempts: number;
   private readonly loginWindowSeconds: number;
-  private readonly loginOtpTtlSeconds: number;
-  private readonly loginOtpMaxAttempts: number;
-  private readonly loginOtpRequestMaxPerEmail: number;
-  private readonly loginOtpRequestWindowSeconds: number;
 
   constructor(private readonly deps: ServiceDeps) {
     this.users = new PgUserRepo(deps.pool);
@@ -111,189 +101,51 @@ export class AuthService {
     this.log = deps.log;
     this.redis = deps.redis;
     this.otp = deps.otp;
-    this.mailer = deps.mailer;
     this.pool = deps.pool;
     this.sessionTtlSeconds = deps.sessionTtlSeconds;
     this.loginMaxAttempts = deps.loginMaxAttempts;
     this.loginWindowSeconds = deps.loginWindowSeconds;
-    this.loginOtpTtlSeconds = deps.loginOtpTtlSeconds;
-    this.loginOtpMaxAttempts = deps.loginOtpMaxAttempts;
-    this.loginOtpRequestMaxPerEmail = deps.loginOtpRequestMaxPerEmail;
-    this.loginOtpRequestWindowSeconds = deps.loginOtpRequestWindowSeconds;
   }
 
   /**
-   * Step 1: request an OTP for login. Always responds 200 with
-   * `retryAfterSeconds`, even for unknown emails, to avoid leaking
-   * which addresses have accounts. Audit is still emitted per call.
-   */
-  async requestLoginOtp(
-    email: string,
-    meta: RequestMeta = { ip: null, userAgent: null },
-  ): Promise<RequestLoginResult> {
-    const normalised = email.toLowerCase();
-
-    const rate = await hitLoginRateLimit(
-      this.redis,
-      `otp-req:${normalised}`,
-      this.loginOtpRequestMaxPerEmail,
-      this.loginOtpRequestWindowSeconds,
-    );
-    if (!rate.ok) {
-      this.log.warn(
-        { email: normalised, retryAfterSeconds: rate.retryAfterSeconds },
-        'login_otp_request_rate_limited',
-      );
-      await new AuditService(this.pool).write({
-        actorId: normalised,
-        action: 'auth.login.requested',
-        entityType: 'otp_request',
-        entityId: 'rate_limited',
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
-      throw new AppError(
-        'rate_limited',
-        'too many OTP requests, please try again later',
-        429,
-        { retryAfterSeconds: rate.retryAfterSeconds },
-      );
-    }
-
-    const user = await this.users.findByEmail(normalised);
-
-    // Disabled: hard 403. No OTP is issued and no email is sent.
-    if (user && user.disabled_at !== null) {
-      await new AuditService(this.pool).write({
-        actorId: normalised,
-        action: 'auth.login.requested',
-        entityType: 'otp_request',
-        entityId: 'disabled',
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
-      throw new AppError('user_disabled', 'user account is disabled', 403);
-    }
-
-    // Unknown email or disabled path: respond 200 with the same
-    // retryAfterSeconds we would otherwise use. We still audit so a
-    // sweep is detectable.
-    if (!user) {
-      await new AuditService(this.pool).write({
-        actorId: normalised,
-        action: 'auth.login.requested',
-        entityType: 'otp_request',
-        entityId: 'unknown_email',
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
-      return {
-        retryAfterSeconds: Math.min(this.loginOtpRequestWindowSeconds, 60),
-      };
-    }
-
-    const issued = await this.otp.issue({
-      subject: user.email,
-      scope: LOGIN_OTP_SCOPE,
-      ttlSeconds: this.loginOtpTtlSeconds,
-      maxAttempts: this.loginOtpMaxAttempts,
-    });
-
-    if (!issued.ok) {
-      await new AuditService(this.pool).write({
-        actorId: normalised,
-        action: 'auth.login.requested',
-        entityType: 'otp_request',
-        entityId: `otp_${issued.reason}`,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
-      if (issued.reason === 'rate_limited') {
-        throw new AppError(
-          'rate_limited',
-          'too many OTP requests, please try again later',
-          429,
-          { retryAfterSeconds: issued.retryAfterSeconds ?? 60 },
-        );
-      }
-      if (issued.reason === 'invalid_request') {
-        throw AppError.badRequest('invalid_otp_request');
-      }
-      throw AppError.serviceUnavailable('otp_issue_failed');
-    }
-
-    try {
-      await this.mailer.sendOtpEmail({
-        to: user.email,
-        code: issued.token,
-        ttlSeconds: issued.ttlSeconds,
-      });
-    } catch (err) {
-      // Mailer failure is fatal for the OTP flow: the user cannot
-      // complete login. We surface a 503 and let the route log
-      // a generic error. The OTP service still owns the token; the
-      // user will see a new code if they retry (the previous one
-      // expires after ttlSeconds and was never verified).
-      this.log.warn(
-        { err, userId: user.id, email: user.email, otpId: issued.otpId },
-        'login_otp_delivery_failed',
-      );
-      await new AuditService(this.pool).write({
-        actorId: normalised,
-        action: 'auth.login.requested',
-        entityType: 'otp_request',
-        entityId: `delivery_failed:${issued.otpId}`,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
-      throw AppError.serviceUnavailable('otp_delivery_failed');
-    }
-
-    await new AuditService(this.pool).write({
-      actorId: normalised,
-      action: 'auth.login.requested',
-      entityType: 'otp_request',
-      entityId: issued.otpId,
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-    });
-
-    return {
-      retryAfterSeconds: Math.min(this.loginOtpRequestWindowSeconds, 60),
-    };
-  }
-
-  /**
-   * Step 2: exchange email + OTP for a session cookie.
+   * Single-step login: exchange (username, otp) for a session cookie.
    *
    * Errors (all AppError):
-   *   - rate_limited (429) — local per-email or OTP-service lockout
-   *   - invalid_otp (401) — wrong / expired / replayed OTP
-   *   - user_disabled (403)
+   *   - rate_limited (429)  — local per-username or OTP-service lockout
+   *   - invalid_credentials (401) — unknown username OR OTP rejected
+   *   - user_disabled (403) — account disabled
+   *   - user_unmapped (403) — account exists but `users.username IS NULL`
+   *   - service_unavailable (503) — quorum-otp auth failure / 5xx / timeout
    *
-   * Emits `auth.login.otp_verified` + `auth.login` on success, and
-   * `auth.login.failed` on every failure path with a discriminator in
-   * `entityId`.
+   * Emits `auth.login.otp_verified` + `auth.login` on success and
+   * `auth.login.failed` on every failure path with a discriminator
+   * (`unknown_user`, `unmapped_user`, `invalid_otp`, `locked`,
+   * `disabled`, `service_unavailable`) in `entityId`. The username is
+   * recorded in `actorId` so brute-force sweeps on a single username
+   * are observable in the audit log.
    */
   async loginWithOtp(
-    email: string,
+    rawUsername: string,
     otp: string,
     meta: RequestMeta = { ip: null, userAgent: null },
   ): Promise<LoginResult> {
-    const normalised = email.toLowerCase();
+    const canonical = canonicaliseUsername(rawUsername);
+    if (!canonical) {
+      throw new AppError('invalid_credentials', 'invalid username or code', 401);
+    }
 
-    // Local rate limit (same budget as the legacy login path). Both
-    // paths share a Redis bucket to keep DOS attack surface narrow.
+    // Local per-username rate limit. Keyed by canonical username so a
+    // sweep across `admin`/`Admin` shares a budget.
     const rate = await hitLoginRateLimit(
       this.redis,
-      normalised,
+      canonical,
       this.loginMaxAttempts,
       this.loginWindowSeconds,
     );
     if (!rate.ok) {
       this.log.warn(
-        { email: normalised, retryAfterSeconds: rate.retryAfterSeconds },
-        'login_otp_rate_limited',
+        { username: canonical, retryAfterSeconds: rate.retryAfterSeconds },
+        'login_rate_limited',
       );
       throw new AppError(
         'rate_limited',
@@ -303,18 +155,54 @@ export class AuthService {
       );
     }
 
-    const verification = await this.otp.verify({
-      subject: normalised,
-      scope: LOGIN_OTP_SCOPE,
-      code: otp,
-    });
+    // We deliberately look up the local user BEFORE the OTP verify so
+    // we can:
+    //   - refuse disabled accounts before exposing the OTP path;
+    //   - return a distinct `user_unmapped` when the row exists but
+    //     has no username yet (audit-friendly);
+    //   - log a discriminator against the username for every outcome.
+    const user = await this.users.findByUsername(canonical);
+    if (!user) {
+      await this.recordLoginFailure(canonical, 'unknown_user', meta);
+      // Same shape as invalid_otp so attackers cannot enumerate.
+      throw new AppError('invalid_credentials', 'invalid username or code', 401);
+    }
+    if (user.disabled_at !== null) {
+      await this.recordLoginFailure(canonical, 'disabled', meta);
+      throw new AppError('user_disabled', 'user account is disabled', 403);
+    }
+    if (user.username === null) {
+      // Defensive: findByUsername only matches non-null rows, but if
+      // the row mutated between SELECTs we surface a stable error.
+      await this.recordLoginFailure(canonical, 'unmapped_user', meta);
+      throw new AppError(
+        'user_unmapped',
+        'username not assigned for this account',
+        403,
+      );
+    }
+
+    // Verify the pre-issued OTP against quorum-otp. The provider HMAC
+    // requires the subject to be the canonical username — exactly
+    // the value the issuer bound during the upstream issuance flow.
+    let verification;
+    try {
+      verification = await this.otp.verify({
+        subject: user.username,
+        scope: LOGIN_OTP_SCOPE,
+        code: otp,
+      });
+    } catch (err) {
+      if (err instanceof AppError) {
+        await this.recordLoginFailure(canonical, 'service_unavailable', meta);
+        throw err;
+      }
+      throw AppError.serviceUnavailable('otp_dependent_failure');
+    }
 
     if (!verification.ok) {
       const reason = verification.reason;
-      await this.recordLoginFailure(normalised, reason, meta);
-      // The OTP service deliberately does not distinguish reasons to
-      // the caller; mirror that on the API to avoid leaking internal
-      // state. The discriminator is only in the audit log.
+      await this.recordLoginFailure(canonical, reason, meta);
       if (reason === 'locked') {
         throw new AppError(
           'rate_limited',
@@ -322,20 +210,10 @@ export class AuthService {
           429,
         );
       }
-      throw new AppError('invalid_otp', 'invalid or expired code', 401);
-    }
-
-    const user = await this.users.findByEmail(normalised);
-    if (!user) {
-      // The OTP service said the OTP was valid, but the user record
-      // does not exist any more (deleted between request and verify).
-      // Treat as invalid credentials.
-      await this.recordLoginFailure(normalised, 'unknown_user_at_verify', meta);
-      throw new AppError('invalid_credentials', 'invalid email or code', 401);
-    }
-    if (user.disabled_at !== null) {
-      await this.recordLoginFailure(normalised, 'disabled', meta);
-      throw new AppError('user_disabled', 'user account is disabled', 403);
+      // 'invalid' | 'expired' | 'rate_limited' | 'unknown' all collapse
+      // to a single invalid-credentials response so we don't leak
+      // provider-internal reasons.
+      throw new AppError('invalid_credentials', 'invalid username or code', 401);
     }
 
     const token = generateSessionToken();
@@ -348,10 +226,10 @@ export class AuthService {
       userAgent: meta.userAgent,
     });
     await this.users.updateLastLogin(user.id);
-    await resetLoginRateLimit(this.redis, normalised);
+    await resetLoginRateLimit(this.redis, canonical);
 
     await new AuditService(this.pool).write({
-      actorId: user.email,
+      actorId: user.username ?? canonical,
       action: 'auth.login.otp_verified',
       entityType: 'otp',
       entityId: verification.otpId,
@@ -359,7 +237,7 @@ export class AuthService {
       userAgent: meta.userAgent,
     });
     await new AuditService(this.pool).write({
-      actorId: user.email,
+      actorId: user.username ?? canonical,
       action: 'auth.login',
       entityType: 'session',
       entityId: token.slice(0, AUTH_TOKEN_AUDIT_PREFIX),
@@ -367,26 +245,11 @@ export class AuthService {
       userAgent: meta.userAgent,
     });
 
+    // MeResponse keeps `email` for existing UI/audit consumers.
     return {
       user: { id: user.id, email: user.email, role: user.role as UserRole },
       sessionToken: token,
     };
-  }
-
-  /**
-   * Legacy entry point. Kept so the existing integration test suite
-   * (which seeds users with bcrypt hashes) and any older clients
-   * continue to work. The `password` field is parsed but not
-   * verified — the OTP path is the only accepted login.
-   *
-   * This method is intentionally read-only against `users.password_hash`
-   * so future hardening can drop the column without rewriting tests.
-   */
-  async login(
-    req: LoginRequest,
-    meta: RequestMeta = { ip: null, userAgent: null },
-  ): Promise<LoginResult> {
-    return this.loginWithOtp(req.email, req.otp, meta);
   }
 
   /**
@@ -429,26 +292,17 @@ export class AuthService {
   }
 
   private async recordLoginFailure(
-    email: string,
+    username: string,
     reason: string,
     meta: RequestMeta,
   ): Promise<void> {
     await new AuditService(this.pool).write({
-      actorId: email,
+      actorId: username,
       action: 'auth.login.failed',
       entityType: 'session',
       entityId: reason,
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
-  }
-
-  /**
-   * Back-compat shim used by older tests that imported the original
-   * `recordFailure` private method. Internally it just delegates to
-   * `recordLoginFailure` with the same reason vocabulary.
-   */
-  private async recordFailure(email: string, reason: string, meta: RequestMeta): Promise<void> {
-    return this.recordLoginFailure(email, reason, meta);
   }
 }

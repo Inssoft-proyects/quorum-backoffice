@@ -1,181 +1,181 @@
 'use client';
 
-import { useState, useTransition, type FormEvent } from 'react';
+import { useEffect, useState, useTransition, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Mail } from 'lucide-react';
+import { KeyRound, Timer } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
-import { OtpInput } from '@/components/ui/otp-input';
-
-type Step = 'email' | 'otp';
 
 /**
- * Email + OTP login form (Polish WU v6 / A7).
+ * Single-step username + pre-issued OTP login form.
  *
- * Two-step flow:
- *   1. Step "email": user enters their email and clicks "Enviar código".
- *      The backend sends a 6-char alphanumeric OTP via SMTP.
- *   2. Step "otp": user pasters/types the code and clicks "Ingresar".
+ * Replaces the prior email + request-code flow. The user arrives with
+ * a dynamic OTP issued by the broader quorum ecosystem (e.g. on their
+ * authenticator, from a kiosk, or sent by a sister system); the
+ * BackOffice verifies it under the `quorum-backoffice` HMAC service
+ * identity and exchanges it for a session cookie. BackOffice does NOT
+ * email or issue the code itself.
  *
- * Built exclusively from shadcn/ui primitives + the OtpInput component
- * (reused from the marbete delete dialog). No raw <input> / <button>
- * elements — every interactive control goes through a shadcn wrapper so
- * theming stays consistent across the backoffice.
+ * The OTP code uses the OTP service's six-character uppercase
+ * alphanumeric alphabet. We normalise typed input to uppercase so the
+ * wire request matches what the provider verifies.
  *
- * The legacy email + password field is gone. `password` is never sent
- * over the wire from this form.
+ * 5-minute countdown: the OTP service issues codes with a 5-minute
+ * TTL (configurable via `OTP_DEFAULT_TTL_SECONDS` on the provider).
+ * This form runs a parallel client-side countdown that locks the
+ * submit button once the window has elapsed and prompts the user to
+ * ask the operator for a new code. The countdown resets when the
+ * user edits the OTP field (operator just delivered a fresh code).
  */
+
+// 5 minutes — must match OTP_DEFAULT_TTL_SECONDS on quorum-otp.
+const OTP_TTL_SECONDS = 300;
+
+function formatCountdown(remaining: number): string {
+  const m = Math.floor(remaining / 60);
+  const s = remaining % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export function LoginFormOtp() {
   const router = useRouter();
-  const { requestOtp, login, status, error, reset } = useAuth();
-  const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
+  const { login, status, error, reset } = useAuth();
+  const [username, setUsername] = useState('');
   const [otp, setOtp] = useState('');
   const [isPending, startTransition] = useTransition();
+  // Countdown state — seconds remaining before the OTP window expires.
+  const [remaining, setRemaining] = useState(OTP_TTL_SECONDS);
+
+  // Tick the countdown once per second. The server-side TTL is the
+  // authoritative gate; this timer is purely UX so the user knows
+  // when to ask the operator for a fresh code.
+  useEffect(() => {
+    if (remaining <= 0) return;
+    const timer = setInterval(() => {
+      setRemaining((r) => Math.max(0, r - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [remaining]);
 
   const loading = status === 'loading' || isPending;
+  const expired = remaining === 0;
+  const otpUpper = otp.toUpperCase();
+  const otpReady =
+    !expired && otpUpper.length === 6 && /^[A-Z0-9]+$/.test(otpUpper);
+  const usernameReady = username.trim().length >= 3 && /^[A-Za-z0-9._-]+$/.test(username.trim());
 
-  async function handleEmailSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!email) return;
+    if (!usernameReady || !otpReady) return;
     try {
-      await requestOtp(email);
-      setStep('otp');
-    } catch {
-      /* error already in context */
-    }
-  }
-
-  async function handleOtpSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (otp.length !== 6) return;
-    try {
-      await login(email, otp);
+      await login(username.trim(), otpUpper);
       startTransition(() => router.push('/dashboard'));
     } catch {
       /* error already in context */
     }
   }
 
-  function backToEmail() {
-    setStep('email');
-    setOtp('');
-    reset();
-  }
-
-  if (step === 'email') {
-    return (
-      <form className="flex flex-col gap-4" onSubmit={handleEmailSubmit} noValidate>
-        {error ? (
-          <Alert variant="destructive" role="alert" data-testid="login-error">
-            {error}
-          </Alert>
-        ) : null}
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">Correo</Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            placeholder="admin@quorum.local"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              if (error) reset();
-            }}
-            disabled={loading}
-            data-testid="login-email"
-          />
-        </div>
-        <Button
-          type="submit"
-          disabled={loading || !email}
-          data-testid="login-request-otp"
-        >
-          <Mail className="h-4 w-4" aria-hidden />
-          {loading ? 'Enviando código…' : 'Enviar código'}
-        </Button>
-      </form>
-    );
-  }
-
   return (
-    <form className="flex flex-col gap-4" onSubmit={handleOtpSubmit} noValidate>
+    <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
       {error ? (
         <Alert variant="destructive" role="alert" data-testid="login-error">
           {error}
         </Alert>
       ) : null}
-      <p className="text-sm text-text-muted" data-testid="login-email-hint">
-        Te enviamos un código a <strong>{email}</strong>. Si no lo ves en
-        tu bandeja, revisa la carpeta de no deseados o vuelve a enviarlo.
-      </p>
+
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="otp-1">Código de 6 dígitos</Label>
-        <OtpInput
-          value={otp}
-          onChange={(v) => {
-            setOtp(v);
+        <Label htmlFor="username">Usuario</Label>
+        <Input
+          id="username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          required
+          minLength={3}
+          maxLength={32}
+          placeholder="admin"
+          value={username}
+          onChange={(e) => {
+            setUsername(e.target.value);
             if (error) reset();
           }}
           disabled={loading}
-          aria-label="OTP code"
+          data-testid="login-username"
         />
-        {/* Hidden mirror of the first digit box so screen readers and
-            integration tests can target the OTP field via its label. */}
-        <input
-          id="otp-1"
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="otp">Código dinámico</Label>
+        <Input
+          id="otp"
           name="otp"
           type="text"
+          inputMode="text"
           autoComplete="one-time-code"
-          value={otp}
-          onChange={() => undefined}
-          aria-hidden
-          tabIndex={-1}
-          className="sr-only"
+          required
+          minLength={6}
+          maxLength={6}
+          pattern="[A-Z0-9]{6}"
+          placeholder="ABC123"
+          value={otpUpper}
+          onChange={(e) => {
+            // Force uppercase and strip anything that is not in the
+            // wire alphabet. The OTP service issues 6-char uppercase
+            // alphanumeric; uppercasing on input keeps the wire body
+            // identical regardless of caps-lock state.
+            const next = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            setOtp(next);
+            if (error) reset();
+            // Editing the OTP field assumes the operator just
+            // delivered a fresh code — restart the 5-minute window.
+            if (next.length > 0 && expired) {
+              setRemaining(OTP_TTL_SECONDS);
+            }
+          }}
+          disabled={loading || expired}
+          className="text-center text-lg font-mono tracking-[0.2em] uppercase"
+          aria-describedby="otp-hint"
           data-testid="login-otp"
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Button
-          type="submit"
-          disabled={loading || otp.length !== 6}
-          data-testid="login-submit-otp"
+        <div
+          id="otp-hint"
+          className="flex items-center justify-between text-xs text-text-muted"
         >
-          {loading ? 'Verificando…' : 'Ingresar'}
-        </Button>
-        <div className="flex items-center justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={backToEmail}
-            disabled={loading}
-            data-testid="login-back"
+          <span>Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).</span>
+          <span
+            data-testid="otp-countdown"
+            className={
+              expired
+                ? 'flex items-center gap-1 font-mono text-alert-error-text'
+                : remaining <= 60
+                  ? 'flex items-center gap-1 font-mono text-alert-warning-text'
+                  : 'flex items-center gap-1 font-mono'
+            }
+            aria-live="polite"
           >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Cambiar correo
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              reset();
-              void requestOtp(email);
-            }}
-            disabled={loading}
-            data-testid="login-resend-otp"
-          >
-            Reenviar código
-          </Button>
+            <Timer className="h-3 w-3" aria-hidden />
+            {expired
+              ? 'Expirado — solicita un código nuevo'
+              : `Expira en ${formatCountdown(remaining)}`}
+          </span>
         </div>
       </div>
+
+      <Button
+        type="submit"
+        disabled={loading || !usernameReady || !otpReady || expired}
+        data-testid="login-submit"
+      >
+        <KeyRound className="h-4 w-4" aria-hidden />
+        {loading
+          ? 'Verificando…'
+          : expired
+            ? 'Código expirado'
+            : 'Ingresar'}
+      </Button>
     </form>
   );
 }

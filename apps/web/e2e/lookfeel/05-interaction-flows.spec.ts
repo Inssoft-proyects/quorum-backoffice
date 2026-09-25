@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
 import { clearSession, loginAs, type Role } from './helpers/login';
 import { captureSnapshot } from './helpers/snapshot';
 
@@ -23,15 +23,23 @@ async function expectDialogOpen(page: Page, titleHint: RegExp | string): Promise
 }
 
 test.describe('T6 — interaction flows', () => {
-  test('login: bad creds → alert + stays on /login', async ({ page }) => {
+  test('login: bad creds → login-error + stays on /login', async ({ page }) => {
+    // UI-only: the synthetic 401 keeps the request off the wire so
+    // the test never exercises a real lockout against the live API.
+    await page.route('**/api/v1/auth/login', async (route: Route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'invalid_credentials' }),
+      });
+    });
+
     await page.goto('/backoffice/login');
-    await page.getByLabel('Correo').fill('nope@quorum.local');
-    await page.getByLabel('Contraseña').fill('wrong-password-xyz');
-    await page.getByRole('button', { name: /Ingresar/i }).click();
-    // The page exposes two [role="alert"] nodes: Next.js's hidden route
-    // announcer and the login form's inline Alert. Scope to the form to
-    // avoid the strict-mode violation.
-    await expect(page.locator('form [role="alert"]')).toBeVisible();
+    await page.getByTestId('login-username').fill('nonexistent-user');
+    await page.getByTestId('login-otp').fill('WRONG1');
+    await page.getByTestId('login-submit').click();
+
+    await expect(page.getByTestId('login-error')).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/login/);
   });
 

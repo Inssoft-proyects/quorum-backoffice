@@ -10,7 +10,17 @@ const ConfigSchema = z.object({
   REDIS_URL: z.string().url(),
 
   OTP_SERVICE_URL: z.string().url(),
+  /** Shared HMAC secret used to sign every request to the OTP service. */
   OTP_SERVICE_TOKEN: z.string().min(8),
+  /**
+   * Service identity asserted on the `Authorization: HMAC <service-name> ...`
+   * header sent to the quorum-otp service. Defaults to `quorum-backoffice`
+   * so existing HMAC keys provisioned under that name continue to work
+   * out-of-the-box; operators can override it when the BackOffice
+   * instance is registered under a different service identity in
+   * quorum-otp (e.g. multiple BackOffice replicas / environments).
+   */
+  OTP_SERVICE_NAME: z.string().min(1).max(64).default('quorum-backoffice'),
 
   CANVAS_PORTAL_API_URL: z.string().url(),
   CANVAS_PORTAL_API_TOKEN: z.string().min(8),
@@ -23,17 +33,10 @@ const ConfigSchema = z.object({
   AUTH_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_LOGIN_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
 
-  // SMTP (Polish WU v6: OTP delivery for email+OTP login). Required in
-  // production; optional in dev/test (mailer falls back to logged delivery).
-  SMTP_HOST: z.string().min(1).optional(),
-  SMTP_PORT: z.coerce.number().int().positive().optional(),
-  SMTP_SECURE: z.coerce.boolean().default(false),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().email().default('no-reply@quorum.local'),
-  LOGIN_OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  // Login OTP tuning. The OTP itself is owned by the quorum-otp
+  // service (HMAC-signed), so the BackOffice only exposes the
+  // session/attempt knobs the API itself enforces.
   LOGIN_OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  LOGIN_OTP_REQUEST_MAX_PER_EMAIL: z.coerce.number().int().positive().default(5),
   LOGIN_OTP_REQUEST_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
 
   ALLOWED_ORIGIN: z.string().url().optional(),

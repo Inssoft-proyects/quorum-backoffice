@@ -1,25 +1,25 @@
 /**
  * Auth REST routes (prefix /api/v1/auth).
  *
- *   POST /api/v1/auth/login/request  → request OTP email (Polish WU v6)
- *   POST /api/v1/auth/login          → exchange email + OTP for a session
- *   POST /api/v1/auth/logout         → clear session cookie
- *   GET  /api/v1/auth/me             → resolve cookie to current user
+ *   POST /api/v1/auth/login   → exchange username + OTP for a session cookie
+ *   POST /api/v1/auth/logout  → clear session cookie
+ *   GET  /api/v1/auth/me      → resolve cookie to current user
  *
- * Polish WU v6 replaces the legacy `email + password` POST /login with
- * a two-step flow. The new `request` endpoint is always idempotent
- * (returns 200 even for unknown emails) so attackers cannot enumerate
- * accounts; the audit log is the source of truth for the dispatch.
+ * The login API exposes a single one-step flow. The user arrives with
+ * a pre-issued OTP (delivered by the broader quorum ecosystem, not
+ * by the BackOffice); we verify it against quorum-otp under the HMAC
+ * service identity `quorum-backoffice` and exchange it for a session
+ * cookie. Username lookup uses the canonical lower-case form so the
+ * `subject` bound on the wire matches what the issuer encoded.
  *
  * Cookie storage is delegated to @fastify/cookie (registered in app.ts);
  * the route layer reads/writes via `reply.setCookie` / `reply.clearCookie`
- * and `req.cookies`. The AuthService owns all DB / Redis / OTP / mailer /
+ * and `req.cookies`. The AuthService owns all DB / Redis / OTP /
  * audit work.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   LoginRequestOtp,
-  RequestLoginRequest,
   type MeResponse,
 } from '@quorum-backoffice/shared';
 import { AppError } from '../lib/errors';
@@ -49,47 +49,27 @@ export async function registerAuthRoutes(
       log: app.log,
       redis: app.redis,
       otp: app.otpClient,
-      mailer: app.mailer,
       sessionTtlSeconds: app.config.SESSION_TTL_SECONDS,
       loginMaxAttempts: app.config.AUTH_LOGIN_MAX_ATTEMPTS,
       loginWindowSeconds: app.config.AUTH_LOGIN_WINDOW_SECONDS,
-      loginOtpTtlSeconds: app.config.LOGIN_OTP_TTL_SECONDS,
-      loginOtpMaxAttempts: app.config.LOGIN_OTP_MAX_ATTEMPTS,
-      loginOtpRequestMaxPerEmail: app.config.LOGIN_OTP_REQUEST_MAX_PER_EMAIL,
-      loginOtpRequestWindowSeconds: app.config.LOGIN_OTP_REQUEST_WINDOW_SECONDS,
     });
 
   /**
-   * Step 1 of the email+OTP login flow. Body: `{ email }`.
+   * Single-step username + OTP login. Body: `{ username, otp }`.
    *
-   * Always returns 200 with `{ ok: true, retryAfterSeconds }` so a
-   * malicious client cannot enumerate which addresses have accounts.
-   * Disabled users get a 403; rate-limited callers get a 429.
-   */
-  app.post('/api/v1/auth/login/request', async (req, reply: FastifyReply) => {
-    const body = RequestLoginRequest.parse(req.body);
-    const svc = getService();
-    const meta = metaFromRequest(req);
-    const result = await svc.requestLoginOtp(body.email, meta);
-    reply.header('cache-control', 'no-store');
-    return { ok: true as const, retryAfterSeconds: result.retryAfterSeconds };
-  });
-
-  /**
-   * Step 2 of the email+OTP login flow. Body: `{ email, otp }`.
-   * The legacy `password` field is parsed but never verified.
-   *
-   * On success sets the session cookie and returns `{ user }`. Errors:
+   * On success: sets the session cookie and returns `{ user }`.
+   * Errors:
    *   - 400: malformed body
-   *   - 401: invalid / expired / replayed OTP (code: invalid_otp or invalid_credentials)
-   *   - 403: disabled user
-   *   - 429: rate limit
+   *   - 401: invalid / expired / replayed OTP, or unknown username
+   *   - 403: disabled user / user_unmapped
+   *   - 429: rate-limited
+   *   - 503: dependency failure (quorum-otp HMAC or provider 5xx)
    */
   app.post('/api/v1/auth/login', async (req, reply: FastifyReply) => {
     const body = LoginRequestOtp.parse(req.body);
     const svc = getService();
     const meta = metaFromRequest(req);
-    const result = await svc.loginWithOtp(body.email, body.otp, meta);
+    const result = await svc.loginWithOtp(body.username, body.otp, meta);
     reply.setCookie(app.config.AUTH_COOKIE_NAME, result.sessionToken, {
       path: '/',
       httpOnly: true,

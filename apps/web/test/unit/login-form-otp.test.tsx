@@ -35,93 +35,55 @@ function renderForm() {
   );
 }
 
-describe('LoginFormOtp (Polish WU v6 / A8)', () => {
-  it('renders the email step first with the request button disabled until valid', () => {
+/**
+ * Single-step username + pre-issued OTP login (Polish WU v6 / A8+
+ * username migration). The BackOffice no longer exposes the email
+ * step or a `/auth/login/request` endpoint; the user arrives with a
+ * pre-issued 6-char alphanumeric OTP and the form posts
+ * `{ username, otp }` in one go.
+ */
+describe('LoginFormOtp (single-step username + OTP, post-username migration)', () => {
+  it('renders the username field with submit disabled until both inputs are valid', () => {
     renderForm();
-    const email = screen.getByLabelText('Correo') as HTMLInputElement;
-    const button = screen.getByTestId('login-request-otp') as HTMLButtonElement;
-    expect(email).toBeInTheDocument();
-    expect(button).toBeDisabled();
-    // The OTP step is not visible yet.
-    expect(screen.queryByTestId('login-otp')).toBeNull();
+    const username = screen.getByTestId('login-username') as HTMLInputElement;
+    const otp = screen.getByTestId('login-otp') as HTMLInputElement;
+    const submit = screen.getByTestId('login-submit') as HTMLButtonElement;
+    expect(username).toBeInTheDocument();
+    expect(otp).toBeInTheDocument();
+    expect(submit).toBeDisabled();
   });
 
-  it('advances to the OTP step on a successful OTP request', async () => {
-    const fetchMock = (async () =>
-      new Response(JSON.stringify({ ok: true, retryAfterSeconds: 60 }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })) as unknown as typeof fetch;
-    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
-
+  it('keeps submit disabled when only the username is filled in', async () => {
+    renderForm();
     const user = userEvent.setup();
-    renderForm();
-    await user.type(screen.getByLabelText('Correo'), 'admin@quorum.local');
-    await user.click(screen.getByTestId('login-request-otp'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('login-otp')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('login-email-hint').textContent).toMatch(/admin@quorum\.local/);
-    expect(screen.getByTestId('login-back')).toBeInTheDocument();
-    expect(screen.getByTestId('login-resend-otp')).toBeInTheDocument();
-    expect(screen.getByTestId('login-submit-otp')).toBeDisabled();
+    await user.type(screen.getByTestId('login-username'), 'admin');
+    expect(screen.getByTestId('login-submit')).toBeDisabled();
   });
 
-  it('shows the server error when the OTP request fails with rate_limited', async () => {
-    const fetchMock = (async () =>
-      new Response(JSON.stringify({ code: 'rate_limited', message: 'too many' }), {
-        status: 429,
-      })) as unknown as typeof fetch;
-    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
-
+  it('keeps submit disabled when only the OTP is filled in', async () => {
+    renderForm();
     const user = userEvent.setup();
-    renderForm();
-    await user.type(screen.getByLabelText('Correo'), 'admin@quorum.local');
-    await user.click(screen.getByTestId('login-request-otp'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('login-error')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('login-error').textContent).toMatch(/Demasiados/);
-    // Still on the email step.
-    expect(screen.queryByTestId('login-otp')).toBeNull();
+    await user.type(screen.getByTestId('login-otp'), '654321');
+    expect(screen.getByTestId('login-submit')).toBeDisabled();
   });
 
-  it('goes back to the email step when the back button is clicked', async () => {
-    const fetchMock = (async () =>
-      new Response(JSON.stringify({ ok: true, retryAfterSeconds: 60 }), {
-        status: 200,
-      })) as unknown as typeof fetch;
-    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
-
+  it('uppercases the OTP input as the user types', async () => {
+    renderForm();
     const user = userEvent.setup();
-    renderForm();
-    await user.type(screen.getByLabelText('Correo'), 'admin@quorum.local');
-    await user.click(screen.getByTestId('login-request-otp'));
-    await waitFor(() => {
-      expect(screen.getByTestId('login-otp')).toBeInTheDocument();
-    });
-    await user.click(screen.getByTestId('login-back'));
-    await waitFor(() => {
-      expect(screen.queryByTestId('login-otp')).toBeNull();
-    });
-    expect(screen.getByTestId('login-request-otp')).toBeInTheDocument();
+    const otp = screen.getByTestId('login-otp') as HTMLInputElement;
+    await user.type(otp, 'ab12cd');
+    expect(otp.value).toBe('AB12CD');
   });
 
-  it('submits the OTP and navigates to /dashboard on a successful verify', async () => {
-    let call = 0;
+  it('submits { username, otp } in a single POST to /api/v1/auth/login and navigates on success', async () => {
     const fetchMock = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      call += 1;
       const url = typeof _input === 'string' ? _input : _input.toString();
-      if (call === 1 && url.endsWith('/api/v1/auth/login/request')) {
-        return new Response(JSON.stringify({ ok: true, retryAfterSeconds: 60 }), { status: 200 });
-      }
-      if (call === 2 && url.endsWith('/api/v1/auth/login')) {
+      if (url.endsWith('/api/v1/auth/login')) {
         const body = init?.body ? JSON.parse(String(init.body)) : {};
-        expect(body.otp).toBe('654321');
-        expect(body.email).toBe('admin@quorum.local');
-        // No `password` field should be sent.
+        expect(body.username).toBe('admin');
+        expect(body.otp).toBe('AB12CD');
+        // No email/password/request fields should leak into the new contract.
+        expect(body.email).toBeUndefined();
         expect(body.password).toBeUndefined();
         return new Response(
           JSON.stringify({ user: { id: 1, email: 'admin@quorum.local', role: 'admin' } }),
@@ -134,54 +96,74 @@ describe('LoginFormOtp (Polish WU v6 / A8)', () => {
 
     const user = userEvent.setup();
     renderForm();
-    await user.type(screen.getByLabelText('Correo'), 'admin@quorum.local');
-    await user.click(screen.getByTestId('login-request-otp'));
-    await waitFor(() => {
-      expect(screen.getByTestId('login-otp')).toBeInTheDocument();
-    });
-    // Paste a 6-digit code into the first OTP input; the OtpInput's
-    // onPaste handler fills all six boxes in one go.
-    const firstBox = screen.getByLabelText('Digit 1 of 6') as HTMLInputElement;
-    await user.click(firstBox);
-    await user.paste('654321');
-    await user.click(screen.getByTestId('login-submit-otp'));
+    await user.type(screen.getByTestId('login-username'), 'admin');
+    await user.type(screen.getByTestId('login-otp'), 'AB12CD');
+    await user.click(screen.getByTestId('login-submit'));
+
     await waitFor(() => {
       expect(stubRouter.push).toHaveBeenCalledWith('/dashboard');
     });
   });
 
-  it('surfaces invalid_otp from the backend', async () => {
-    let call = 0;
-    const fetchMock = (async (_input: RequestInfo | URL) => {
-      call += 1;
-      const url = typeof _input === 'string' ? _input : _input.toString();
-      if (call === 1 && url.endsWith('/api/v1/auth/login/request')) {
-        return new Response(JSON.stringify({ ok: true, retryAfterSeconds: 60 }), { status: 200 });
-      }
-      if (call === 2 && url.endsWith('/api/v1/auth/login')) {
-        return new Response(
-          JSON.stringify({ code: 'invalid_otp', message: 'bad code' }),
-          { status: 401 },
-        );
-      }
-      return new Response('not used', { status: 404 });
-    }) as unknown as typeof fetch;
+  it('surfaces an error when the backend rejects with invalid_credentials', async () => {
+    const fetchMock = (async () =>
+      new Response(
+        JSON.stringify({ code: 'invalid_credentials', message: 'no' }),
+        { status: 401 },
+      )) as unknown as typeof fetch;
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
 
     const user = userEvent.setup();
     renderForm();
-    await user.type(screen.getByLabelText('Correo'), 'admin@quorum.local');
-    await user.click(screen.getByTestId('login-request-otp'));
-    await waitFor(() => {
-      expect(screen.getByTestId('login-otp')).toBeInTheDocument();
-    });
-    const firstBox = screen.getByLabelText('Digit 1 of 6') as HTMLInputElement;
-    await user.click(firstBox);
-    await user.paste('000000');
-    await user.click(screen.getByTestId('login-submit-otp'));
+    await user.type(screen.getByTestId('login-username'), 'admin');
+    await user.type(screen.getByTestId('login-otp'), '000000');
+    await user.click(screen.getByTestId('login-submit'));
+
     await waitFor(() => {
       expect(screen.getByTestId('login-error')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('login-error').textContent).toMatch(/incorrecto|expirado/);
+    expect(screen.getByTestId('login-error').textContent).toMatch(/incorrecto|verifica/i);
+  });
+
+  it('surfaces a rate_limited error from the backend', async () => {
+    const fetchMock = (async () =>
+      new Response(
+        JSON.stringify({ code: 'rate_limited', message: 'too many' }),
+        { status: 429 },
+      )) as unknown as typeof fetch;
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const user = userEvent.setup();
+    renderForm();
+    await user.type(screen.getByTestId('login-username'), 'admin');
+    await user.type(screen.getByTestId('login-otp'), 'AB12CD');
+    await user.click(screen.getByTestId('login-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('login-error')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('login-error').textContent).toMatch(/Demasiados/);
+  });
+
+  it('clears the error when the user resumes typing', async () => {
+    const fetchMock = (async () =>
+      new Response(
+        JSON.stringify({ code: 'invalid_credentials', message: 'no' }),
+        { status: 401 },
+      )) as unknown as typeof fetch;
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const user = userEvent.setup();
+    renderForm();
+    await user.type(screen.getByTestId('login-username'), 'admin');
+    await user.type(screen.getByTestId('login-otp'), '000000');
+    await user.click(screen.getByTestId('login-submit'));
+    await waitFor(() => {
+      expect(screen.getByTestId('login-error')).toBeInTheDocument();
+    });
+    await user.type(screen.getByTestId('login-username'), 'x');
+    await waitFor(() => {
+      expect(screen.queryByTestId('login-error')).toBeNull();
+    });
   });
 });
