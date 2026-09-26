@@ -206,6 +206,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
             active={filter === 'all'}
             segments={segmentsTotal}
             centerLabel="100%"
+            chartVariant="total"
             onClick={() => setFilter('all')}
           />
           <MetricCard

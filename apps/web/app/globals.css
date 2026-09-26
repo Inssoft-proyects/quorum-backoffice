@@ -48,6 +48,7 @@
   --color-alert-error-text: #ac000e;
   --color-alert-warning-bg: #fff5e6;
   --color-alert-warning-text: #723d19;
+  --color-focus: #005fcc;
   --color-page: #f6f7f6;
   --color-surface-subtle: #f1f4f1;
   --color-border-strong: #aeb9ae;
@@ -175,9 +176,16 @@
   }
 
   .metrics-grid {
+    /* Maquette canon: the four metric cards sit flush against each
+     * other on desktop — `grid-template-columns: repeat(4, minmax(0, 1fr))`
+     * with no gap. The card borders (1px var(--color-border)) provide
+     * the only visual separation. The 1rem gap we previously shipped
+     * was a real drift from the maquette that cost several hundred
+     * diff pixels per card row. The mobile breakpoints below add the
+     * `var(--space-2)` (0.5rem) gap that the maquette itself uses at
+     * <64rem viewports. */
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1rem;
   }
 
   .inventory-section__header {
@@ -230,6 +238,15 @@
 
   .metric-card--with-chart {
     min-height: 8.5rem;
+    /* Reserve room on the right for the absolutely-positioned donut
+     * chart so the value text doesn't under-run it. Matches the
+     * maquette's "4rem chart + ~1rem breathing room" geometry. */
+    padding-inline-end: 4rem;
+  }
+  .metric-card--attention {
+    /* The "Por atender" / "Autenticación" cards use pill chips
+     * instead of a donut, so they reclaim the chart's right side. */
+    padding-inline-end: 1.25rem;
   }
 
   .metric-card__label {
@@ -370,6 +387,20 @@
     box-shadow: 0 0.25rem 0.625rem rgb(41 41 41 / 12%), inset 0 0 0 1px rgb(41 41 41 / 8%);
   }
 
+  /*
+   * Desktop positioning inside a metric card. The maquette anchors
+   * the donut to the bottom-right corner of the card with absolute
+   * positioning (the value + meta text flows on the left, the
+   * donut overlaps the lower-right of that flow). Without this rule
+   * the donut renders in flex flow under the meta text, which
+   * breaks the metrics-grid pixel diff on /dispositivos and /audit.
+   */
+  .metric-card .donut-chart {
+    position: absolute;
+    inset-inline-end: var(--space-4);
+    inset-block-end: var(--space-4);
+  }
+
   .donut-chart::before {
     content: "";
     position: absolute;
@@ -387,6 +418,32 @@
     font-size: 0.75rem;
     font-weight: 700;
     line-height: 1;
+  }
+
+  /*
+   * Maquette total-card separator: 3 small white bands (~4° each) at the
+   * joins between the secondary / assigned / warning segments. Rendered
+   * via an ::after overlay so the existing conic-gradient built from
+   * `segments` in <DonutChart /> continues to drive the colored bands
+   * underneath (see donut-chart.tsx -> variant="total").
+   */
+  .donut-chart--total::after {
+    content: "";
+    position: absolute;
+    inset: -0.0625rem;
+    border-radius: inherit;
+    background: conic-gradient(
+      from -90deg,
+      var(--color-background) 0 4deg,
+      transparent 4deg 224deg,
+      var(--color-background) 224deg 232deg,
+      transparent 232deg 336deg,
+      var(--color-background) 336deg 344deg,
+      transparent 344deg 356deg,
+      var(--color-background) 356deg 360deg
+    );
+    z-index: 1;
+    pointer-events: none;
   }
 
   /* ----- Chip / id-badge / privacy-chip ----- */
@@ -661,8 +718,8 @@
   .inventory-search__input:hover { border-color: var(--color-secondary-500); }
 
   .inventory-search__input:focus-visible {
-    border-color: #005fcc;
-    box-shadow: 0 0 0 3px rgb(0 95 204 / 18%);
+    border-color: var(--color-focus);
+    box-shadow: 0 0 0 0.1875rem rgb(0 95 204 / 18%);
   }
 
   .inventory-search__count {

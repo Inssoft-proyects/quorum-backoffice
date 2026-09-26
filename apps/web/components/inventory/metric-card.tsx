@@ -21,6 +21,12 @@ export interface MetricCardProps
   /** Optional sub-label rendered next to the value (e.g. "Solo el 2%"). */
   percentageLabel?: string;
   /**
+   * Donut variant override. The maquette's "Total" card carries white
+   * separator bands between segments; pass "total" to enable them.
+   * Defaults to "generic" (no separators).
+   */
+  chartVariant?: 'generic' | 'total';
+  /**
    * Two pill entries rendered in the meta region when the card carries the
    * "attention" emphasis. Ignored otherwise.
    */
@@ -45,6 +51,7 @@ export const MetricCard = React.forwardRef<HTMLButtonElement, MetricCardProps>(
       active = false,
       centerLabel = '100%',
       percentageLabel,
+      chartVariant = 'generic',
       pills,
       className,
       children,
@@ -115,6 +122,7 @@ export const MetricCard = React.forwardRef<HTMLButtonElement, MetricCardProps>(
             className="metric-card__chart"
             segments={segments as DonutSegment[]}
             centerLabel={centerLabel}
+            variant={chartVariant}
           />
         ) : null}
       </button>

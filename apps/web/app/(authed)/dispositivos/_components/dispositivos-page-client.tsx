@@ -2,7 +2,8 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useTransition, type ChangeEvent } from 'react';
 import type { DispositivoDetailResponse, UserRole } from '@quorum-backoffice/shared';
 import { PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,18 @@ interface Props {
  */
 export function DispositivosPageClient({ items, userRole, total, search }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+
+  function updateParam(key: string, value: string) {
+    const next = new URLSearchParams(searchParams.toString());
+    if (value) next.set(key, value);
+    else next.delete(key);
+    startTransition(() => router.replace(`/dispositivos?${next.toString()}`));
+  }
+  function handleSearchChange(e: ChangeEvent<HTMLInputElement>) {
+    updateParam('search', e.target.value);
+  }
   const [filter, setFilter] = useState<FilterKey>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
@@ -245,6 +258,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
             active={filter === 'all'}
             segments={segmentsTotal}
             centerLabel="100%"
+            chartVariant="total"
             onClick={() => setFilter('all')}
           />
           <MetricCard
@@ -289,7 +303,33 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
       </section>
 
       <section>
-        <DispositivosFilters search={search} countLabel={countLabel} />
+        <div className="inventory-section__header">
+          <h2>Dispositivos registrados</h2>
+          <div className="inventory-search" role="search">
+            <span className="inventory-search__icon" aria-hidden />
+            <input
+              className="inventory-search__input"
+              type="search"
+              autoComplete="off"
+              placeholder="Buscar por serial, marca o modelo"
+              defaultValue={search}
+              onChange={handleSearchChange}
+              disabled={isPending}
+              data-testid="dispositivos-search"
+              aria-label="Buscar dispositivo"
+            />
+            <span className="inventory-search__count" aria-live="polite">
+              {countLabel}
+            </span>
+          </div>
+        </div>
+
+        <div
+          className="mt-3 flex flex-wrap items-center gap-3"
+          data-testid="dispositivos-filters"
+        >
+          <DispositivosFilters isPending={isPending} />
+        </div>
 
         <DispositivosTable
           items={pagedItems}
