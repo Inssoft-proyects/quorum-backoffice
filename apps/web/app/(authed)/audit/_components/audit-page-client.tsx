@@ -247,7 +247,7 @@ export function AuditPageClient({ items, total }: Props) {
         </div>
       </section>
 
-      <section>
+      <section className="inventory-section--table">
         <div className="inventory-section__header">
           <h2>Movimientos</h2>
           <AuditFilters countLabel={countLabel} />

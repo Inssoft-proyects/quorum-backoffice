@@ -246,7 +246,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
         </div>
       </section>
 
-      <section>
+      <section className="inventory-section--table">
         <div className="inventory-section__header">
           <h2>Marbetes registrados</h2>
           <div className="inventory-search" role="search">

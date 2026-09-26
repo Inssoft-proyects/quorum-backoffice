@@ -43,7 +43,10 @@ export function MaskedNumber({
         ) : (
           <EyeOff className="privacy-chip__icon" aria-hidden />
         )}
-        <span>{isRevealed ? 'Revelado' : 'Oculto'}</span>
+        {/* The chip is icon-only now — the action is implicit (toggle
+         * reveal/hide), so the label only lives on aria-label for screen
+         * readers. Visible text would add visual noise without adding
+         * information (the icon already conveys "hidden"). */}
       </span>
     </span>
   );

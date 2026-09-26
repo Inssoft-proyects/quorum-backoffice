@@ -153,6 +153,16 @@
     margin-inline: auto;
     padding: 2rem 2rem calc(4.25rem + 2rem + env(safe-area-inset-bottom));
     font-family: var(--font-family-base);
+    display: flex;
+    flex-direction: column;
+    /* Per the maquette: the inventory page is viewport-bound so the table
+     * scrolls internally while the chrome (header, metrics, pagination)
+     * stays pinned to the visible area. We need a concrete height for
+     * the internal flex children to compute `flex: 1; min-height: 0`;
+     * 100% works against the <main> flex parent (AppShell main is
+     * `flex-1` inside a grid that is `min-h-screen`). */
+    height: 100%;
+    min-height: 0;
   }
 
   .inventory-header {
@@ -543,13 +553,43 @@
     overflow: hidden;
     background: var(--color-background);
     box-shadow: 0 0.0625rem 0.125rem rgb(41 41 41 / 8%), 0 0.25rem 1rem rgb(41 41 41 / 6%);
+    /* Allow the shell to host a sticky pagination footer (header +
+     * scrollable body + footer). Without these the internal flex
+     * children collapse to their content height. */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
   }
 
   .table-scroll {
     width: 100%;
     overflow-x: auto;
+    /* Vertical scroll lives here so the page-level main scroll is not
+     * affected; the maquette keeps the table body in a fixed-height
+     * scrollable region with the pagination pinned at the bottom. */
+    overflow-y: auto;
     overscroll-behavior-inline: contain;
     -webkit-overflow-scrolling: touch;
+    /* Internal scroll only — shrink-to-fit so the sticky footer below
+     * can claim whatever vertical space it needs. */
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* Sticky-footer pattern for the table-pagination. The footer sits
+   * at the bottom of .table-shell using `position: sticky` so it stays
+   * pinned to the viewport bottom regardless of scroll position.
+   * `bottom: 0` means the footer is positioned at the bottom of its
+   * containing scroll context. The block-start border keeps the visual
+   * separator. Background prevents the table rows bleeding through. */
+  .table-pagination {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    border-block-start: 1px solid var(--color-border);
+    padding: 0.75rem 0;
+    background: var(--color-background);
   }
 
   .data-table {
@@ -600,10 +640,13 @@
     flex-wrap: wrap;
   }
 
-  .data-table__validity-date {
-    display: block;
+  /* Selector needs the `td.` prefix because Turbopack / Tailwind 4 JIT
+   * emits a derived utility that adds `display: block` to the bare
+   * class name, which collapses the table-cell row layout. Tag-qualifying
+   * the selector raises specificity high enough that the derived utility
+   * loses the cascade fight and the cell stays as a real table-cell. */
+  td.data-table__validity-date {
     font-weight: 700;
-    font-size: 0.75rem;
   }
 
   /* ----- Sortable header ----- */
@@ -750,12 +793,9 @@
     transform: translateY(-50%);
   }
 
-  /* ----- Pagination ----- */
-  .table-pagination {
-    border-block-start: 1px solid var(--color-border);
-    padding: 0.75rem 0;
-    background: var(--color-background);
-  }
+  /* ----- Pagination -----
+   * (block + flex-shrink:0 already applied above so the pagination
+   * sticks to the bottom of the .table-shell. See lines 582-589.) */
 
   .table-pagination__inner {
     display: flex;

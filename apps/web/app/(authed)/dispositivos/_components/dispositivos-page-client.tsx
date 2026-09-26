@@ -302,7 +302,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
         </div>
       </section>
 
-      <section>
+      <section className="inventory-section--table">
         <div className="inventory-section__header">
           <h2>Dispositivos registrados</h2>
           <div className="inventory-search" role="search">
