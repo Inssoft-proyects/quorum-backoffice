@@ -75,6 +75,33 @@ comparison (computed styles, CSS tokens, DOM pattern). Weighted average.
   (@playwright/test ^1.48). Baselines can be produced by serving the
   maquette HTML locally and screenshotting it.
 
+## Topología de despliegue (LECCIÓN OPERATIVA — no recaer)
+
+El BackOffice se sirve desde pods de Kubernetes (`namespace=quorum-backoffice`,
+`deployment=quorum-backoffice-web`, `image=node:22-bookworm-slim`).
+
+- `/opt/quorum-backoffice` es un **hostPath que el pod monta como `/opt/qb`**; cualquier
+  cambio ahí es leído por el contenedor. NO es un servidor de producción: es una
+  copia de trabajo sincronizada al pod por un release de k3s.
+- El comando del contenedor es `exec node .next/standalone/apps/web/server.js`
+  con cwd `/opt/qb/apps/web`. El bundle `.next/standalone/...server.js` debe existir
+  físicamente en el hostPath; sin él el pod entra en CrashLoopBackOff con
+  `MODULE_NOT_FOUND`. El release real produce la imagen Docker con el bundle dentro;
+  el usuario lo construye vía un pipeline de CI + kubectl set image (o equivalente).
+- Mi accidente del 2026-09-26: confundí `/opt/` con un servidor directo, copié los
+  archivos del feature ahí y ejecuté `sudo npm install` (agregó devDeps al árbol del
+  pod). Tras el rollout restart del Deployment, el pod nuevo no encontró el bundle y
+  crasheó. Reversión: restauré archivos desde `b39ab30:apps/...`, borré los
+  devDeps que metí, y recuperé el bundle `.next/standalone/` desde
+  `/opt/quorum-backoffice.backup-2026-09-25/apps/web/.next/`. El pod quedó corriendo
+  con un bundle **del 24 Sep** (rollback CORS anterior), un poco más antiguo que el
+  del 25 Sep; funcional pero no idéntico al pre-daño real.
+- Regla operativa: **nunca tocar `/opt/quorum-backoffice` desde la sesión de IA**.
+  Cualquier cambio al bundle de un pod de producción pasa por el pipeline de release
+  del repo. Medir la paridad con Playwright es trabajo **local** (sirviendo la app
+  con `next standalone` en :3100 desde el checkout del repo); el deploy es decisión
+  del usuario, no del agente.
+
 ## Tasks
 
 - [x] T1 — Scout: gap analysis maquette vs the 4 screens (structure,
