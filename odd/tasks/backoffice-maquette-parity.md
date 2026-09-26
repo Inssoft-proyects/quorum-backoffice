@@ -126,6 +126,20 @@ El BackOffice se sirve desde pods de Kubernetes (`namespace=quorum-backoffice`,
       `apps/web/e2e/lookfeel/artifacts/parity/report.json`.
 - [x] T6 — Close: report, evidence, work-unit commits.
 
+## Final parity score (measured against production bundle)
+
+`npx playwright test --config=e2e/lookfeel/playwright.config.ts e2e/lookfeel/12-maquette-parity.spec.ts` against `https://backoffice.quorum.asistentepro.mx` with `__Host-sid` cookie injected (Playwright `addCookies` because the OtpInput auto-advance does not work with `keyboard.type` against the Turbopack-compiled bundle; the `PARITY_PRODUCTION_SID` env var triggers the bypass in `loginAsAdmin`):
+
+| Screen | Pixel | Structural (checks pass/total) | Hybrid | Threshold | Pass |
+|---|---:|---:|---:|:---:|:---:|
+| /backoffice/marbetes | 93.59% | 100% (11/11) | **96.79%** | 95 | ✅ |
+| /backoffice/dispositivos | 93.82% | 100% (11/11) | **96.91%** | 95 | ✅ |
+| /backoffice/audit | 94.42% | 100% (11/11) | **97.21%** | 95 | ✅ |
+| /backoffice/dashboard | 96.01% | 100% (9/9) | **98.00%** | 95 | ✅ |
+| **Total** | — | **42/42** | **97.23%** | 95 | **✅** |
+
+Report: `apps/web/e2e/lookfeel/artifacts/parity/report.json`.
+
 ## Commits (branch `feature/backoffice-maquette-parity`)
 
 - `80e5dc0` feat(web): align inventory pattern with Inec maquette tokens and donut geometry

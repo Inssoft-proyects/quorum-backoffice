@@ -628,12 +628,34 @@ test.describe('BackOffice ↔ Maquette hybrid equivalence (T4)', () => {
   });
 
   for (const screen of SCREENS) {
-    test(`${screen.appPath} hybrid score (pixel + structural)`, async ({ page }) => {
-      // 1) Auth — same contract as helpers/login.ts: skip when
-      // E2E_ADMIN_USERNAME is absent. OTPs are minted per-test inside
-      // loginAsAdmin via scripts/get-admin-otp.sh.
-      const loggedIn = await loginAsAdmin(page);
-      if (!loggedIn) return;
+    test(`${screen.appPath} hybrid score (pixel + structural)`, async ({ page, context }) => {
+      // 0) Production-mode cookie injection: when the env asks for it,
+      // skip the UI login and inject a valid session cookie directly.
+      // This is needed because the OtpInput auto-advance from
+      // keyboard.type does not work against the Turbopack-compiled
+      // bundle, and the spec's route-rewrite fallback requires a
+      // plain-HTTP context (which we cannot have against the HTTPS
+      // production bundle where the API issues `__Host-sid; Secure`).
+      const sid = process.env['PARITY_PRODUCTION_SID'];
+      if (sid && process.env['PARITY_PRODUCTION_DOMAIN']) {
+        const proto = new URL(process.env['PARITY_BASE_URL'] ?? '/').protocol || 'https:';
+        const secure = proto === 'https:';
+        await context.addCookies([{
+          name: '__Host-sid',
+          value: sid,
+          domain: process.env['PARITY_PRODUCTION_DOMAIN'],
+          path: '/',
+          httpOnly: true,
+          secure,
+          sameSite: 'Lax',
+        }]);
+      } else {
+        // 1) Auth — same contract as helpers/login.ts: skip when
+        // E2E_ADMIN_USERNAME is absent. OTPs are minted per-test inside
+        // loginAsAdmin via scripts/get-admin-otp.sh.
+        const loggedIn = await loginAsAdmin(page);
+        if (!loggedIn) return;
+      }
 
       // 2) Navigate + screenshot the live app at the maquette's
       // canonical dimensions. We use fullPage so the metric grid +

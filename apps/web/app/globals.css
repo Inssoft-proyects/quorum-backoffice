@@ -101,6 +101,22 @@
 @layer base {
   :root {
     color-scheme: light;
+    /* Spacing scale matching diseno/maqueta_Inec/Inec/css/tokens.css.
+     * Required for the metric-card / donut-chart inline-end placement
+     * that uses var(--space-4) (Tailwind 4 only defines --spacing, not
+     * the maquette's per-step tokens). */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    /* Font sizes referenced by the maquette metric-card rules. */
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-2xl: 2rem;
   }
   .dark {
     color-scheme: dark;
@@ -238,15 +254,16 @@
 
   .metric-card--with-chart {
     min-height: 8.5rem;
-    /* Reserve room on the right for the absolutely-positioned donut
-     * chart so the value text doesn't under-run it. Matches the
-     * maquette's "4rem chart + ~1rem breathing room" geometry. */
-    padding-inline-end: 4rem;
+    /* Per maquette: the donut is absolute (inset-inline-end / inset-block-end)
+     * and overlaps the value text on the right; we do NOT reserve right
+     * padding. This matches `diseno/maqueta_Inec/Inec/css/components.css`
+     * 1:1 and is the single biggest reason for the metric-cards pixel
+     * diff drop we saw in production. */
   }
   .metric-card--attention {
     /* The "Por atender" / "Autenticación" cards use pill chips
-     * instead of a donut, so they reclaim the chart's right side. */
-    padding-inline-end: 1.25rem;
+     * instead of a donut; no chart means no padding-end reservation.
+     * The maquette uses the same padding as the other cards. */
   }
 
   .metric-card__label {
