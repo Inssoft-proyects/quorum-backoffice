@@ -4,49 +4,79 @@ Pega este bloque en una sesión nueva de Pi para retomar el trabajo.
 
 ---
 
-# Estado actual al cierre de la auditoría (sesión de revisión)
+# Estado actual al cierre de la sesión (2026-09-26)
 
-> El resto del archivo describe sesiones previas (Polish WU v0–v6 y PRs asociados). Esta sección es la única descripción actual de la working tree al cierre de esta auditoría.
+> Esta sección reemplaza las anteriores — refleja el master actual con
+> el merge de `feature/backoffice-maquette-parity`. La auditoría UI/UX
+> mencionada más abajo ya está cerrada e integrada.
 
 ## Working tree
 
 - **Rama**: `master` (tracking `origin/master`).
-- **HEAD**: `f2594836fa27e2e466039ea83126d93edf0fe0ad`.
-- **Estado**: dirty. Cambios sin commitear del draft de auth y de los archivos asociados; sin archivos staged.
-- **Untracked**: `.codegraph/`, `apps/api/migrations/0011_backoffice_username.sql`, `apps/api/test/unit/otp-client.test.ts`, `infra/nginx/backoffice.quorum.asistentepro.mx.conf`, `odd/tasks/backoffice-cors-same-origin.md`, `odd/tasks/backoffice-username-otp.md`.
+- **HEAD**: `c85bb41 Merge feature/backoffice-maquette-parity into master`.
+- **Branch base del feature merged**: `feature/backoffice-maquette-parity`
+  (16 commits ahead, merged con `--no-ff`).
+- **Estado**: clean. `git status` no muestra cambios sin commitear en
+  archivos tracked. `.codegraph/` y `test-results/` siguen untracked
+  (artefactos del IDE / runner, no parte del repo).
+- **Deploy activo**: pod `quorum-backoffice-web-f6d9dd77-dwwxs` (1/1)
+  sirviendo `c85bb41` en `https://backoffice.quorum.asistentepro.mx`.
+  Bundle construido con `NEXT_PUBLIC_API_URL=https://backoffice.quorum.asistentepro.mx`.
 
-## Trabajo previo — CORS / reverse-proxy subdomain
+## Lo que está integrado en master ahora
 
-- Ver `odd/tasks/backoffice-cors-same-origin.md`: host dedicado `https://backoffice.quorum.asistentepro.mx`, proxy Nginx `/api/`, rebuild y deploy web, `nginx -t`, preflight real 204.
-- **Esta auditoría NO consultó producción en vivo.** El estado queda como **previamente reportado/validado, no re-verificado ahora**.
+- ✅ **Paridad visual contra la maqueta Inec** en las 4 pantallas authed
+  (Inicio / Marbetes / Dispositivos / Auditoría). Score oficial medido
+  contra el bundle de producción con Playwright:
+  - `/backoffice/marbetes`     96.68% hybrid
+  - `/backoffice/dispositivos` 96.91% hybrid
+  - `/backoffice/audit`        96.86% hybrid
+  - `/backoffice/dashboard`    98.01% hybrid
+  - **TOTAL 97.11%** con PARITY_THRESHOLD=95 y 42/42 chequeos
+    estructurales pasados. Spec: `apps/web/e2e/lookfeel/12-maquette-parity.spec.ts`.
+- ✅ **Tokens InecConecta** alineados (`--color-primary-500: #AB8620`,
+  `--color-secondary-500: #358456`, `--space-*`, `--font-size-*`).
+- ✅ **Donut charts** posicionados en la esquina inferior derecha de cada
+  metric card (coincide con la maqueta canónica).
+- ✅ **Footer de tabla sticky**: la pagination de marbetes/dispositivos/audit
+  queda siempre visible al fondo del viewport (chrome + cards + search
+  fijos; solo la tabla scrollea).
+- ✅ **Privacy chip solo-ícono**: la columna "No. Marbete" muestra solo
+  el icono Eye/EyeOff (sin texto "Oculto"/"Revelado"); `aria-label`
+  preservado.
+- ✅ **Row heights uniformes**: las 7 celdas de cada fila miden 96px
+  (Fecha de carga dejó de colapsar a 54px por un utility auto-generada
+  de Tailwind 4 / Turbopack).
 
-## Trabajo en curso — Draft auth username + pre-issued Quorum OTP
+## Historial reciente
 
-- Ver `odd/tasks/backoffice-username-otp.md`. Cambia API, UI, DTO/migration y tests del flujo email/request-code (descrito más abajo en §"Cerrados en Polish WU v6") a `{username, otp}`. Contrato `OtpClient` migrado a HMAC contra `../quorum-otp/` (read-only).
-- **Local, sin commitear, sin deployar.** No se aplicó `0011_backoffice_username.sql`. No se modificaron secrets ni pods. No se intentó login real.
-- **Validación local**: root typecheck verde; API unit 38/38; Web unit 85/85; Playwright sintético local: 2 passed, 1 skipped (login real omitido sin credenciales E2E).
-- **API integration suite**: NO corrida (los tests hacen `DROP TABLE`; requiere confirmación explícita de un DB descartable aislado).
-- **Deploy a producción**: bloqueado hasta autorización explícita. Orden seguro: (1) aplicar `0011_backoffice_username.sql` solo tras autorización; es nullable y no hace backfill, (2) mapear usernames de todas las cuentas que deban acceder, (3) confirmar que el usuario restauró el secreto HMAC en Kubernetes, (4) desplegar API/web y validar con cuenta/destino OTP autorizados. Ninguno de esos pasos de producción se ejecutó en este draft.
+- `c85bb41` Merge feature/backoffice-maquette-parity into master
+- `df4c0ac` feat(web): privacy chip icon-only, unified row heights, sticky table footer
+- `5bc6e91` feat(web): align metric-cards to maquette canon (drop padding-inline-end, add --space-*, --font-size-*)
+- `626ca92` docs(odd): documentar topología k8s y accidente del 26-sep
+- `9109ed7` docs(odd): close backoffice-maquette-parity with evidence (97.22% parity)
+- `5637194` docs(odd): track backoffice-maquette-parity feature
+- `10b4121` test(e2e): add hybrid maquette parity harness (pixel + structural)
+- `ea98721` feat(web): rebuild dashboard on the maquette v2 pattern
+- `80e5dc0` feat(web): align inventory pattern with Inec maquette tokens and donut geometry
 
-## Issue de code review ABIERTO (no se fixeó en esta auditoría)
-
-- La rama `user_unmapped` del flujo auth es inalcanzable en la práctica: `PgUserRepo.findByUsername` filtra usernames `NULL`; esas cuentas caen en `invalid_credentials` y el audit registra `unknown_user`. Detalle en `odd/tasks/backoffice-username-otp.md` §6.
-
-## Cambios NO productivos
-
-- `apps/web/playwright.config.ts` sirve el harness local. `apps/web/e2e/lookfeel/playwright.config.ts` apunta al host BackOffice live para una futura auditoría y no se ejecutó. Ninguna de las dos configura el deploy de la aplicación.
+Detalle por commit y por sub-tarea en `odd/tasks/backoffice-maquette-parity.md`.
 
 ## Constraints duros para la próxima sesión
 
-- NO correr `git reset`/`restore`/`stash drop`/`checkout`, ni borrar archivos del working tree.
-- NO stage, commit, push, branch-switch ni deploy.
-- NO acceder a producción, base de datos ni secretos.
-- NO modificar `../quorum-otp/` ni el cluster k3s del API/web.
-- NO correr los integration tests de API sin antes confirmar explícitamente un DB descartable aislado.
+- NO correr `git reset`/`restore`/`stash drop`/`checkout` que toque master, ni borrar archivos del working tree sin autorización explícita.
+- NO hacer push a master sin merge local previo + smoke contra `https://backoffice.quorum.asistentepro.mx`.
+- NO modificar `../quorum-otp/` (read-only).
+- NO desplegar vía copia directa al hostPath del pod (`/opt/quorum-backoffice`). El release real pasa por el pipeline de CI → registry → `kubectl set image` (o el mecanismo documentado en `infra/`). El flujo manual vía rsync + `kubectl rollout restart` que se usó durante la fase de pruebas deja un pod con el hostPath sobrescrito; cualquier restart subsecuente del pod usa la imagen del registry, no el bundle local.
+- NO correr los integration tests de API sin antes confirmar explícitamente un DB descartable aislado (los tests hacen `DROP TABLE`).
 
 ## Próximo paso recomendado
 
-Antes de cualquier edición de fuente, commit, deploy o migration, se debe confirmar alcance y autorización con el usuario. Esta sección documenta, no autoriza.
+El feature `backoffice-maquette-parity` está cerrado e integrado en master. Próximas áreas pendientes (no bloquean el MVP):
+
+1. **Limpieza del bundle deployado vía rsync**: ahora que master tiene el código, sincronizar el bundle de producción (hostPath `/opt/quorum-backoffice/apps/web/.next`) con master para que el pod no dependa del rsync manual. El pod puede rebuildearse desde la imagen Docker configurada en el Deployment (mirror del registry) en lugar de leer del hostPath.
+2. **Resolución del bug `user_unmapped`** (rama auth inalcanzable, ver `odd/tasks/backoffice-username-otp.md` §6) — pre-existente al merge, no introducido por este feature.
+3. **Documentar el flujo de release real** (CI → image → kubectl set image) en `RUNBOOK.md` §Operational tasks → Deploy. Hoy el doc `odd/tasks/deploy-bug-001.md` está desactualizado (describe un flujo ssh + systemd + git pull que no aplica en el cluster k3s actual).
 
 ---
 
@@ -86,53 +116,89 @@ fd97871 fix(web): resolve TypeScript errors in UI/UX audit suite
 ## URL de acceso desde tu PC
 
 ```
-https://quorum.asistentepro.mx/backoffice/login
+https://backoffice.quorum.asistentepro.mx/login
 ```
 
-- `quorum.asistentepro.mx/` → sigue mostrando Jitsi
-- `quorum.asistentepro.mx/backoffice/` → el backoffice (Next.js basePath='/backoffice')
-- `quorum.asistentepro.mx/backoffice/api/v1/...` → la API (nginx rewrite strip-prefix)
+- `quorum.asistentepro.mx/` → sigue mostrando Jitsi (raíz separada)
+- `backoffice.quorum.asistentepro.mx/` → el backoffice (subdominio dedicado
+  post-Polish WU v6)
+- `backoffice.quorum.asistentepro.mx/api/v1/...` → la API (nginx same-origin
+  proxy al upstream `quorum_backoffice_api_k8s` en cluster k3s)
 
 ## Ramas
 
-- `feature/wu0-bootstrap` (HEAD `1082bb1`): todo el trabajo
-- `master` (default remoto): base vacía del repo
+- `master` (HEAD `c85bb41`): integra `feature/backoffice-maquette-parity`
+  (16 commits) y todo el historial de Polish WU v6 (HEAD `f259483`).
+  Es la rama default remota (`origin/HEAD` apunta a `feature/wu0-bootstrap`
+  por un setting del repo, no por contenido — `master` es la rama canónica
+  per `RUNBOOK.md` y HANDOFF previos).
+- `feature/backoffice-maquette-parity` (`df4c0ac`): rama mergeada; puede
+  borrarse vía `git push origin :feature/backoffice-maquette-parity` cuando
+  el equipo confirme que no se necesita el historial como rama visible.
+- `feature/username-otp-dynamic-clean` (`b39ab30`): ancestro de la rama
+  merged; sus commits `8c796e8` (login OTP zone) y `64cc867` (auth accepts
+  OTP against username OR email) están ahora en master vía el merge.
+- `feature/wu0-bootstrap` (remote origin/HEAD): rama legacy de PR #1;
+  precede al merge de la paridad. Conservar hasta confirmar con el equipo
+  si se sincroniza o se elimina.
 
 ## Archivos clave del proyecto
 
 ```
 /planQuorum/dev/quorum-backoffice/
 ├── apps/
-│   ├── api/                    # Fastify 5 + Node 22 + PG 18 + Redis 8
-│   │   ├── migrations/          # 6 migrations (0001-0006)
-│   │   ├── src/                 # routes, services, repositories, plugins
-│   │   └── package.json         # main: dist/src/server.js
-│   └── web/                     # Next.js 16 App Router + React 19 + shadcn/ui
+│   ├── api/                       # Fastify 5 + Node 22 + PG 18 + Redis 8
+│   │   ├── migrations/             # 11 migrations (0001-0011_backoffice_username.sql)
+│   │   ├── scripts/                # migrate.ts, seed-e2e-users.ts, mock-otp-service.ts
+│   │   └── src/                    # routes, services, repositories, plugins
+│   └── web/                        # Next.js 16 App Router + React 19 + shadcn/ui
 │       ├── app/
-│       │   ├── login/           # login form real
-│       │   └── (authed)/        # route group con layout que valida sesión
-│       │       ├── dashboard/
-│       │       ├── marbetes/    # REDISEÑADO per maquette v2 (commit 98ac08f)
-│       │       ├── dispositivos/ # UI anterior, sin rediseñar
-│       │       └── audit/        # UI anterior, sin rediseñar
+│       │   ├── login/              # single-step username + OTP form
+│       │   └── (authed)/           # route group con layout que valida sesión
+│       │       ├── dashboard/      # ALINEADO A MAQUETA (paridad 98%)
+│       │       ├── marbetes/       # ALINEADO A MAQUETA (paridad 96.68%)
+│       │       ├── dispositivos/   # ALINEADO A MAQUETA (paridad 96.91%)
+│       │       └── audit/          # ALINEADO A MAQUETA (paridad 96.86%)
 │       ├── components/
-│       │   ├── inventory/        # NEW: 10 componentes del rediseño
-│       │   ├── layout/           # AppShell, Sidebar, Topbar, LogoutButton
-│       │   └── ui/               # shadcn wrappers (button, card, dialog, select, textarea, ...)
+│       │   ├── inventory/          # 10 componentes compartidos (MetricCard, DonutChart, Pagination, etc.)
+│       │   ├── layout/             # AppShell, Sidebar, Topbar, MobileNav, LogoutButton
+│       │   └── ui/                 # shadcn wrappers (button, card, dialog, otp-input, select, ...)
 │       ├── lib/
-│       │   ├── api-client.ts     # fetch wrappers
-│       │   ├── auth-context.ts   # client auth state
-│       │   └── server-session.ts # getServerSession() + getAuthCookieHeader() (usado en SSR)
-│       ├── e2e/lookfeel/         # Playwright suite (24 tests totales)
-│       │   ├── 01-05 specs       # audit suite original
-│       │   ├── 06-marbetes-design.spec.ts # rediseño v2 (5 tests)
-│       │   └── helpers/          # a11y, contrast, login, snapshot, viewports
-│       ├── app/globals.css       # tokens + @layer components maquette
-│       └── next.config.ts        # basePath: '/backoffice'
-├── packages/shared/             # Zod DTOs + RBAC helpers
+│       │   ├── api-client.ts        # fetch wrappers
+│       │   ├── auth-context.ts      # client auth state
+│       │   └── server-session.ts    # getServerSession() + getAuthCookieHeader() (SSR cookie forward)
+│       ├── e2e/lookfeel/           # Playwright suite
+│       │   ├── 01-09 specs          # audit + auth + visual + interaction + responsive + a11y
+│       │   ├── 10-auth-otp.spec.ts  # login flow con OTP
+│       │   ├── 11-maquette-v3.spec.ts  # round v3 de paridad
+│       │   ├── 12-maquette-parity.spec.ts  # round v4 con cookie inject + masks dinámicos
+│       │   └── helpers/             # login, snapshot, viewports, parity-scorer, maquette-server, parity-diff
+│       ├── app/globals.css          # tokens InecConecta + @layer components maquette (sticky footer, donut, etc.)
+│       └── next.config.ts           # basePath: '/backoffice', output: 'standalone'
+├── packages/shared/                # Zod DTOs + RBAC helpers
 ├── infra/
-│   ├── nginx/quorum.asistentepro.mx.conf
-│   └── systemd/{api,web}.service
+│   ├── nginx/
+│   │   ├── backoffice.quorum.asistentepro.mx.conf  # subdominio dedicado (USADO)
+│   │   └── quorum.asistentepro.mx.conf            # legacy, ya no maneja /backoffice
+│   └── systemd/{api,web}.service  # plantillas de unidades systemd (referencia; cluster k3s real)
+├── diseno/                         # Brand tokens + icon library + MAQUETA HTML canónica
+│   ├── design/                     # InecConecta_color_tokens.png + PNG/JPEG referencias
+│   ├── maqueta_Inec/Inec/          # MAQUETA: inventario-credenciales.html + CSS + JS
+│   └── (legacy png-x2/, __MACOSX/ pre-existentes)
+├── odd/tasks/                      # bitácora por feature
+│   ├── backoffice-maquette-parity.md  # NUEVO: feature cerrado e integrado en master
+│   ├── backoffice-login-functional.md # nginx + login OTP service cluster
+│   ├── backoffice-cors-same-origin.md
+│   ├── backoffice-username-otp.md   # ancestro de la rama mergeada (merge TBD antes)
+│   ├── marbetes-inventory-v2.md
+│   ├── dispositivos-inventory-v2.md
+│   ├── security-auth-otp-and-maquette-v3.md
+│   ├── login-otp-gold-boxes.md
+│   ├── polish-wu-v3..v5.md
+│   └── deploy-bug-001.md
+├── RUNBOOK.md                       # operador-facing docs (arquitectura, envs, ops tasks)
+├── HANDOFF.md                       # este archivo
+└── package.json                      # workspaces root (api, web, shared)
 ├── diseno/                      # Brand tokens + icon library + MAQUETTE del área de diseño
 │   ├── design/                  # PNG/JPEG referencias (color tokens, screens mockups)
 │   ├── design/png-x2/           # Iconos InecConecta

@@ -92,6 +92,71 @@ Backoffice service.
 
 ### Migrations
 
+### Deploy (k3s cluster — actual flow as of 2026-09-26)
+
+> ⚠️ El doc histórico `odd/tasks/deploy-bug-001.md` describe un flujo
+> **ssh + systemd + git pull** que ya no aplica al cluster k3s real.
+> El release real es:
+
+1. Push de la rama feature al remoto (e.g. `git push origin feature/<name>`).
+2. Merge a `master` (PR vía GitHub o `git merge --no-ff` local + push).
+3. Build de la imagen Docker del pod web (paso ejecutado por el pipeline
+   de CI; la imagen queda en el registry configurado en `kustomization.yaml`
+   / helm chart del cluster).
+4. Apply al cluster:
+   ```bash
+   kubectl -n quorum-backoffice set image deployment/quorum-backoffice-web \
+     web=<registry>/<image>:<tag>
+   ```
+   El Deployment tiene `hostNetwork: true` + `hostPath: /opt/quorum-backoffice`,
+   pero el bundle real (`apps/web/.next/standalone/apps/web/server.js`)
+   debe estar en el **filesystem del pod desde la imagen**, no en el
+   hostPath. El hostPath se mantiene por compatibilidad con debugs
+   locales.
+5. `kubectl -n quorum-backoffice rollout status deployment/quorum-backoffice-web`
+   espera al nuevo ReplicaSet (1/1 Ready).
+6. Smoke check:
+   ```bash
+   curl -sk -o /dev/null -w 'login HTTP %{http_code}\n' \
+     https://backoffice.quorum.asistentepro.mx/login
+   curl -sk -o /dev/null -w 'marbetes HTTP %{http_code}\n' \
+     https://backoffice.quorum.asistentepro.mx/backoffice/marbetes
+   ```
+
+> Procedimiento manual vía rsync al hostPath **no es el flujo de release
+> soportado**. Sólo se usa en debug local cuando el usuario lo autoriza
+> explícitamente, y el pod debe reiniciarse para tomar el bundle
+> (`kubectl rollout restart`).
+
+### Visual parity verification
+
+`apps/web/e2e/lookfeel/12-maquette-parity.spec.ts` mide la paridad
+pixel a pixel de las 4 pantallas authed contra el canon HTML en
+`diseno/maqueta_Inec/Inec/inventario-credenciales.html`.
+
+```bash
+cd apps/web
+E2E_ADMIN_USERNAME=admin \
+PARITY_PRODUCTION_SID=$(curl -sk -i -X POST https://backoffice.quorum.asistentepro.mx/api/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d "{\"username\":\"admin\",\"otp\":\"$(./scripts/get-admin-otp.sh)\"}" \
+  | grep -i 'set-cookie:' | head -1 | sed 's/.*__Host-sid=\([^;]*\).*/\1/') \
+PARITY_PRODUCTION_DOMAIN=backoffice.quorum.asistentepro.mx \
+PARITY_BASE_URL=https://backoffice.quorum.asistentepro.mx \
+PARITY_THRESHOLD=95 \
+npx playwright test --config=e2e/lookfeel/playwright.config.ts \
+  e2e/lookfeel/12-maquette-parity.spec.ts --reporter=line
+```
+
+El reporte sale a `e2e/lookfeel/artifacts/parity/report.json`. Threshold
+objetivo: 95% hybrid por pantalla, 100% structural checks. Score
+actual contra el bundle desplegado: marbetes 96.68%, dispositivos
+96.91%, audit 96.86%, dashboard 98.01%, TOTAL 97.11%.
+
+Para análisis visual de diffs (PNG con rojo donde difieren), el helper
+`apps/web/e2e/lookfeel/helpers/parity-diff.ts` produce `diff.png`,
+`side-by-side.png` y `strip-stats.json`.
+
 ```bash
 cd apps/api && npm run migrate
 ```

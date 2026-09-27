@@ -4,16 +4,18 @@ Administrative backoffice for the Quorum suite. Owns the physical
 security surface (security badges / "marbetes", authorized devices)
 and the audit trail of every privileged action.
 
-> **Status**: MVP COMPLETE + Polish WU v4 (bulk upload) + Polish WU v5 (audit v2).
-> Master `657dee7..466c9f1`, staging live, **44/45 Playwright verde** contra
-> `https://quorum.asistentepro.mx/backoffice/`.
+> **Status (2026-09-26)**: MVP COMPLETO + **paridad visual contra la maqueta Inec en las 4 pantallas authed** (merged en master `c85bb41`).
+> Las pantallas `/backoffice/{dashboard,marbetes,dispositivos,audit}` están alineadas al canon HTML
+> `diseno/maqueta_Inec/Inec/inventario-credenciales.html` con score híbrido 97.11% (pixel ≥93%, structural 100%) medido contra el bundle desplegado en producción.
+> Login: usuario `admin` + OTP pre-issued (HMAC contra `quorum-otp`).
+> Ver `odd/tasks/backoffice-maquette-parity.md` para el detalle por sub-tarea.
 
 ## Tabla de sistemas (Quorum suite)
 
 | Sistema | Workspace / repo | URL pública | Acceso (rol / método) | Descripción |
 |---|---|---|---|---|
-| **Quorum Backoffice** (este repo) | `/planQuorum/dev/quorum-backoffice/` | `https://quorum.asistentepro.mx/backoffice/login` | `admin@quorum.local` / `auditor@quorum.local` / `operator@quorum.local` + password seed (ver [§ Acceso seed](#acceso-seed-backoffice)) | Backoffice administrativo. Marbetes QR, dispositivos autorizados, audit log. **Polish WU v4** agregó bulk upload (`POST /api/v1/marbetes/bulk`); **Polish WU v5** rediseñó `/audit` per maquet InecConecta. |
-| Quorum Backoffice API | (mismo workspace) | `https://quorum.asistentepro.mx/backoffice/api/v1/...` | Cookie `__Host-sid` (admin / auditor / operator) | API REST Fastify 5 + TS. Health: `GET /healthz`, ready: `GET /readyz`. OTP enforced en operaciones destructivas vía header `X-OTP-Code`. |
+| **Quorum Backoffice** (este repo) | `/planQuorum/dev/quorum-backoffice/` | `https://backoffice.quorum.asistentepro.mx/login` | Username (`admin` / `auditor` / `operator`) + OTP pre-issued vía HMAC contra `quorum-otp` (ver [§ Acceso seed](#acceso-seed-backoffice)) | Backoffice administrativo. Marbetes QR, dispositivos autorizados, audit log. **Polish WU v4** agregó bulk upload (`POST /api/v1/marbetes/bulk`); **Polish WU v5** rediseñó `/audit` per maqueta InecConecta; **`feature/backoffice-maquette-parity`** (merged `c85bb41`) alineó las 4 pantallas authed a la maqueta Inec con paridad 97.11% hybrid. |
+| Quorum Backoffice API | (mismo workspace) | `https://backoffice.quorum.asistentepro.mx/api/v1/...` | Cookie `__Host-sid` (admin / auditor / operator) + header `X-OTP-Code` en operaciones destructivas | API REST Fastify 5 + TS. Health: `GET /healthz`, ready: `GET /readyz`. Login es `POST /api/v1/auth/login` con `{username, otp}` (HMAC contra `quorum-otp`). |
 | Quorum Meet (Jitsi) | `/planQuorum/dev/quorum-jitsi/` | `https://quorum.asistentepro.mx/` | Libre (autoregistro) | Videoconferencia WebRTC. Jicofo + JVB + Prosody XMPP + Jibri recording. |
 | Quorum LMS (Canvas) | `/planQuorum/dev/quorum-canvas/` | `https://canvas.asistentepro.mx/` (planeado; namespace k3s `quorum-lms` vacío) | LTI 1.3 launch desde Jitsi | LMS aislado de portal-api. LMS-side scripts (reconcile roster, one-shot import, force-sync) corren operator-side. |
 | Quorum OTP | `/planQuorum/dev/quorum-otp/` | `http://127.0.0.1:8080/ui/` (dev) / `OTP_SERVICE_URL` (prod, ver configMap) | `E2E_OTP_*` env vars en deployment | Servicio OTP para operaciones destructivas. **En staging actual está en `http://placeholder.invalid/v1`** (modo bypass — destructive ops devuelven 401 `otp_required` con el flag `AUTH_OTP_REQUIRED` activo). |
@@ -70,30 +72,36 @@ curl -sS https://quorum.asistentepro.mx/readyz
 
 ## Deploy
 
-Procedimiento (per `RUNBOOK.md`):
+> ⚠️ El doc histórico `odd/tasks/deploy-bug-001.md` y esta sección
+> (rsync + kubectl delete pod) describen un flujo **ssh + hostPath** que
+> ya no aplica al cluster k3s real. Ver `RUNBOOK.md` § Operational tasks
+> → Deploy para el flujo actualizado. La imagen del pod se construye en
+> CI y se hace `kubectl set image` en el namespace `quorum-backoffice`.
+
+Release real (single-node k3s cluster `quorum`, namespace `quorum-backoffice`):
+
+1. Merge del feature a `master` (PR en GitHub o `git merge --no-ff` local + push).
+2. El pipeline de CI build la imagen Docker de `apps/web` (Next.js 16 standalone) y la pushea al registry configurado.
+3. ```bash
+   kubectl -n quorum-backoffice set image deployment/quorum-backoffice-web \
+     web=<registry>/quorum-backoffice-web:<tag>
+   ```
+4. ```bash
+   kubectl -n quorum-backoffice rollout status deployment/quorum-backoffice-web --timeout=120s
+   ```
+5. Smoke check:
+   ```bash
+   curl -sk -o /dev/null -w 'login HTTP %{http_code}\n' https://backoffice.quorum.asistentepro.mx/login
+   curl -sk -o /dev/null -w 'marbetes HTTP %{http_code}\n' https://backoffice.quorum.asistentepro.mx/backoffice/marbetes
+   ```
+
+Estado actual del cluster (verificado 2026-09-26):
 
 ```bash
-# 1. Sync dev tree al deploy path del VPS
-rsync -a --delete --exclude=node_modules --exclude=.next --exclude=dist --exclude=.git \
-  --exclude='apps/web/test-results' \
-  /planQuorum/dev/quorum-backoffice/ /opt/quorum-backoffice/
-
-# 2. Build
-sudo -n -H bash -c 'cd /opt/quorum-backoffice/packages/shared && rm -f tsconfig.tsbuildinfo && npm run build'
-sudo -n -H bash -c 'cd /opt/quorum-backoffice/apps/api && rm -f tsconfig.tsbuildinfo && npm run build'
-sudo -n -H bash -c 'cd /opt/quorum-backoffice/apps/web && rm -rf .next && NEXT_PUBLIC_API_URL=https://quorum.asistentepro.mx/backoffice npm run build'
-
-# 3. **CRÍTICO** — Next.js 16 standalone NO copia .next/static/ automáticamente
-sudo -n -H bash -c 'cd /opt/quorum-backoffice/apps/web && cp -r .next/static .next/standalone/apps/web/.next/ && [ -d public ] && cp -r public .next/standalone/apps/web/'
-
-# 4. Restart pods
-kubectl -n quorum-backoffice delete pod -l app.kubernetes.io/name=quorum-backoffice-api --force --grace-period=0
-kubectl -n quorum-backoffice delete pod -l app.kubernetes.io/name=quorum-backoffice-web --force --grace-period=0
-sleep 25
-
-# 5. Smoke
-curl -sS https://quorum.asistentepro.mx/readyz  # → 200
-curl -sS https://quorum.asistentepro.mx/backoffice/_next/static/chunks/0q4kif52npia0.css  # → 200
+$ kubectl -n quorum-backoffice get pods
+NAME                                    READY   STATUS    RESTARTS   AGE
+pod/quorum-backoffice-web-f6d9dd77-dwwxs 1/1    Running   0          7m
+pod/quorum-backoffice-api-66c448fcf4-qw68n 1/1  Running   0          4d7h
 ```
 
 ## Quickstart (local)

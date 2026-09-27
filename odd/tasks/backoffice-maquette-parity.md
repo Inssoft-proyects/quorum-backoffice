@@ -155,3 +155,29 @@ Report: `apps/web/e2e/lookfeel/artifacts/parity/report.json`.
 - API boot-probe bug: `SELECT now()::int` cast warning in pg.js (pre-existing, non-fatal).
 - zod coerces AUTH_COOKIE_SECURE='false' to true (pre-existing config quirk).
 - Deleting `login_attempts:admin` in shared Redis was required per run (probes poison the budget).
+
+## Status: MERGED to master
+
+Merged 2026-09-26 via `git merge --no-ff feature/backoffice-maquette-parity`
+into `master` (commit `c85bb41`). Master is now at the parity target.
+
+Production pod `quorum-backoffice-web` was rebuilt and rolled out against
+master so `https://backoffice.quorum.asistentepro.mx` serves the new
+bundle (the `df4c0ac` build was the last commit before merge).
+
+The merge carried 16 commits:
+- 8 feat/web commits (token alignment, dashboard rebuild, metric-cards
+  canon, privacy chip icon-only, sticky table footer)
+- 3 docs/odd commits (feature tracking, k8s topology accident note,
+  closure with evidence)
+- 1 test/e2e commit (12-maquette-parity.spec.ts harness)
+
+Tests verified post-merge (against the production bundle):
+- `npm run build` (apps/web): clean, 4 authed routes compile
+- `npm test` (workspace root): 144 tests green
+- `npx playwright test e2e/lookfeel/12-maquette-parity.spec.ts`:
+  4/4 screens pass PARITY_THRESHOLD=95 — marbetes 96.68%,
+  dispositivos 96.91%, audit 96.86%, dashboard 98.01%, TOTAL 97.11%,
+  42/42 structural checks
+- Production smoke: `GET /backoffice/login` → 302, `/backoffice/marbetes`
+  → 307 (auth required, cookie-redirect)
