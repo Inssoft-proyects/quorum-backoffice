@@ -18,6 +18,11 @@ import { Icon } from '@/components/icons';
  * caller already has a valid session cookie, redirect to /dashboard.
  * Otherwise render the form wrapped in AuthProvider so the client form
  * can drive the API + state.
+ *
+ * Layout follows `diseno/design/OPT_Dinamico.png`: centered gold icon
+ * chip, centered title + description, gold-accented OTP zone (rendered
+ * by the client form). The session-redirect + AuthProvider wiring stay
+ * untouched — only the visible chrome changes.
  */
 export default async function LoginPage() {
   const user = await getServerSession();
@@ -26,19 +31,21 @@ export default async function LoginPage() {
   return (
     <AuthProvider initialUser={null}>
       <main className="flex min-h-screen items-center justify-center bg-muted px-4 py-12">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <header className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-500 text-white">
-                <Icon name="id-card" variant="inherit" size={22} aria-label="InecConecta" />
+        <Card className="w-full max-w-md shadow-md">
+          <CardHeader className="items-center gap-3 pb-2 text-center">
+            <header className="flex w-full flex-col items-center gap-3 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-500 text-white shadow-sm">
+                <Icon name="id-card" variant="inherit" size={24} aria-label="InecConecta" />
               </span>
-              <div>
+              <div className="space-y-1">
                 <CardTitle className="text-text-primary">InecConecta · Backoffice</CardTitle>
-                <CardDescription>Acceso administrativo</CardDescription>
+                <CardDescription className="text-text-muted">
+                  Acceso administrativo
+                </CardDescription>
               </div>
             </header>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-2">
             <LoginFormOtp />
           </CardContent>
         </Card>

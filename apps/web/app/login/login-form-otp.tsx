@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Mail } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,172 +10,133 @@ import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
 
-type Step = 'email' | 'otp';
-
 /**
- * Email + OTP login form (Polish WU v6 / A7).
+ * Single-step username + pre-issued OTP login form.
  *
- * Two-step flow:
- *   1. Step "email": user enters their email and clicks "Enviar código".
- *      The backend sends a 6-char alphanumeric OTP via SMTP.
- *   2. Step "otp": user pasters/types the code and clicks "Ingresar".
+ * The user arrives with a dynamic OTP issued by the broader quorum
+ * ecosystem (authenticator, kiosk, sister system). BackOffice
+ * verifies it under the `quorum-backoffice` HMAC service identity
+ * and exchanges it for a session cookie. The OTP TTL is owned by
+ * the upstream issuer — BackOffice does not surface it here, so
+ * a stale OTP that exceeds the upstream TTL will be rejected by
+ * the verify call with a generic invalid_credentials message.
  *
- * Built exclusively from shadcn/ui primitives + the OtpInput component
- * (reused from the marbete delete dialog). No raw <input> / <button>
- * elements — every interactive control goes through a shadcn wrapper so
- * theming stays consistent across the backoffice.
- *
- * The legacy email + password field is gone. `password` is never sent
- * over the wire from this form.
+ * The OTP code uses the OTP service's six-character uppercase
+ * alphanumeric alphabet. We render it via the shared `OtpInput`
+ * in `mode="alphanumeric"`, which forces uppercase, strips
+ * non-alphanumeric characters, and exposes `inputMode="text"` /
+ * `autoComplete="one-time-code"` for password-manager support.
  */
 export function LoginFormOtp() {
   const router = useRouter();
-  const { requestOtp, login, status, error, reset } = useAuth();
-  const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
+  const { login, status, error, reset } = useAuth();
+  const [username, setUsername] = useState('');
   const [otp, setOtp] = useState('');
   const [isPending, startTransition] = useTransition();
 
   const loading = status === 'loading' || isPending;
+  // The OtpInput in alphanumeric mode already normalises the wire
+  // alphabet (uppercase A–Z0–9) before calling onChange, so the value
+  // we receive is already the canonical uppercase string.
+  const otpUpper = otp.toUpperCase();
+  const otpReady = otpUpper.length === 6 && /^[A-Z0-9]+$/.test(otpUpper);
+  const usernameReady = username.trim().length >= 3 && /^[A-Za-z0-9._-]+$/.test(username.trim());
 
-  async function handleEmailSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!email) return;
+    if (!usernameReady || !otpReady) return;
     try {
-      await requestOtp(email);
-      setStep('otp');
-    } catch {
-      /* error already in context */
-    }
-  }
-
-  async function handleOtpSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (otp.length !== 6) return;
-    try {
-      await login(email, otp);
+      await login(username.trim(), otpUpper);
       startTransition(() => router.push('/dashboard'));
     } catch {
       /* error already in context */
     }
   }
 
-  function backToEmail() {
-    setStep('email');
-    setOtp('');
-    reset();
-  }
-
-  if (step === 'email') {
-    return (
-      <form className="flex flex-col gap-4" onSubmit={handleEmailSubmit} noValidate>
-        {error ? (
-          <Alert variant="destructive" role="alert" data-testid="login-error">
-            {error}
-          </Alert>
-        ) : null}
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">Correo</Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            placeholder="admin@quorum.local"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              if (error) reset();
-            }}
-            disabled={loading}
-            data-testid="login-email"
-          />
-        </div>
-        <Button
-          type="submit"
-          disabled={loading || !email}
-          data-testid="login-request-otp"
-        >
-          <Mail className="h-4 w-4" aria-hidden />
-          {loading ? 'Enviando código…' : 'Enviar código'}
-        </Button>
-      </form>
-    );
-  }
-
   return (
-    <form className="flex flex-col gap-4" onSubmit={handleOtpSubmit} noValidate>
+    <form
+      className="flex flex-col items-stretch gap-5"
+      onSubmit={handleSubmit}
+      noValidate
+    >
       {error ? (
         <Alert variant="destructive" role="alert" data-testid="login-error">
           {error}
         </Alert>
       ) : null}
-      <p className="text-sm text-text-muted" data-testid="login-email-hint">
-        Te enviamos un código a <strong>{email}</strong>. Si no lo ves en
-        tu bandeja, revisa la carpeta de no deseados o vuelve a enviarlo.
-      </p>
+
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="otp-1">Código de 6 dígitos</Label>
-        <OtpInput
-          value={otp}
-          onChange={(v) => {
-            setOtp(v);
+        <Label htmlFor="username">Usuario</Label>
+        <Input
+          id="username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          required
+          minLength={3}
+          maxLength={32}
+          placeholder="admin"
+          value={username}
+          onChange={(e) => {
+            setUsername(e.target.value);
             if (error) reset();
           }}
           disabled={loading}
-          aria-label="OTP code"
+          data-testid="login-username"
         />
-        {/* Hidden mirror of the first digit box so screen readers and
-            integration tests can target the OTP field via its label. */}
-        <input
+      </div>
+
+      {/*
+        OTP zone, matched to `diseno/design/OPT_Dinamico.png`: centered
+        label above the boxes, centered six-box group with gold focus
+        ring, and a muted centered hint underneath. The `login-otp`
+        testid lives on the OtpInput group wrapper so existing
+        Testing Library queries keep working.
+      */}
+      <div className="flex flex-col items-center gap-2">
+        <Label
+          htmlFor="otp-1"
+          className="self-center text-center text-primary-500"
+        >
+          Código de acceso
+        </Label>
+        <OtpInput
+          mode="alphanumeric"
+          length={6}
           id="otp-1"
-          name="otp"
-          type="text"
-          autoComplete="one-time-code"
-          value={otp}
-          onChange={() => undefined}
-          aria-hidden
-          tabIndex={-1}
-          className="sr-only"
+          value={otpUpper}
+          onChange={(next) => {
+            // OtpInput already uppercases + alphabetises; keep a defensive
+            // re-normalisation so a future refactor cannot accidentally
+            // regress the wire contract (the backend verifies A–Z0–9
+            // uppercased only).
+            const safe = next.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            setOtp(safe);
+            if (error) reset();
+          }}
+          disabled={loading}
+          autoFocus={false}
+          aria-label="Código de acceso de 6 caracteres"
           data-testid="login-otp"
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Button
-          type="submit"
-          disabled={loading || otp.length !== 6}
-          data-testid="login-submit-otp"
+        <p
+          id="otp-hint"
+          className="text-center text-xs text-text-muted"
         >
-          {loading ? 'Verificando…' : 'Ingresar'}
-        </Button>
-        <div className="flex items-center justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={backToEmail}
-            disabled={loading}
-            data-testid="login-back"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Cambiar correo
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              reset();
-              void requestOtp(email);
-            }}
-            disabled={loading}
-            data-testid="login-resend-otp"
-          >
-            Reenviar código
-          </Button>
-        </div>
+          Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).
+        </p>
       </div>
+
+      <Button
+        type="submit"
+        className="w-full font-semibold"
+        size="lg"
+        disabled={loading || !usernameReady || !otpReady}
+        data-testid="login-submit"
+      >
+        <KeyRound className="h-4 w-4" aria-hidden />
+        {loading ? 'Verificando…' : 'Validar código'}
+      </Button>
     </form>
   );
 }

@@ -11,34 +11,30 @@ const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 interface Props {
-  /** Current search param (server-derived). Used for the input default value. */
-  search: string;
-  /**
-   * Pre-formatted label rendered in the `.inventory-search__count`
-   * slot. The page client decides how to combine the filtered count and
-   * the server-side total.
-   */
-  countLabel: string;
+  /** Whether the underlying fetch is in flight (disables the select). */
+  isPending?: boolean;
 }
 
 /**
- * Reads and writes the dispositivos list filters (status + search) through
- * the URL search params so filtered views are shareable / bookmarkable.
- * Uses startTransition to keep the UI responsive while the server
- * component re-renders.
+ * Status filter for the dispositivos list (maquette v2).
  *
- * Maquet v2 styling: the status select adopts the `.custom-select`
- * maquette trigger pattern (plain `<select>` with the
- * `.custom-select__trigger` class — no JS-driven menu needed) and the
- * search input is rendered in the `.inventory-search` shell with the
- * `inventory-section__header` row wrapper. Rendered as a child of
- * DispositivosPageClient.
+ * Reads and writes the `status` URL search param via
+ * `startTransition` + `router.replace` so filtered views are
+ * shareable / bookmarkable and the server component re-fetches with
+ * the new query.
+ *
+ * Rendered as a child of `DispositivosPageClient`, OUTSIDE the
+ * `.inventory-section__header` so the section header keeps the
+ * canonical maquette structure (`<h2>` + `.inventory-search` shell
+ * only — see `credential-inventory.css`).
  */
-export function DispositivosFilters({ search, countLabel }: Props) {
+export function DispositivosFilters({ isPending }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const status = searchParams.get('status') ?? '';
-  const [isPending, startTransition] = useTransition();
+  const [pending, startTransition] = useTransition();
+
+  const disabled = isPending ?? pending;
 
   function updateParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams.toString());
@@ -50,48 +46,27 @@ export function DispositivosFilters({ search, countLabel }: Props) {
   function handleStatus(e: ChangeEvent<HTMLSelectElement>) {
     updateParam('status', e.target.value);
   }
-  function handleSearch(e: ChangeEvent<HTMLInputElement>) {
-    updateParam('search', e.target.value);
-  }
 
   return (
-    <div className="inventory-section__header">
-      <h2>Dispositivos registrados</h2>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="custom-select" style={{ minWidth: '10rem' }}>
-          <select
-            id="filter-status"
-            value={status}
-            onChange={handleStatus}
-            disabled={isPending}
-            className="custom-select__trigger"
-            data-testid="filter-status"
-          >
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="inventory-search" role="search">
-          <span className="inventory-search__icon" aria-hidden />
-          <input
-            className="inventory-search__input"
-            type="search"
-            autoComplete="off"
-            placeholder="Buscar por serial, marca o modelo"
-            defaultValue={search}
-            onChange={handleSearch}
-            disabled={isPending}
-            data-testid="dispositivos-search"
-            aria-label="Buscar dispositivo"
-          />
-          <span className="inventory-search__count" aria-live="polite">
-            {countLabel}
-          </span>
-        </div>
-      </div>
+    <div className="custom-select" style={{ minWidth: '10rem' }}>
+      <label htmlFor="filter-status" className="sr-only">
+        Estado
+      </label>
+      <select
+        id="filter-status"
+        value={status}
+        onChange={handleStatus}
+        disabled={disabled}
+        className="custom-select__trigger"
+        data-testid="filter-status"
+        aria-label="Estado"
+      >
+        {STATUS_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

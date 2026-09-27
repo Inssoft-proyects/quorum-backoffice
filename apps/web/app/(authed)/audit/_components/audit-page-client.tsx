@@ -203,6 +203,7 @@ export function AuditPageClient({ items, total }: Props) {
             active={filter === 'all'}
             segments={segmentsTotal}
             centerLabel="100%"
+            chartVariant="total"
             onClick={() => setFilter('all')}
           />
           <MetricCard
@@ -246,7 +247,7 @@ export function AuditPageClient({ items, total }: Props) {
         </div>
       </section>
 
-      <section>
+      <section className="inventory-section--table">
         <div className="inventory-section__header">
           <h2>Movimientos</h2>
           <AuditFilters countLabel={countLabel} />

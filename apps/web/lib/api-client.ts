@@ -34,8 +34,6 @@ import {
   type MarbeteDetailResponse,
   type MeResponse,
   type RevealMarbeteResponse,
-  type RequestLoginRequest,
-  type RequestLoginResponse,
   type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
 
@@ -177,27 +175,22 @@ async function apiPatchWithOtp<T>(
   return res.json() as Promise<T>;
 }
 
-// ---- Auth (existing surface) ----
+// ---- Auth (single-step username + pre-issued OTP) ----
 
 /**
- * Polish WU v6: request an OTP email for the login flow.
+ * Single-step login: exchange `{ username, otp }` for a session cookie.
  *
- * Returns `{ ok: true, retryAfterSeconds }` on success (even when the
- * email is unknown, to avoid leaking which addresses have accounts).
- * Throws `ApiError` on transport failures or 5xx; 429 maps to
- * `rate_limited` with the retry hint surfaced via the error details.
- */
-export async function requestLoginOtp(
-  body: RequestLoginRequest,
-  cookie?: string,
-): Promise<RequestLoginResponse> {
-  return apiPost<RequestLoginResponse>('/api/v1/auth/login/request', body, cookie);
-}
-
-/**
- * Polish WU v6: exchange (email, otp) for a session cookie. The legacy
- * `password` field on `LoginRequest` is ignored by the backend — kept
- * only so old clients do not break while migrating.
+ * The OTP is pre-issued by the broader quorum ecosystem; BackOffice
+ * verifies it via HMAC under the `quorum-backoffice` service identity
+ * and resolves the local account to preserve its role. The
+ * `MeResponse.email` field is preserved on the response for existing
+ * UI/audit consumers.
+ *
+ * Throws `ApiError` on transport failures or 5xx. Provider 401/403
+ * (i.e. HMAC misconfiguration) surfaces as a 503 with code
+ * `service_unavailable` so the UI can show a distinct "El servicio de
+ * verificación no está disponible" message — it is NOT the same as
+ * the user's OTP being wrong (which is a 401 invalid_credentials).
  */
 export async function login(body: LoginRequest, cookie?: string): Promise<MeResponse> {
   const data = await apiPost<{ user: MeResponse }>('/api/v1/auth/login', body, cookie);

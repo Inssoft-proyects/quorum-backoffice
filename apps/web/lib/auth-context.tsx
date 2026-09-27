@@ -11,7 +11,6 @@ import {
   ApiError,
   login as apiLogin,
   logout as apiLogout,
-  requestLoginOtp as apiRequestLoginOtp,
 } from './api-client';
 
 type Status = 'idle' | 'loading' | 'error';
@@ -23,15 +22,45 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  /** Request an OTP email for the given address. Resolves on send; never throws on unknown email. */
-  requestOtp: (email: string) => Promise<{ retryAfterSeconds: number }>;
-  /** Exchange email + OTP for a session cookie. */
-  login: (email: string, otp: string) => Promise<MeResponse>;
+  /** Exchange (username, otp) for a session cookie. Throws on failure. */
+  login: (username: string, otp: string) => Promise<MeResponse>;
   logout: () => Promise<void>;
   reset: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/**
+ * User-visible Spanish messages. Mapping centralised here so the
+ * form stays focused on inputs and accessibility.
+ *
+ * The dependency-failure case (`service_unavailable`, 503) is split
+ * out from the invalid-OTP path so a misconfigured HMAC identity
+ * does not look like "wrong code" to the operator.
+ */
+function explain(err: unknown, kind: 'login'): string {
+  if (!(err instanceof ApiError)) {
+    return kind === 'login'
+      ? 'No se pudo iniciar sesión. Intenta de nuevo.'
+      : 'Error de red. Intenta de nuevo.';
+  }
+  switch (err.code) {
+    case 'invalid_credentials':
+      return 'Usuario o código incorrecto. Verifica tu código dinámico e inténtalo de nuevo.';
+    case 'rate_limited':
+      return 'Demasiados intentos. Intenta más tarde.';
+    case 'user_disabled':
+      return 'Esta cuenta está deshabilitada. Contacta al administrador.';
+    case 'user_unmapped':
+      return 'Esta cuenta aún no tiene un usuario asignado. Contacta al administrador.';
+    case 'service_unavailable':
+      return 'El servicio de verificación no está disponible. Intenta más tarde o avisa al equipo técnico.';
+    case 'validation_error':
+      return 'Verifica que el usuario y el código tengan el formato correcto.';
+    default:
+      return err.message || 'Error desconocido. Intenta de nuevo.';
+  }
+}
 
 export function AuthProvider({
   children,
@@ -44,50 +73,17 @@ export function AuthProvider({
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  const doRequestOtp = useCallback(
-    async (email: string): Promise<{ retryAfterSeconds: number }> => {
-      setStatus('loading');
-      setError(null);
-      try {
-        const r = await apiRequestLoginOtp({ email });
-        setStatus('idle');
-        return { retryAfterSeconds: r.retryAfterSeconds };
-      } catch (err) {
-        const message =
-          err instanceof ApiError
-            ? err.code === 'rate_limited'
-              ? 'Demasiados intentos. Intenta más tarde.'
-              : err.message
-            : 'No se pudo enviar el código. Intenta de nuevo.';
-        setError(message);
-        setStatus('error');
-        throw err;
-      }
-    },
-    [],
-  );
-
   const doLogin = useCallback(
-    async (email: string, otp: string): Promise<MeResponse> => {
+    async (username: string, otp: string): Promise<MeResponse> => {
       setStatus('loading');
       setError(null);
       try {
-        const u = await apiLogin({ email, otp });
+        const u = await apiLogin({ username, otp });
         setUser(u);
         setStatus('idle');
         return u;
       } catch (err) {
-        const message =
-          err instanceof ApiError
-            ? err.code === 'invalid_otp'
-              ? 'Código incorrecto o expirado.'
-              : err.code === 'rate_limited'
-                ? 'Demasiados intentos. Intenta más tarde.'
-                : err.code === 'user_disabled'
-                  ? 'Esta cuenta está deshabilitada.'
-                  : err.message
-            : 'Error de red. Intenta de nuevo.';
-        setError(message);
+        setError(explain(err, 'login'));
         setStatus('error');
         throw err;
       }
@@ -117,7 +113,6 @@ export function AuthProvider({
         user,
         status,
         error,
-        requestOtp: doRequestOtp,
         login: doLogin,
         logout: doLogout,
         reset,

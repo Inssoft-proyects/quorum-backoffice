@@ -206,6 +206,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
             active={filter === 'all'}
             segments={segmentsTotal}
             centerLabel="100%"
+            chartVariant="total"
             onClick={() => setFilter('all')}
           />
           <MetricCard
@@ -245,7 +246,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
         </div>
       </section>
 
-      <section>
+      <section className="inventory-section--table">
         <div className="inventory-section__header">
           <h2>Marbetes registrados</h2>
           <div className="inventory-search" role="search">

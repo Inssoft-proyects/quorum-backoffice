@@ -1,51 +1,31 @@
 import { test, expect } from '@playwright/test';
+import { loginAs } from './helpers/login';
 
 /**
  * Polish WU v6 / B7 — maquette v3 visual regression.
  *
- * Drives the local stack (web on :5099, API on :5100, mock OTP on :18080)
- * to verify that the rendered screens match the HTML canon in
- * `diseno/maqueta_Inec/Inec/inventario-credenciales.html`.
+ * Drives the live BackOffice host to verify that the rendered screens
+ * match the HTML canon in `diseno/maqueta_Inec/Inec/inventario-credenciales.html`.
  *
  * Each test loads a screen, asserts the heading + 4 metric labels, and
  * captures a screenshot into `apps/web/e2e/lookfeel/artifacts/` for
  * manual visual diff against the maquette PNGs.
  *
- * The full happy-path login is required because every authed screen
- * redirects to /login if the session cookie is missing.
+ * Authed screens route through the env-gated `loginAs` helper, which
+ * safely `test.skip()`s when the runner is missing explicit
+ * `E2E_OPERATOR_USERNAME` + `E2E_OPERATOR_OTP` values; the helper
+ * never invents credentials and never assumes an email. The legacy
+ * 2-step email + request-code flow that this file used to drive is
+ * gone — the BackOffice now logs in with a single-step
+ * `Usuario` + `Código dinámico` form (see
+ * `apps/web/app/login/login-form-otp.tsx`).
+ *
+ * The `/login` assertions in T11.5 reflect that single-step form.
  */
-
-const SEED = {
-  email: 'admin@quorum.local',
-  password: 'admin1234', // legacy field, ignored by the OTP flow
-  otp: '123456', // deterministic code issued by apps/api/scripts/mock-otp-service.ts
-};
-
-async function loginAsOperator(page: import('@playwright/test').Page) {
-  await page.goto('/backoffice/login');
-  await page.getByLabel('Correo').fill(SEED.email);
-  await page.getByTestId('login-request-otp').click();
-  await page.getByTestId('login-otp').waitFor({ state: 'visible', timeout: 10_000 });
-  const firstBox = page.getByLabel('Digit 1 of 6');
-  await firstBox.click();
-  await firstBox.fill(SEED.otp[0] ?? '');
-  // Dispatch a paste event with the full OTP. The OtpInput's
-  // onPaste handler fills all six boxes in one go.
-  await page.evaluate((otp) => {
-    const input = document.activeElement;
-    if (input) {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', otp);
-      input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
-    }
-  }, SEED.otp);
-  await page.getByTestId('login-submit-otp').click();
-  await page.waitForURL(new RegExp('/backoffice/dashboard'), { timeout: 15_000 });
-}
 
 test.describe('Maquette v3 visual regression (Polish WU v6 / B7)', () => {
   test('T11.1 /marbetes renders the 4 metric cards + heading from the maquette', async ({ page }) => {
-    await loginAsOperator(page);
+    await loginAs(page, 'operator');
     await page.goto('/backoffice/marbetes');
     await expect(page.getByRole('heading', { name: 'Inventario de marbetes' })).toBeVisible();
     // 4 metric cards from the maquette. Use scoped selectors to avoid
@@ -68,7 +48,7 @@ test.describe('Maquette v3 visual regression (Polish WU v6 / B7)', () => {
   });
 
   test('T11.2 /dispositivos renders the same pattern as /marbetes', async ({ page }) => {
-    await loginAsOperator(page);
+    await loginAs(page, 'operator');
     await page.goto('/backoffice/dispositivos');
     await expect(page.getByRole('heading', { name: 'Inventario de dispositivos' })).toBeVisible();
     const metrics = page.locator('.metric-card');
@@ -88,7 +68,7 @@ test.describe('Maquette v3 visual regression (Polish WU v6 / B7)', () => {
   });
 
   test('T11.3 /audit renders the 4 cards with the maquet-derived labels', async ({ page }) => {
-    await loginAsOperator(page);
+    await loginAs(page, 'operator');
     await page.goto('/backoffice/audit');
     const metrics = page.locator('.metric-card');
     await expect(metrics).toHaveCount(4);
@@ -103,7 +83,7 @@ test.describe('Maquette v3 visual regression (Polish WU v6 / B7)', () => {
   });
 
   test('T11.4 /dashboard renders without errors', async ({ page }) => {
-    await loginAsOperator(page);
+    await loginAs(page, 'operator');
     await page.waitForURL(new RegExp('/backoffice/dashboard'), { timeout: 15_000 });
     await page.screenshot({
       path: 'e2e/lookfeel/artifacts/dashboard-v3.png',
@@ -111,10 +91,20 @@ test.describe('Maquette v3 visual regression (Polish WU v6 / B7)', () => {
     });
   });
 
-  test('T11.5 /login renders the 2-step OTP form (regression for Polish WU v6)', async ({ page }) => {
+  test('T11.5 /login renders the single-step Usuario + Código dinámico form', async ({ page }) => {
     await page.goto('/backoffice/login');
-    await expect(page.getByTestId('login-email')).toBeVisible();
-    await expect(page.getByTestId('login-request-otp')).toBeVisible();
+    // Regression for Polish WU v6: the legacy 2-step email +
+    // request-code flow is gone. The form now exposes exactly two
+    // inputs (Usuario + Código dinámico) and one submit button.
+    await expect(page.getByLabel('Usuario')).toBeVisible();
+    await expect(page.getByTestId('login-username')).toBeVisible();
+    await expect(page.getByLabel('Código dinámico')).toBeVisible();
+    await expect(page.getByTestId('login-otp')).toBeVisible();
+    await expect(page.getByTestId('login-submit')).toBeVisible();
+    // The legacy affordances must NOT come back.
+    await expect(page.getByTestId('login-email')).toHaveCount(0);
+    await expect(page.getByTestId('login-request-otp')).toHaveCount(0);
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
     await page.screenshot({
       path: 'e2e/lookfeel/artifacts/login-v3.png',
       fullPage: true,

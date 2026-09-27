@@ -59,6 +59,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0008_audit_action_reveal.sql',
       '0009_audit_action_bulk.sql',
       '0010_audit_action_otp_login.sql',
+      '0011_backoffice_username.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -77,7 +78,37 @@ describe('migrations runner (integration, real PG)', () => {
       '0008_audit_action_reveal.sql',
       '0009_audit_action_bulk.sql',
       '0010_audit_action_otp_login.sql',
+      '0011_backoffice_username.sql',
     ]);
+  });
+
+  it('0011_backoffice_username adds a nullable unique users.username column without backfill', async () => {
+    // The migration must not infer usernames from email — production
+    // username assignments are out of scope (see migration header).
+    // Verify the column exists, is NULL-able, has a case-insensitive
+    // partial unique index, and that no rows are pre-populated.
+    const col = await pool.query<{
+      column_name: string;
+      is_nullable: string;
+      data_type: string;
+    }>(
+      `SELECT column_name, is_nullable, data_type
+         FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'username'`,
+    );
+    expect(col.rows).toHaveLength(1);
+    expect(col.rows[0]?.is_nullable).toBe('YES');
+
+    const idx = await pool.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public' AND indexname = 'uq_users_username_lower'`,
+    );
+    expect(idx.rows.map((r) => r.indexname)).toContain('uq_users_username_lower');
+
+    const count = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM users WHERE username IS NOT NULL`,
+    );
+    expect(Number(count.rows[0]?.count)).toBe(0);
   });
 
   it('creates all four expected tables', async () => {

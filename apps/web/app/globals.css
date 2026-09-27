@@ -48,6 +48,7 @@
   --color-alert-error-text: #ac000e;
   --color-alert-warning-bg: #fff5e6;
   --color-alert-warning-text: #723d19;
+  --color-focus: #005fcc;
   --color-page: #f6f7f6;
   --color-surface-subtle: #f1f4f1;
   --color-border-strong: #aeb9ae;
@@ -100,6 +101,22 @@
 @layer base {
   :root {
     color-scheme: light;
+    /* Spacing scale matching diseno/maqueta_Inec/Inec/css/tokens.css.
+     * Required for the metric-card / donut-chart inline-end placement
+     * that uses var(--space-4) (Tailwind 4 only defines --spacing, not
+     * the maquette's per-step tokens). */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    /* Font sizes referenced by the maquette metric-card rules. */
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-2xl: 2rem;
   }
   .dark {
     color-scheme: dark;
@@ -136,6 +153,16 @@
     margin-inline: auto;
     padding: 2rem 2rem calc(4.25rem + 2rem + env(safe-area-inset-bottom));
     font-family: var(--font-family-base);
+    display: flex;
+    flex-direction: column;
+    /* Per the maquette: the inventory page is viewport-bound so the table
+     * scrolls internally while the chrome (header, metrics, pagination)
+     * stays pinned to the visible area. We need a concrete height for
+     * the internal flex children to compute `flex: 1; min-height: 0`;
+     * 100% works against the <main> flex parent (AppShell main is
+     * `flex-1` inside a grid that is `min-h-screen`). */
+    height: 100%;
+    min-height: 0;
   }
 
   .inventory-header {
@@ -175,9 +202,16 @@
   }
 
   .metrics-grid {
+    /* Maquette canon: the four metric cards sit flush against each
+     * other on desktop — `grid-template-columns: repeat(4, minmax(0, 1fr))`
+     * with no gap. The card borders (1px var(--color-border)) provide
+     * the only visual separation. The 1rem gap we previously shipped
+     * was a real drift from the maquette that cost several hundred
+     * diff pixels per card row. The mobile breakpoints below add the
+     * `var(--space-2)` (0.5rem) gap that the maquette itself uses at
+     * <64rem viewports. */
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1rem;
   }
 
   .inventory-section__header {
@@ -230,6 +264,16 @@
 
   .metric-card--with-chart {
     min-height: 8.5rem;
+    /* Per maquette: the donut is absolute (inset-inline-end / inset-block-end)
+     * and overlaps the value text on the right; we do NOT reserve right
+     * padding. This matches `diseno/maqueta_Inec/Inec/css/components.css`
+     * 1:1 and is the single biggest reason for the metric-cards pixel
+     * diff drop we saw in production. */
+  }
+  .metric-card--attention {
+    /* The "Por atender" / "Autenticación" cards use pill chips
+     * instead of a donut; no chart means no padding-end reservation.
+     * The maquette uses the same padding as the other cards. */
   }
 
   .metric-card__label {
@@ -370,6 +414,20 @@
     box-shadow: 0 0.25rem 0.625rem rgb(41 41 41 / 12%), inset 0 0 0 1px rgb(41 41 41 / 8%);
   }
 
+  /*
+   * Desktop positioning inside a metric card. The maquette anchors
+   * the donut to the bottom-right corner of the card with absolute
+   * positioning (the value + meta text flows on the left, the
+   * donut overlaps the lower-right of that flow). Without this rule
+   * the donut renders in flex flow under the meta text, which
+   * breaks the metrics-grid pixel diff on /dispositivos and /audit.
+   */
+  .metric-card .donut-chart {
+    position: absolute;
+    inset-inline-end: var(--space-4);
+    inset-block-end: var(--space-4);
+  }
+
   .donut-chart::before {
     content: "";
     position: absolute;
@@ -387,6 +445,32 @@
     font-size: 0.75rem;
     font-weight: 700;
     line-height: 1;
+  }
+
+  /*
+   * Maquette total-card separator: 3 small white bands (~4° each) at the
+   * joins between the secondary / assigned / warning segments. Rendered
+   * via an ::after overlay so the existing conic-gradient built from
+   * `segments` in <DonutChart /> continues to drive the colored bands
+   * underneath (see donut-chart.tsx -> variant="total").
+   */
+  .donut-chart--total::after {
+    content: "";
+    position: absolute;
+    inset: -0.0625rem;
+    border-radius: inherit;
+    background: conic-gradient(
+      from -90deg,
+      var(--color-background) 0 4deg,
+      transparent 4deg 224deg,
+      var(--color-background) 224deg 232deg,
+      transparent 232deg 336deg,
+      var(--color-background) 336deg 344deg,
+      transparent 344deg 356deg,
+      var(--color-background) 356deg 360deg
+    );
+    z-index: 1;
+    pointer-events: none;
   }
 
   /* ----- Chip / id-badge / privacy-chip ----- */
@@ -469,13 +553,43 @@
     overflow: hidden;
     background: var(--color-background);
     box-shadow: 0 0.0625rem 0.125rem rgb(41 41 41 / 8%), 0 0.25rem 1rem rgb(41 41 41 / 6%);
+    /* Allow the shell to host a sticky pagination footer (header +
+     * scrollable body + footer). Without these the internal flex
+     * children collapse to their content height. */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
   }
 
   .table-scroll {
     width: 100%;
     overflow-x: auto;
+    /* Vertical scroll lives here so the page-level main scroll is not
+     * affected; the maquette keeps the table body in a fixed-height
+     * scrollable region with the pagination pinned at the bottom. */
+    overflow-y: auto;
     overscroll-behavior-inline: contain;
     -webkit-overflow-scrolling: touch;
+    /* Internal scroll only — shrink-to-fit so the sticky footer below
+     * can claim whatever vertical space it needs. */
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* Sticky-footer pattern for the table-pagination. The footer sits
+   * at the bottom of .table-shell using `position: sticky` so it stays
+   * pinned to the viewport bottom regardless of scroll position.
+   * `bottom: 0` means the footer is positioned at the bottom of its
+   * containing scroll context. The block-start border keeps the visual
+   * separator. Background prevents the table rows bleeding through. */
+  .table-pagination {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    border-block-start: 1px solid var(--color-border);
+    padding: 0.75rem 0;
+    background: var(--color-background);
   }
 
   .data-table {
@@ -526,10 +640,13 @@
     flex-wrap: wrap;
   }
 
-  .data-table__validity-date {
-    display: block;
+  /* Selector needs the `td.` prefix because Turbopack / Tailwind 4 JIT
+   * emits a derived utility that adds `display: block` to the bare
+   * class name, which collapses the table-cell row layout. Tag-qualifying
+   * the selector raises specificity high enough that the derived utility
+   * loses the cascade fight and the cell stays as a real table-cell. */
+  td.data-table__validity-date {
     font-weight: 700;
-    font-size: 0.75rem;
   }
 
   /* ----- Sortable header ----- */
@@ -661,8 +778,8 @@
   .inventory-search__input:hover { border-color: var(--color-secondary-500); }
 
   .inventory-search__input:focus-visible {
-    border-color: #005fcc;
-    box-shadow: 0 0 0 3px rgb(0 95 204 / 18%);
+    border-color: var(--color-focus);
+    box-shadow: 0 0 0 0.1875rem rgb(0 95 204 / 18%);
   }
 
   .inventory-search__count {
@@ -676,12 +793,9 @@
     transform: translateY(-50%);
   }
 
-  /* ----- Pagination ----- */
-  .table-pagination {
-    border-block-start: 1px solid var(--color-border);
-    padding: 0.75rem 0;
-    background: var(--color-background);
-  }
+  /* ----- Pagination -----
+   * (block + flex-shrink:0 already applied above so the pagination
+   * sticks to the bottom of the .table-shell. See lines 582-589.) */
 
   .table-pagination__inner {
     display: flex;

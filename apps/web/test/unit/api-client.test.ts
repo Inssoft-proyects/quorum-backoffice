@@ -1,25 +1,28 @@
 import { login, logout, me, ApiError } from '@/lib/api-client';
 
 describe('api-client', () => {
-  it('login posts to /api/v1/auth/login and returns the user', async () => {
+  it('login posts to /api/v1/auth/login with { username, otp } and returns the user', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.method).toBe('POST');
-      expect(String(init?.body)).toBe(JSON.stringify({ email: 'a@b.com', otp: 'AB12CD' }));
-      return new Response(JSON.stringify({ user: { id: 1, email: 'a@b.com', role: 'admin' } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+      expect(String(init?.body)).toBe(JSON.stringify({ username: 'admin', otp: 'AB12CD' }));
+      return new Response(
+        JSON.stringify({ user: { id: 1, email: 'admin@quorum.local', role: 'admin' } }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
     }) as unknown as typeof fetch;
-    const u = await login({ email: 'a@b.com', otp: 'AB12CD' });
-    expect(u).toEqual({ id: 1, email: 'a@b.com', role: 'admin' });
+    const u = await login({ username: 'admin', otp: 'AB12CD' });
+    expect(u).toEqual({ id: 1, email: 'admin@quorum.local', role: 'admin' });
   });
 
-  it('login throws ApiError on 401', async () => {
+  it('login throws ApiError on 401 (invalid_credentials)', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
       new Response(JSON.stringify({ code: 'invalid_credentials', message: 'no' }), {
         status: 401,
       })) as unknown as typeof fetch;
-    await expect(login({ email: 'a@b.com', otp: 'AB12CD' })).rejects.toMatchObject({
+    await expect(login({ username: 'admin', otp: 'AB12CD' })).rejects.toMatchObject({
       code: 'invalid_credentials',
       status: 401,
     });
@@ -35,10 +38,10 @@ describe('api-client', () => {
 
   it('me returns user on 200', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
-      new Response(JSON.stringify({ id: 1, email: 'a@b.com', role: 'auditor' }), {
+      new Response(JSON.stringify({ id: 1, email: 'admin@quorum.local', role: 'auditor' }), {
         status: 200,
       })) as unknown as typeof fetch;
-    expect(await me()).toEqual({ id: 1, email: 'a@b.com', role: 'auditor' });
+    expect(await me()).toEqual({ id: 1, email: 'admin@quorum.local', role: 'auditor' });
   });
 
   it('logout succeeds on 200 and on 401', async () => {

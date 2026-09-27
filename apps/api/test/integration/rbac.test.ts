@@ -9,7 +9,10 @@
  *  - expired session: 401
  *  - login: no session required, sets cookie
  *
- * Auth happens via the real POST /auth/login flow (no x-test-actor shim).
+ * Auth happens via the real POST /auth/login flow with the new
+ * username + pre-issued OTP contract. The FakeOtpClient accepts the
+ * deterministic VALID_OTP for every pre-issued username subject, so
+ * tests can drive the login flow without a real quorum-otp service.
  */
 import { Pool } from 'pg';
 import path from 'node:path';
@@ -17,7 +20,6 @@ import bcrypt from 'bcrypt';
 import { buildApp } from '../../src/app';
 import { migrate } from '../../src/migrations';
 import type { OtpClient } from '../../src/services/otp-client';
-import { createMailerForTest, type Mailer } from '../../src/services/mailer';
 
 const TEST_DATABASE_URL =
   process.env['DATABASE_URL_TEST'] ??
@@ -32,6 +34,7 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   REDIS_URL: process.env['REDIS_URL'] ?? 'redis://127.0.0.1:6379',
   OTP_SERVICE_URL: 'http://127.0.0.1:65535',
   OTP_SERVICE_TOKEN: 'test-otp-token-1234567890',
+  OTP_SERVICE_NAME: 'quorum-backoffice',
   CANVAS_PORTAL_API_URL: 'http://127.0.0.1:65535',
   CANVAS_PORTAL_API_TOKEN: 'test-canvas-token-1234567890',
   SESSION_SECRET: 'a'.repeat(64),
@@ -40,9 +43,7 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   AUTH_COOKIE_SECURE: 'false',
   AUTH_LOGIN_MAX_ATTEMPTS: '5',
   AUTH_LOGIN_WINDOW_SECONDS: '900',
-  LOGIN_OTP_TTL_SECONDS: '300',
   LOGIN_OTP_MAX_ATTEMPTS: '5',
-  LOGIN_OTP_REQUEST_MAX_PER_EMAIL: '5',
   LOGIN_OTP_REQUEST_WINDOW_SECONDS: '900',
 };
 
@@ -51,20 +52,25 @@ const VALID_OTP = 'AB12CD';
 
 interface UserFixture {
   id: number;
+  /** Canonical BackOffice username — the new login identifier. */
+  username: string;
+  /** Legacy email column, kept for the MeResponse payload + column-compat tests. */
   email: string;
   password: string;
   role: 'admin' | 'operator' | 'auditor';
 }
 
-async function seedUser(pool: Pool, email: string, password: string, role: UserFixture['role']): Promise<UserFixture> {
+async function seedUser(pool: Pool, username: string, email: string, password: string, role: UserFixture['role']): Promise<UserFixture> {
   const hash = await bcrypt.hash(password, BCRYPT_COST);
   const r = await pool.query<{ id: number }>(
-    `INSERT INTO users (email, password_hash, role) VALUES (lower($1), $2, $3) RETURNING id`,
-    [email, hash, role],
+    `INSERT INTO users (email, username, password_hash, role)
+     VALUES (lower($1), $2, $3, $4)
+     RETURNING id`,
+    [email, username, hash, role],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('user_seed_failed');
-  return { id, email, password, role };
+  return { id, username, email, password, role };
 }
 
 function cookieFromSetCookie(setCookie: string | string[] | undefined, name: string): string | null {
@@ -88,12 +94,17 @@ function makeOtpFetch(): typeof fetch {
 }
 
 /**
- * Fake OTP client used by RBAC tests. Always accepts any code so the
- * tests can drive the login flow without a real quorum-otp service.
+ * Fake OTP client used by RBAC tests. Pre-issues a deterministic code
+ * for every username subject so the suite can drive the login flow
+ * without a real quorum-otp service. The login route only calls
+ * `verify`, but `issue` mirrors the upstream issuer contract.
  */
 class FakeOtpClient {
-  async issue(): Promise<{ ok: true; otpId: string; token: string; ttlSeconds: number }> {
-    return { ok: true, otpId: 'fake-rbac-otp', token: VALID_OTP, ttlSeconds: 300 };
+  public readonly issued = new Map<string, { code: string }>();
+  async issue(args: { subject: string; scope: string }) {
+    const code = VALID_OTP;
+    this.issued.set(`${args.scope}:${args.subject.toLowerCase()}`, { code });
+    return { ok: true as const, otpId: 'fake-rbac-otp', token: code, ttlSeconds: 300 };
   }
   async verify(args: { subject: string; scope: string; code: string }) {
     if (args.code !== VALID_OTP) return { ok: false as const, reason: 'invalid' as const };
@@ -101,21 +112,16 @@ class FakeOtpClient {
   }
 }
 
-async function loginAndGetCookie(app: Awaited<ReturnType<typeof buildApp>>, email: string, _password: string): Promise<string> {
-  // Step 1: request the OTP.
-  const reqR = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/login/request',
-    headers: { 'content-type': 'application/json' },
-    payload: JSON.stringify({ email }),
-  });
-  if (reqR.statusCode !== 200) throw new Error(`otp_request_failed status=${reqR.statusCode} body=${reqR.body}`);
-  // Step 2: submit the OTP.
+async function loginAndGetCookie(app: Awaited<ReturnType<typeof buildApp>>, username: string, _password: string): Promise<string> {
+  // Pre-issue the OTP for the username subject (what the upstream
+  // issuer would have done out-of-band), then exchange it for a cookie.
+  const fakeOtp = (app as unknown as { otpClient: FakeOtpClient }).otpClient as FakeOtpClient;
+  await fakeOtp.issue({ subject: username, scope: 'login' });
   const r = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/login',
     headers: { 'content-type': 'application/json' },
-    payload: JSON.stringify({ email, otp: VALID_OTP }),
+    payload: JSON.stringify({ username, otp: VALID_OTP }),
   });
   if (r.statusCode !== 200) throw new Error(`login_failed status=${r.statusCode} body=${r.body}`);
   const cookie = cookieFromSetCookie(r.headers['set-cookie'], 'sid');
@@ -147,14 +153,33 @@ describe('RBAC (integration, real PG + Redis)', () => {
     `);
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
 
-    admin = await seedUser(pool, `rbac-admin-${Date.now()}@example.test`, 'Adm1n!Pass', 'admin');
-    operator = await seedUser(pool, `rbac-operator-${Date.now()}@example.test`, 'Op3r@Pass', 'operator');
-    auditor = await seedUser(pool, `rbac-auditor-${Date.now()}@example.test`, 'Aud1t0rPass', 'auditor');
+    admin = await seedUser(
+      pool,
+      `rbac-admin-${Date.now()}`,
+      `rbac-admin-${Date.now()}@example.test`,
+      'Adm1n!Pass',
+      'admin',
+    );
+    operator = await seedUser(
+      pool,
+      `rbac-operator-${Date.now()}`,
+      `rbac-operator-${Date.now()}@example.test`,
+      'Op3r@Pass',
+      'operator',
+    );
+    auditor = await seedUser(
+      pool,
+      `rbac-auditor-${Date.now()}`,
+      `rbac-auditor-${Date.now()}@example.test`,
+      'Aud1t0rPass',
+      'auditor',
+    );
 
     app = await buildApp({ config: TEST_ENV });
-    // Polish WU v6: replace the real OtpClient/Mailer with hermetic fakes.
+    // Single-step username + pre-issued OTP flow: replace the real
+    // OtpClient with a hermetic fake that pre-issues VALID_OTP for any
+    // username subject.
     (app as unknown as { otpClient: OtpClient }).otpClient = new FakeOtpClient() as unknown as OtpClient;
-    (app as unknown as { mailer: Mailer }).mailer = createMailerForTest({ log: app.log });
     (globalThis as { fetch: typeof fetch }).fetch = makeOtpFetch();
   });
 
@@ -167,7 +192,7 @@ describe('RBAC (integration, real PG + Redis)', () => {
     let operatorCookie: string;
 
     beforeAll(async () => {
-      operatorCookie = await loginAndGetCookie(app, operator.email, operator.password);
+      operatorCookie = await loginAndGetCookie(app, operator.username, operator.password);
     });
 
     it('GET /api/v1/marbetes returns 200 (read access)', async () => {
@@ -221,7 +246,7 @@ describe('RBAC (integration, real PG + Redis)', () => {
     let auditorCookie: string;
 
     beforeAll(async () => {
-      auditorCookie = await loginAndGetCookie(app, auditor.email, auditor.password);
+      auditorCookie = await loginAndGetCookie(app, auditor.username, auditor.password);
     });
 
     it('GET /api/v1/audit returns 200', async () => {
@@ -261,7 +286,7 @@ describe('RBAC (integration, real PG + Redis)', () => {
     let adminCookie: string;
 
     beforeAll(async () => {
-      adminCookie = await loginAndGetCookie(app, admin.email, admin.password);
+      adminCookie = await loginAndGetCookie(app, admin.username, admin.password);
     });
 
     it('POST /api/v1/marbetes with valid OTP returns 201', async () => {

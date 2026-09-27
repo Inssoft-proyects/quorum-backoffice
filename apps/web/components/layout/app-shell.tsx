@@ -12,11 +12,18 @@ import { Topbar } from './topbar';
  */
 export function AppShell({ user, children }: { user: MeResponse; children: ReactNode }) {
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-background md:grid-cols-[16rem_1fr]">
+    <div className="grid h-screen grid-cols-1 grid-rows-1 bg-background md:grid-cols-[16rem_1fr]">
       <Sidebar user={user} className="hidden md:flex" />
       <div className="flex min-w-0 flex-col">
         <Topbar user={user} />
-        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6">{children}</main>
+        {/* h-screen + overflow-y-hidden here means the (authed) content
+         * owns its own vertical scroll. Inventory-style pages keep the
+         * table pagination pinned to the bottom of the visible viewport
+         * (see .table-pagination rules in globals.css). The topbar +
+         * sidebar remain pinned by the grid container; only <main>
+         * scrolls internally for screens that opt in via the
+         * `inventory-page` flex layout. */}
+        <main className="min-w-0 flex-1 h-full overflow-x-hidden overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
     </div>
   );

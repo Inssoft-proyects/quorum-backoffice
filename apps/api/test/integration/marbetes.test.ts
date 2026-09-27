@@ -19,7 +19,6 @@ import path from 'node:path';
 import { buildApp } from '../../src/app';
 import { migrate } from '../../src/migrations';
 import type { OtpClient } from '../../src/services/otp-client';
-import { createMailerForTest, type Mailer } from '../../src/services/mailer';
 
 const TEST_DATABASE_URL =
   process.env['DATABASE_URL_TEST'] ??
@@ -34,6 +33,7 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   REDIS_URL: process.env['REDIS_URL'] ?? 'redis://127.0.0.1:6379',
   OTP_SERVICE_URL: 'http://127.0.0.1:65535',
   OTP_SERVICE_TOKEN: 'test-otp-token-1234567890',
+  OTP_SERVICE_NAME: 'quorum-backoffice',
   CANVAS_PORTAL_API_URL: 'http://127.0.0.1:65535',
   CANVAS_PORTAL_API_TOKEN: 'test-canvas-token-1234567890',
   SESSION_SECRET: 'a'.repeat(64),
@@ -44,7 +44,6 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   AUTH_LOGIN_WINDOW_SECONDS: '900',
   LOGIN_OTP_TTL_SECONDS: '300',
   LOGIN_OTP_MAX_ATTEMPTS: '5',
-  LOGIN_OTP_REQUEST_MAX_PER_EMAIL: '5',
   LOGIN_OTP_REQUEST_WINDOW_SECONDS: '900',
 };
 
@@ -510,10 +509,12 @@ describe('reveal endpoint (WU #1)', () => {
     // Seed an operator user for the 403 test. Mirrors rbac.test.ts.
     const bcrypt = await import('bcrypt');
     const hash = await bcrypt.hash('Op3r@Pass', 10);
-    const opEmail = `reveal-operator-${Date.now()}@example.test`;
+    const opUsername = `reveal-operator-${Date.now()}`;
+    const opEmail = `${opUsername}@example.test`;
     await pool.query(
-      `INSERT INTO users (email, password_hash, role) VALUES (lower($1), $2, 'operator')`,
-      [opEmail, hash],
+      `INSERT INTO users (email, username, password_hash, role)
+       VALUES (lower($1), $2, $3, 'operator')`,
+      [opEmail, opUsername, hash],
     );
 
     app = await buildApp({ config: TEST_ENV });
@@ -523,22 +524,18 @@ describe('reveal endpoint (WU #1)', () => {
       return { status: 401, body: { error: 'invalid' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
-    // Polish WU v6: replace the real OtpClient/Mailer with hermetic fakes.
+    // Single-step username + pre-issued OTP flow: the FakeOtpClient
+    // accepts VALID_OTP for any username subject, so we can drive the
+    // login route without a real issuer. There is no mailer in the
+    // new contract — the BackOffice never emails an OTP.
     (app as unknown as { otpClient: OtpClient }).otpClient = new FakeOtpClient() as unknown as OtpClient;
-    (app as unknown as { mailer: Mailer }).mailer = createMailerForTest({ log: app.log });
 
-    // Log the operator in via the real auth flow (Polish WU v6: email + OTP).
-    await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/login/request',
-      headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email: opEmail }),
-    });
+    // Log the operator in via the real auth flow (username + pre-issued OTP).
     const loginRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email: opEmail, otp: VALID_OTP }),
+      payload: JSON.stringify({ username: opUsername, otp: VALID_OTP }),
     });
     if (loginRes.statusCode !== 200) {
       throw new Error(`operator_login_failed: ${loginRes.statusCode} ${loginRes.body}`);
@@ -718,10 +715,12 @@ describe('bulk create (WU #3)', () => {
 
     const bcryptMod = await import('bcrypt');
     const hash = await bcryptMod.hash('Op3r@Pass', 10);
-    const opEmail = `bulk-operator-${Date.now()}@example.test`;
+    const opUsername = `bulk-operator-${Date.now()}`;
+    const opEmail = `${opUsername}@example.test`;
     await pool.query(
-      `INSERT INTO users (email, password_hash, role) VALUES (lower($1), $2, 'operator')`,
-      [opEmail, hash],
+      `INSERT INTO users (email, username, password_hash, role)
+       VALUES (lower($1), $2, $3, 'operator')`,
+      [opEmail, opUsername, hash],
     );
 
     app = await buildApp({ config: TEST_ENV });
@@ -731,21 +730,16 @@ describe('bulk create (WU #3)', () => {
       return { status: 401, body: { error: 'invalid' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
-    // Polish WU v6: replace the real OtpClient/Mailer with hermetic fakes.
+    // Single-step username + pre-issued OTP flow: hermetic fake, no
+    // mailer (the new contract never sends OTPs from BackOffice).
     (app as unknown as { otpClient: OtpClient }).otpClient = new FakeOtpClient() as unknown as OtpClient;
-    (app as unknown as { mailer: Mailer }).mailer = createMailerForTest({ log: app.log });
 
-    await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/login/request',
-      headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email: opEmail }),
-    });
+    // Log the operator in via the real auth flow (username + pre-issued OTP).
     const loginRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email: opEmail, otp: VALID_OTP }),
+      payload: JSON.stringify({ username: opUsername, otp: VALID_OTP }),
     });
     if (loginRes.statusCode !== 200) {
       throw new Error(`operator_login_failed: ${loginRes.statusCode} ${loginRes.body}`);

@@ -17,6 +17,14 @@ export interface DonutChartProps {
   /** Text rendered in the centre of the donut (e.g. "100%"). */
   centerLabel?: string;
   className?: string;
+  /**
+   * Visual variant:
+   * - "generic" (default): renders the conic-gradient built from `segments`.
+   * - "total": adds the maquette's white separator bands (~4° each) at
+   *   the joins between segments so the Total card matches the maquette
+   *   reference (see .donut-chart--total::after in globals.css).
+   */
+  variant?: 'generic' | 'total';
 }
 
 /**
@@ -32,6 +40,7 @@ export function DonutChart({
   size = 64,
   centerLabel,
   className,
+  variant = 'generic',
 }: DonutChartProps) {
   // Build the conic-gradient stop list; entries come in order, each
   // spanning `percent` percent of the circle. The values are multiplied by
@@ -48,7 +57,11 @@ export function DonutChart({
 
   return (
     <span
-      className={cn('donut-chart', className)}
+      className={cn(
+        'donut-chart',
+        variant === 'total' && 'donut-chart--total',
+        className,
+      )}
       style={{
         width: `${size}px`,
         background: gradient,
