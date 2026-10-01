@@ -155,11 +155,31 @@ export interface BulkCreateMarbeteSuccess {
   status: MarbeteStatus;
 }
 
+/**
+ * Machine-readable failure category. The .xlsx bulk endpoint
+ * (/api/v1/marbetes/bulk-xlsx) populates this for every per-row
+ * failure, while the JSON /bulk and /bulk-csv endpoints populate it
+ * only for the reasons the service itself can attribute (duplicates).
+ * Any reason that does not map to a known category lands in 'other'.
+ *
+ * The category is additive on the shared `BulkCreateMarbeteFailure`
+ * shape; callers that ignore unknown fields are unaffected.
+ */
+export const BulkFailureCategory = z.enum([
+  'length_out_of_range',
+  'invalid_chars',
+  'duplicate_in_file',
+  'already_exists',
+  'other',
+]);
+export type BulkFailureCategory = z.infer<typeof BulkFailureCategory>;
+
 export interface BulkCreateMarbeteFailure {
   index: number;
   line: number | null;
   code: string;
   reason: string;
+  category: BulkFailureCategory;
 }
 
 export interface BulkCreateMarbetesResponse {
@@ -169,6 +189,59 @@ export interface BulkCreateMarbetesResponse {
   successes: BulkCreateMarbeteSuccess[];
   failures: BulkCreateMarbeteFailure[];
   auditId: number | null;
+}
+
+// ---- Bulk create via .xlsx upload (T4) ----
+//
+// Admin-only endpoint that accepts a base64-encoded .xlsx workbook
+// with a single "Número de marbete" column. Per-row outcomes share the
+// JSON /bulk shape (successes/failures, code) plus xlsx-specific
+// metadata: the number of template example rows skipped, a category
+// histogram for the UI's result card, and a downloadable errors file
+// (only when there were failures). The 20-minute OTP grant window
+// applies exactly like the JSON /bulk endpoint.
+export const BulkXlsxCreateRequest = z.object({
+  /** Original file name (used in audit metadata + the errors-file name). */
+  fileName: z.string().min(1).max(255),
+  /** Canonical RFC 4648 base64 of the .xlsx workbook bytes. */
+  contentBase64: z.string().min(1).max(/* 5 MB worth of base64 */ (5 * 1024 * 1024 * 4) / 3 + 64),
+  /** Optional human-set reason for the upload (persisted on the audit row). */
+  reason: z.string().max(500).optional(),
+});
+export type BulkXlsxCreateRequest = z.infer<typeof BulkXlsxCreateRequest>;
+
+export interface BulkXlsxErrorsFile {
+  /** Suggested file name for the downloadable errors workbook. */
+  fileName: string;
+  /** Canonical base64 of the errors workbook (decoded by the client). */
+  contentBase64: string;
+}
+
+export interface BulkXlsxCreateSuccess extends BulkCreateMarbeteSuccess {
+  /** 1-based row number in the original .xlsx (always populated for this endpoint). */
+  xlsxRow: number;
+}
+
+export interface BulkXlsxCreateFailure extends BulkCreateMarbeteFailure {
+  /** 1-based row number in the original .xlsx (always populated for this endpoint). */
+  xlsxRow: number;
+}
+
+export interface BulkXlsxCreateResponse {
+  total: number;
+  created: number;
+  failed: number;
+  /** successes in submission order (which is xlsx row order). */
+  successes: BulkXlsxCreateSuccess[];
+  /** failures sorted by xlsx row number. */
+  failures: BulkXlsxCreateFailure[];
+  auditId: number | null;
+  /** Rows that matched the template example (literal "123456789") and were skipped. */
+  skippedExampleRows: number;
+  /** Histogram of per-category failure counts (always includes every key, zero where absent). */
+  categoryCounts: Record<BulkFailureCategory, number>;
+  /** Downloadable errors workbook (null when every row succeeded). */
+  errorsFile: BulkXlsxErrorsFile | null;
 }
 
 // ---- OTP grant status (20-minute destructive-marbetel window) ----

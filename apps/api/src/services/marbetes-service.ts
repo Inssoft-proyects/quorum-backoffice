@@ -30,6 +30,7 @@ import type {
   BulkCreateMarbetesResponse,
   BulkCreateMarbeteSuccess,
   BulkCreateMarbeteFailure,
+  BulkFailureCategory,
 } from '@quorum-backoffice/shared';
 
 interface RequestMeta {
@@ -76,6 +77,19 @@ const GRANT_ELIGIBLE_ACTIONS = new Set([
 /** Scope family for the grant cache. Single today; future scope
  *  families (e.g. dispositivos) would add their own column value. */
 const GRANT_SCOPE = 'marbete';
+
+/**
+ * Map a per-row failure reason (produced by bulkCreate itself) to a
+ * stable `BulkFailureCategory`. Anything we did not explicitly
+ * recognise lands in 'other' — the route layer may still overwrite the
+ * category based on its own pre-validation (the .xlsx endpoint does
+ * this for length / invalid_chars / duplicate_in_file).
+ */
+function reasonToCategory(reason: string): BulkFailureCategory {
+  if (reason === 'duplicate in batch') return 'duplicate_in_file';
+  if (reason === 'code already exists') return 'already_exists';
+  return 'other';
+}
 
 export class MarbetesService {
   private readonly repo: PgMarbeteRepo;
@@ -381,7 +395,7 @@ export class MarbetesService {
   async bulkCreate(
     actor: string,
     req: BulkCreateMarbetesRequest,
-    source: 'json' | 'csv',
+    source: 'json' | 'csv' | 'xlsx',
     fileName: string | null,
     otpCode: string | undefined,
     meta: RequestMeta = {},
@@ -400,11 +414,13 @@ export class MarbetesService {
         seen.set(item.code, index);
         survivors.push({ index, code: item.code });
       } else {
+        const reason = 'duplicate in batch';
         failures.push({
           index,
           line: null,
           code: item.code,
-          reason: 'duplicate in batch',
+          reason,
+          category: reasonToCategory(reason),
         });
       }
     });
@@ -418,11 +434,13 @@ export class MarbetesService {
     for (const survivor of survivors) {
       const codeHash = sha256Hex(survivor.code);
       if (existingSet.has(codeHash)) {
+        const reason = 'code already exists';
         failures.push({
           index: survivor.index,
           line: null,
           code: survivor.code,
-          reason: 'code already exists',
+          reason,
+          category: reasonToCategory(reason),
         });
         continue;
       }
