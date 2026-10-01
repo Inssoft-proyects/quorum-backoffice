@@ -29,6 +29,7 @@
  */
 import ExcelJS from 'exceljs';
 import { Buffer } from 'node:buffer';
+import type { BulkFailureCategory } from '@quorum-backoffice/shared';
 
 /** Hard cap on the decoded workbook size (5 MB). */
 export const XLSX_MAX_DECODED_BYTES = 5 * 1024 * 1024;
@@ -47,13 +48,10 @@ export const EXAMPLE_CODE = '123456789';
  */
 const HEADER_CANONICAL = 'numero de marbete';
 
-/** Stable machine-readable category for a per-row failure. */
-export type BulkFailureCategory =
-  | 'length_out_of_range'
-  | 'invalid_chars'
-  | 'duplicate_in_file'
-  | 'already_exists'
-  | 'other';
+/** Stable machine-readable category for a per-row failure.
+ *  Single source of truth: the Zod-derived type in
+ *  packages/shared/src/dto/marbete.ts (re-exported for local callers). */
+export type { BulkFailureCategory };
 
 /** Per-row failure surfaced to the operator. */
 export interface XlsxRowFailure {

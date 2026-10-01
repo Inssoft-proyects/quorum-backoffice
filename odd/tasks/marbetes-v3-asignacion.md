@@ -163,5 +163,14 @@ Cada tarea cierra con un commit work-unit (Conventional Commits) en la rama.
 | T4 | `4e819f9` | POST /api/v1/marbetes/bulk-xlsx + taxonomía de errores + workbook de errores + plantilla oficial en apps/web/public/assets/; api 7 suites/75 tests; shared+web ok |
 | T5 | `893c2ea` | Modal carga masiva rediseñado (dropzone .xlsx, overlay 6 etapas, resultado con 4 métricas de error, plantilla, errores xlsx, OTP grant-aware); web 29 suites/151 tests |
 | T6 | `78c9798` | GET /api/v1/matriculas + /counters, POST /assign (batch tx + OTP grant), /unassign (motivo), /sync (Canvas paging → students_cache, primer write path), migración 0013 (assigned_by + acciones audit); api 9 suites/105 tests. Follow-up: lógica de grant duplicada entre MarbetesService y MatriculasService (extraer helper compartido) |
-| T7 | pendiente | — |
-| T8 | pendiente | — |
+| T7 | `506967e` | Pantalla /asociar completa (métricas con filtro, tabs, selección acotada, modal propuesta con swap, modal desasignación, reveal, banner) + menú entre Marbetes y Dispositivos; web 33 suites/181 tests |
+| T8 | `HEAD` (este commit) | Verificación independiente (gentle-ai-verify): **PASS con caveats menores**, 0 hallazgos bloqueantes/mayores. Builds+typechecks 3 unidades ok; api 9 suites/105 tests; web 33 suites/181 tests; plantilla .xlsx íntegra (hojas Marbetes+Instrucciones); contratos shared↔api↔web consistentes; canon verificado G1/G3–G9 + B1–B6 + pantalla /asociar; seguridad: reveal nunca grant-elegible, grant por actor, caps de upload 5MB, base64 estricto, maskedCode fuera del reveal, motivo de desasignación obligatorio. Fix aplicado post-verificación: BulkFailureCategory importado de shared en marbete-xlsx.ts (fuente única) |
+
+## 10. Follow-ups (no bloqueantes, posteriores al cierre)
+
+- F1 (MINOR) G10 pendiente: borrar legacy `create/edit/delete-dialog.tsx`, `marbetes-filters.tsx`, `status-cards.tsx` + sus tests unitarios referenciados (o marcarlos `@deprecated`).
+- F2 (MINOR) Sin spec Playwright para `/asociar` ni para el modal bulk rediseñado — agregar `13-asociar-screen.spec.ts` y cubrir el flujo bulk en el harness de paridad (requiere stack dev completo o deploy).
+- F3 (MINOR) Extraer helper compartido de `verifyOtpGrant` (duplicado entre MarbetesService y MatriculasService) → `apps/api/src/lib/otp-grant-verify.ts`.
+- F4 (MINOR) `students_cache.is_active`: al exponer portal-api status de enrollments, upsertar `false` para bajas y desactivar filas ausentes.
+- F5 (OPS) CI: fijar `MAQUETTE_DIR` a `/planQuorum/dev/quorum-design/design/Inec/Inec` para no depender del fallback stale.
+- F6 (OPS) Correr `test:integration` en CI con `DATABASE_URL_TEST` reachable (escrito y compilado, sin ejecutar en este host) + smoke Playwright post-deploy de las 3 superficies (marbetes, modal bulk, /asociar).
