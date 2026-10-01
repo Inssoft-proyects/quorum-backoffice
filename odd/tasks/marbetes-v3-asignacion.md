@@ -155,4 +155,13 @@ Cada tarea cierra con un commit work-unit (Conventional Commits) en la rama.
 
 ## 9. Registro de commits
 
-(se llena al cerrar cada tarea)
+| Task | Commit | Evidencia |
+| --- | --- | --- |
+| T1 | `c613a6a` | harness resuelve canon quorum-design + env MAQUETTE_DIR |
+| T2 | `e1a79ed` | G1/G3–G9 cerrados; G2 skip por canon (card sin chart); G10 diferido (tests/e2e referencian archivos legacy); 26 suites / 126 tests web, typecheck ok |
+| T3 | `95a12ad` | otp_grants (migración 0012), verifyOtp grant-aware (reveal exento), GET /api/v1/marbetes/otp-grant, hook useOtpGrant + diálogos Add/Revoke grant-aware; api 6 suites/56 tests, web 29 suites/142 tests; integración diferida (sin DB local) |
+| T4 | `4e819f9` | POST /api/v1/marbetes/bulk-xlsx + taxonomía de errores + workbook de errores + plantilla oficial en apps/web/public/assets/; api 7 suites/75 tests; shared+web ok |
+| T5 | `893c2ea` | Modal carga masiva rediseñado (dropzone .xlsx, overlay 6 etapas, resultado con 4 métricas de error, plantilla, errores xlsx, OTP grant-aware); web 29 suites/151 tests |
+| T6 | pendiente | — |
+| T7 | pendiente | — |
+| T8 | pendiente | — |

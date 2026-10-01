@@ -12,6 +12,10 @@ export const AuditAction = z.enum([
   'marbete.update',
   'marbete.delete',
   'marbete.assign',
+  // WU v3 / Asignación de marbetes: bulk + unassign actions.
+  // SQL enum values added in migration 0013_matriculas.sql.
+  'marbete.assign_bulk',
+  'marbete.unassign',
   'marbete.reveal',
   'marbete.bulk_create',
   'dispositivo.create',
