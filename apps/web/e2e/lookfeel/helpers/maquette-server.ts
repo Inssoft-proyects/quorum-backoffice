@@ -34,18 +34,31 @@ export interface MaquetteServerHandle {
 /**
  * Resolve the maquette directory.
  *
- * The harness runs from `apps/web` (Playwright's CWD), but the
- * maquette lives two directories up under `diseno/maqueta_Inec/Inec/`.
- * We resolve against `process.cwd()` and against `import.meta.url` to
- * cover both `playwright test` invocations and direct `node` runs.
+ * Canon lives in the quorum-design repo:
+ * `/planQuorum/dev/quorum-design/design/Inec/Inec/` (updated designs).
+ * The in-repo copy `diseno/maqueta_Inec/Inec/` is a stale fallback kept
+ * for offline runs. `MAQUETTE_DIR` (absolute path) overrides everything.
+ *
+ * The harness runs from `apps/web` (Playwright's CWD); we resolve against
+ * `process.cwd()` and `import.meta.url` to cover both `playwright test`
+ * invocations and direct `node` runs.
  */
 export function resolveMaquetteDir(): string {
   const candidates: string[] = [];
+  if (process.env['MAQUETTE_DIR']) {
+    candidates.push(path.resolve(process.env['MAQUETTE_DIR']));
+  }
   const cwd = process.cwd();
+  // Canon (quorum-design repo, sibling checkout).
+  candidates.push(path.resolve(cwd, '../../../quorum-design/design/Inec/Inec'));
+  // Stale in-repo fallback.
   candidates.push(path.resolve(cwd, '../../diseno/maqueta_Inec/Inec'));
   candidates.push(path.resolve(cwd, '../diseno/maqueta_Inec/Inec'));
   // Fallback: __dirname-relative for `node helpers/maquette-server.js`.
   if (typeof __dirname === 'string') {
+    candidates.push(
+      path.resolve(__dirname, '../../../../../quorum-design/design/Inec/Inec'),
+    );
     candidates.push(
       path.resolve(__dirname, '../../../../diseno/maqueta_Inec/Inec'),
     );
