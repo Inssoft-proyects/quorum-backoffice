@@ -14,6 +14,7 @@
 import type { z } from 'zod';
 import {
   BulkCreateMarbetesRequest,
+  BulkXlsxCreateRequest,
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
   ListAuditFilter,
@@ -22,6 +23,7 @@ import {
   UpdateMarbeteRequest,
   type AuditEntry,
   type BulkCreateMarbetesResponse,
+  type BulkXlsxCreateResponse,
   type CreateDispositivoRequest,
   type DeleteDispositivoRequest,
   type DispositivoDetailResponse,
@@ -339,6 +341,85 @@ export async function bulkCreateMarbetes(
     otpCode,
     cookie,
   );
+}
+
+// ---- Marbetes bulk upload via .xlsx (T4) ----
+//
+// Admin-only .xlsx upload to /api/v1/marbetes/bulk-xlsx. Reads the
+// browser File as base64 in the browser and ships it via the
+// shared `BulkXlsxCreateRequest` shape (`fileName` + `contentBase64`).
+// Per-row outcomes share the JSON /bulk shape (successes / failures /
+// auditId) plus xlsx-specific metadata: skipped example rows, a
+// `categoryCounts` histogram, and a downloadable errors workbook.
+// The 20-minute OTP grant window applies exactly like the JSON /bulk
+// endpoint — omit `otpCode` when a grant is active.
+export async function bulkCreateMarbetesXlsx(
+  args: {
+    file: File;
+    reason?: string;
+    otpCode: string | undefined;
+    cookie?: string;
+  },
+): Promise<BulkXlsxCreateResponse> {
+  const contentBase64 = await readFileAsBase64(args.file);
+  const req: z.input<typeof BulkXlsxCreateRequest> = {
+    fileName: args.file.name,
+    contentBase64,
+    ...(args.reason ? { reason: args.reason } : {}),
+  };
+  return apiPostWithOtp<BulkXlsxCreateResponse>(
+    '/api/v1/marbetes/bulk-xlsx',
+    req,
+    args.otpCode,
+    args.cookie,
+  );
+}
+
+/**
+ * Read a browser File as canonical base64.
+ *
+ * Uses FileReader.readAsArrayBuffer() (universally available in
+ * browsers + jsdom) + manual binary concatenation + btoa() so we
+ * don't pull a base64 polyfill into the bundle. btoa() is available
+ * in modern browsers, Node 18+, and jsdom (so the api-client test
+ * environment exercises the same code path). File.arrayBuffer() is
+ * the modern alternative but isn't implemented by jest-environment-
+ * jsdom 30, hence the FileReader fallback.
+ */
+async function readFileAsBase64(file: File): Promise<string> {
+  const buffer = await readFileAsArrayBuffer(file);
+  const bytes = new Uint8Array(buffer);
+  // Chunk the concat so very large workbooks (up to 5 MB) don't
+  // blow the JS string limit on older engines. 0x8000 = 32 KiB.
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Read a File as ArrayBuffer using FileReader. Returns a Promise so
+ * the api-client can be `await`ed. Falls back to `file.arrayBuffer()`
+ * if FileReader is unavailable (modern Node / future jsdom).
+ */
+function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+      } else {
+        reject(new Error('file_read_invalid_result'));
+      }
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('file_read_failed'));
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 // ---- Dispositivos (WU9) ----

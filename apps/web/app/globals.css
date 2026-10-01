@@ -1538,4 +1538,749 @@
     from { opacity: 1; }
     to   { opacity: 0; }
   }
+
+  /* ----- Bulk upload dialog (maquette v3, carga-masiva-marbetes.html) -----
+   * Per canon (.bulk-upload* in bulk-marbet-upload.css): full dropzone +
+   * processing overlay + result view rebuilt to match the design canon.
+   * Page-only artifacts (breadcrumb / page header / "Simulación visual de
+   * la hoja de cálculo" sheet) are intentionally OMITTED in the modal
+   * variant — the rest is a faithful port with maquette-class
+   * replication matching the existing convention in this file.
+   */
+
+  /* Canon button classes used by the dropzone sub-tree. The existing
+   * shadcn Button (components/ui/button.tsx) uses Tailwind variants
+   * (default / secondary / outline); these .btn / .btn--primary /
+   * .btn--secondary rules are scoped to the bulk-upload dropzone so
+   * the canon markup (label.btn--primary, a.btn--secondary) maps 1:1
+   * to its CSS. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    padding: 0.55rem 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    text-decoration: none;
+    user-select: none;
+    transition: background-color 160ms ease, border-color 160ms ease,
+      color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .btn--primary {
+    background: var(--color-secondary-500);
+    color: #ffffff;
+    border-color: var(--color-secondary-500);
+  }
+  .btn--primary:hover {
+    background: var(--color-secondary-600);
+    border-color: var(--color-secondary-600);
+  }
+
+  .btn--secondary {
+    background: var(--color-background);
+    color: var(--color-secondary-600);
+    border-color: var(--color-border-strong);
+  }
+  .btn--secondary:hover {
+    border-color: var(--color-secondary-500);
+    background: var(--color-success-bg);
+  }
+
+  .btn--primary:focus-visible,
+  .btn--secondary:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+
+  .btn__icon {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
+  }
+
+  .btn__icon--xlsx {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  /* ----- Dropzone ----- */
+  .bulk-upload {
+    display: grid;
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+  }
+
+  .bulk-upload__heading {
+    margin-block-end: 0;
+    text-align: center;
+  }
+  .bulk-upload__heading h2 {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-size: 1.125rem;
+    line-height: 1.25;
+  }
+  .bulk-upload__heading p {
+    margin: 0.25rem 0 0;
+    color: var(--color-text-muted-strong);
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+
+  .bulk-upload__dropzone {
+    min-height: 18rem;
+    border: 0.125rem dashed var(--color-border-strong);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 0.75rem;
+    background: var(--color-background);
+    transition: border-color 160ms ease, background-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .bulk-upload__dropzone.is-dragging {
+    border-color: var(--color-secondary-500);
+    background: var(--color-success-bg);
+    box-shadow: 0 0 0 0.25rem rgb(53 132 86 / 14%);
+  }
+
+  .bulk-upload__dropzone.is-error {
+    border-color: var(--color-alert-error-text);
+  }
+
+  .bulk-upload__dropzone:has(.bulk-upload__file-input:focus-visible) {
+    border-color: var(--color-secondary-500);
+    box-shadow: 0 0 0 0.25rem rgb(53 130 86 / 14%);
+  }
+
+  .bulk-upload__empty-state,
+  .bulk-upload__selected-state {
+    width: min(100%, 34rem);
+    display: grid;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .bulk-upload__icon {
+    width: 4.25rem;
+    height: 4.25rem;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    background: var(--color-success-bg);
+    color: var(--color-secondary-500);
+  }
+  .bulk-upload__icon svg {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .bulk-upload__prompt {
+    margin: 0.75rem 0 0;
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .bulk-upload__or {
+    margin-block: 0.25rem;
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .bulk-upload__select-button,
+  .bulk-upload__replace-button {
+    cursor: pointer;
+  }
+
+  .bulk-upload__format {
+    margin: 0.75rem 0 0;
+    color: var(--color-text-muted-strong);
+    font-size: 0.875rem;
+  }
+  .bulk-upload__format strong {
+    color: var(--color-text-primary);
+    font-weight: 700;
+  }
+
+  .bulk-upload__file-input {
+    position: absolute;
+    width: 0.0625rem;
+    height: 0.0625rem;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .bulk-upload__selected-state {
+    gap: 1.25rem;
+    text-align: start;
+  }
+
+  .bulk-upload__selected-file {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-md);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 1rem;
+    background: var(--color-background);
+  }
+  .bulk-upload__selected-file .bulk-upload__icon {
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+
+  .bulk-upload__file-details {
+    min-width: 0;
+    display: grid;
+    gap: 0.25rem;
+    color: var(--color-text-muted-strong);
+    font-size: 0.875rem;
+  }
+  .bulk-upload__file-name {
+    overflow: hidden;
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bulk-upload__generated {
+    width: 100%;
+    padding: 1rem;
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-subtle);
+  }
+  .bulk-upload__generated h3 {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .bulk-upload__generated p {
+    margin: 0.5rem 0 0;
+    color: var(--color-text-muted-strong);
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+  .bulk-upload__generated p strong {
+    color: var(--color-text-primary);
+    font-weight: 700;
+  }
+  .bulk-upload__generated-rule {
+    color: var(--color-secondary-600);
+    font-weight: 700;
+  }
+
+  /* ----- Dropzone inline error ----- */
+  .bulk-upload__error {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 0.0625rem solid var(--color-alert-error-text);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: var(--color-alert-error-bg);
+    color: var(--color-alert-error-text);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .bulk-upload__error[hidden] {
+    display: none;
+  }
+  .bulk-upload__error-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2.25;
+  }
+
+  /* ----- OTP field (reuses form-field conventions) ----- */
+  .bulk-upload__otp {
+    margin-top: 0.25rem;
+  }
+  .bulk-upload__grant-note {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-secondary-500);
+    border-radius: var(--radius-md);
+    background: var(--color-success-bg);
+    color: var(--color-success-text);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  /* ----- Result view ----- */
+  .bulk-upload__result {
+    margin: 1rem 0 0;
+    padding: 1.25rem;
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 1.25rem;
+    background: var(--color-background);
+  }
+  .bulk-upload__result[hidden] {
+    display: none;
+  }
+
+  .bulk-upload__result-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .bulk-upload__result-icon {
+    width: 3.5rem;
+    height: 3.5rem;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    background: var(--color-success-bg);
+    color: var(--color-secondary-500);
+  }
+  .bulk-upload__result-icon svg {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .bulk-upload__result-copy {
+    min-width: 0;
+  }
+  .bulk-upload__result-copy h3 {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-size: 1.125rem;
+    line-height: 1.25;
+    font-weight: 700;
+  }
+  .bulk-upload__result-copy p {
+    margin: 0.25rem 0 0;
+    color: var(--color-text-muted-strong);
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  .bulk-upload__result-copy strong {
+    color: var(--color-secondary-600);
+    font-size: 1rem;
+  }
+
+  .bulk-upload__result-overview {
+    border-radius: var(--radius-md);
+    border: 0.0625rem solid var(--color-border);
+    overflow: hidden;
+  }
+  .bulk-upload__result-summary {
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--color-secondary-600);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .bulk-upload__result-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-top: 0.0625rem solid var(--color-border);
+    padding-block: 0.75rem;
+  }
+  .bulk-upload__result-metric {
+    position: relative;
+    min-width: 0;
+    min-height: 4.5rem;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-right: 0.0625rem solid var(--color-border);
+  }
+  .bulk-upload__result-metric:last-child {
+    border-right: 0;
+  }
+  .bulk-upload__result-metric-icon {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    box-sizing: border-box;
+    display: block;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0.125rem;
+    fill: none;
+    stroke: var(--color-secondary-600);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
+    overflow: visible;
+  }
+  .bulk-upload__result-metric span {
+    padding-right: 1.75rem;
+    color: var(--color-text-muted-strong);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .bulk-upload__result-metric strong {
+    color: var(--color-text-primary);
+    font-size: 1.125rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .bulk-upload__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+  .bulk-upload__actions .btn {
+    flex: 1 1 auto;
+  }
+  .bulk-upload__audit {
+    margin: -0.5rem 0 0;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+  }
+
+  .bulk-upload__result-status {
+    padding: 1rem;
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted-strong);
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .bulk-upload__result-status[hidden] {
+    display: none;
+  }
+  .bulk-upload__result-status-icon {
+    width: 5.5rem;
+    height: 5.5rem;
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+  }
+  .bulk-upload__result-status-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* .xlsx illustration (port of canon SVG paint layers) */
+  .bulk-upload__xlsx-page {
+    fill: #e4ebe8;
+    stroke: #7c8580;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+  .bulk-upload__xlsx-fold {
+    fill: #c8cfcb;
+    stroke: #7c8580;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+  .bulk-upload__xlsx-label,
+  .bulk-upload__xlsx-download-bg {
+    fill: var(--color-secondary-500);
+  }
+  .bulk-upload__xlsx-grid {
+    fill: none;
+    stroke: #7c8580;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+  }
+  .bulk-upload__xlsx-download {
+    fill: none;
+    stroke: var(--color-background);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2.75;
+  }
+  .bulk-upload__xlsx-text {
+    fill: var(--color-background);
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    font-family: var(--font-family-base);
+  }
+
+  .bulk-upload__result-status-content {
+    min-width: 0;
+    display: grid;
+    gap: 0.5rem;
+    padding-top: 0.25rem;
+  }
+  .bulk-upload__result-status-title {
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .bulk-upload__result-status-content > span {
+    color: var(--color-secondary-600);
+    line-height: 1.45;
+  }
+  .bulk-upload__result-status-content > span strong {
+    color: var(--color-secondary-600);
+    font-weight: 800;
+  }
+  .bulk-upload__result-download {
+    display: inline-block;
+    color: var(--color-secondary-600);
+    font-size: 0.875rem;
+    font-weight: 700;
+    text-decoration-thickness: 0.0625rem;
+    text-underline-offset: 0.18em;
+  }
+  .bulk-upload__result-download:hover {
+    color: var(--color-secondary-500);
+  }
+  .bulk-upload__result-download-help {
+    margin-top: 0.25rem;
+  }
+
+  /* ----- Processing overlay (dialog layer per canon) ----- */
+  .bulk-upload__processing-icon {
+    width: 4.25rem;
+    height: 4.25rem;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    background: var(--color-success-bg);
+    color: var(--color-secondary-500);
+  }
+  .bulk-upload__processing-icon svg {
+    width: 2rem;
+    height: 2rem;
+    animation: bulk-upload-spin 1100ms linear infinite;
+  }
+
+  .bulk-upload__progress-block {
+    display: grid;
+    gap: 0.5rem;
+    padding-top: 1.25rem;
+    border-top: 0.0625rem solid var(--color-border);
+  }
+  .bulk-upload__progress-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--color-text-muted-strong);
+    font-size: 0.875rem;
+  }
+  .bulk-upload__progress-label strong {
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  .bulk-upload__progress-track {
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: 999rem;
+    background: var(--color-surface-subtle);
+    box-shadow: inset 0 0 0 0.0625rem var(--color-border);
+  }
+  .bulk-upload__progress-value {
+    display: block;
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-secondary-500);
+    transition: width 260ms ease;
+  }
+
+  .bulk-upload__checklist {
+    margin: 1.5rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0;
+    list-style: none;
+  }
+  .bulk-upload__checklist-item {
+    min-height: 3rem;
+    padding: 0.75rem 0;
+    border-top: 0.0625rem solid var(--color-border);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .bulk-upload__checklist-item:first-child {
+    border-top: none;
+  }
+  .bulk-upload__checklist-icon {
+    position: relative;
+    width: 1.25rem;
+    height: 1.25rem;
+    flex: 0 0 auto;
+    border: 0.125rem solid var(--color-border-strong);
+    border-radius: 50%;
+  }
+  .bulk-upload__checklist-item[data-stage-status="active"] {
+    color: var(--color-text-primary);
+  }
+  .bulk-upload__checklist-item[data-stage-status="active"]
+    .bulk-upload__checklist-icon {
+    border-color: var(--color-secondary-500);
+    border-right-color: transparent;
+    animation: bulk-upload-spin 700ms linear infinite;
+  }
+  .bulk-upload__checklist-item[data-stage-status="complete"] {
+    color: var(--color-secondary-600);
+  }
+  .bulk-upload__checklist-item[data-stage-status="complete"]
+    .bulk-upload__checklist-icon {
+    border-color: var(--color-secondary-500);
+    background: var(--color-secondary-500);
+  }
+  .bulk-upload__checklist-item[data-stage-status="complete"]
+    .bulk-upload__checklist-icon::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.35rem;
+    height: 0.65rem;
+    border-right: 0.125rem solid var(--color-background);
+    border-bottom: 0.125rem solid var(--color-background);
+    transform: translate(-50%, -58%) rotate(45deg);
+  }
+
+  .bulk-upload__processing-note {
+    margin: 1rem 0 0;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  @keyframes bulk-upload-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Hide the shadcn DialogContent's built-in X button when the
+   * processing overlay is shown (it can't be cancelled per canon) and
+   * when the result view is shown (the close button is replaced by
+   * the canon actions). The close button is a direct child of
+   * DialogPrimitive.Content with class "absolute right-4 top-4 …"
+   * (components/ui/dialog.tsx). */
+  .bulk-upload__dialog--processing > button.absolute,
+  .bulk-upload__dialog--result > button.absolute {
+    display: none;
+  }
+
+  /* ----- Bulk upload responsive ----- */
+  @media (max-width: 45rem) {
+    .bulk-upload__dropzone {
+      min-height: 16rem;
+      padding: 1.25rem 1rem;
+    }
+    .bulk-upload__selected-state {
+      justify-items: center;
+      text-align: center;
+    }
+    .bulk-upload__selected-file {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      text-align: center;
+    }
+    .bulk-upload__file-details {
+      width: 100%;
+      text-align: center;
+    }
+    .bulk-upload__actions {
+      flex-direction: column-reverse;
+    }
+    .bulk-upload__result {
+      padding: 1rem;
+    }
+    .bulk-upload__result-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .bulk-upload__result-metric {
+      border-right: 0;
+      border-bottom: 0.0625rem solid var(--color-border);
+    }
+    .bulk-upload__result-metric:nth-child(odd) {
+      border-right: 0.0625rem solid var(--color-border);
+    }
+    .bulk-upload__result-metric:nth-last-child(-n + 2) {
+      border-bottom: 0;
+    }
+    .bulk-upload__result-status {
+      align-items: center;
+      flex-direction: column;
+      text-align: center;
+    }
+    .bulk-upload__result-status-icon {
+      width: 4.75rem;
+      height: 4.75rem;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .bulk-upload__dropzone {
+      min-height: 14rem;
+      padding: 1rem 0.75rem;
+    }
+    .bulk-upload__progress-label {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .bulk-upload__result-metrics {
+      grid-template-columns: 1fr;
+    }
+    .bulk-upload__result-metric:nth-child(odd) {
+      border-right: 0;
+    }
+    .bulk-upload__result-metric:nth-last-child(-n + 2) {
+      border-bottom: 0.0625rem solid var(--color-border);
+    }
+    .bulk-upload__result-metric:last-child {
+      border-bottom: 0;
+    }
+  }
 }
