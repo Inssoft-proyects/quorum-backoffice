@@ -19,8 +19,12 @@ import {
   DeleteMarbeteRequest,
   ListAuditFilter,
   ListMarbetesFilter,
+  ListMatriculasFilter,
   RevealMarbeteRequest,
+  UnassignMarbeteRequest,
   UpdateMarbeteRequest,
+  type AssignMarbetesRequest,
+  type AssignMarbetesResponse,
   type AuditEntry,
   type BulkCreateMarbetesResponse,
   type BulkXlsxCreateResponse,
@@ -31,12 +35,15 @@ import {
   type ListDispositivosFilter,
   type ListDispositivosResponse,
   type ListMarbetesResponse,
+  type ListMatriculasResponse,
   type LoginRequest,
   type MarbeteCountersResponse,
   type MarbeteDetailResponse,
+  type MatriculasCountersResponse,
   type MeResponse,
   type OtpGrantStatusResponse,
   type RevealMarbeteResponse,
+  type SyncMatriculasResponse,
   type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
 
@@ -483,6 +490,74 @@ export async function revokeDispositivo(
     otpCode,
     cookie,
   );
+}
+
+// ---- Matrículas (WU v3 "Asignación de marbetes") ----
+//
+// Both `assignMatriculas` and `unassignMatricula` are admin + OTP-gated
+// destructive writes that follow the same grant-aware convention as
+// `createMarbete` / `updateMarbete` / `deleteMarbete`: when an OTP
+// grant is active the dialogs call these with `otpCode: undefined`
+// so the x-otp-code header is OMITTED and the server consults the
+// grant cache; otherwise the dialogs pass a 6-digit code and the
+// header IS sent.
+export async function listMatriculas(
+  filter: z.input<typeof ListMatriculasFilter>,
+  cookie?: string,
+): Promise<ListMatriculasResponse> {
+  const qs = buildQueryString({
+    status: filter.status,
+    search: filter.search,
+    isActive: filter.isActive,
+    limit: filter.limit,
+    offset: filter.offset,
+  });
+  return apiGet<ListMatriculasResponse>(`/api/v1/matriculas${qs}`, cookie);
+}
+
+export async function getMatriculasCounters(
+  cookie?: string,
+): Promise<MatriculasCountersResponse> {
+  return apiGet<MatriculasCountersResponse>('/api/v1/matriculas/counters', cookie);
+}
+
+export async function assignMatriculas(
+  req: z.input<typeof AssignMarbetesRequest>,
+  otpCode: string | undefined,
+  cookie?: string,
+): Promise<AssignMarbetesResponse> {
+  return apiPostWithOtp<AssignMarbetesResponse>(
+    '/api/v1/matriculas/assign',
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+export async function unassignMatricula(
+  req: z.input<typeof UnassignMarbeteRequest>,
+  otpCode: string | undefined,
+  cookie?: string,
+): Promise<MarbeteDetailResponse> {
+  return apiPostWithOtp<MarbeteDetailResponse>(
+    '/api/v1/matriculas/unassign',
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+/**
+ * Admin-only Canvas → students_cache sync (POST /api/v1/matriculas/sync).
+ *
+ * Not OTP-gated and not grant-eligible: a sync is a read-side cache
+ * refresh, not a destructive marbete write. The endpoint is wired
+ * through the standard `apiPost` so the request body always carries
+ * the typed empty payload; this also keeps `credentials: 'include'`
+ * consistent with every other admin call.
+ */
+export async function syncMatriculas(cookie?: string): Promise<SyncMatriculasResponse> {
+  return apiPost<SyncMatriculasResponse>('/api/v1/matriculas/sync', {}, cookie);
 }
 
 // ---- Audit (WU10) ----

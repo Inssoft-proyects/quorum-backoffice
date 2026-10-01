@@ -111,6 +111,17 @@ export const UnassignMarbeteRequest = z.object({
 export type UnassignMarbeteRequest = z.infer<typeof UnassignMarbeteRequest>;
 
 // ---- Sync response ----
+export interface AssignMarbetesResponse {
+  /** Echo of the requested pair count (1..200). */
+  total: number;
+  /**
+   * Per-pair resolution: the canvasUserId + marbeteId from the
+   * request, paired with the resolved marbete publicUid. Same order
+   * as the request.
+   */
+  pairs: { canvasUserId: number; marbeteId: number; publicUid: string }[];
+}
+
 export interface SyncMatriculasResponse {
   total: number;
   created: number;

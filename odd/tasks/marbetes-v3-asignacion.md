@@ -162,6 +162,6 @@ Cada tarea cierra con un commit work-unit (Conventional Commits) en la rama.
 | T3 | `95a12ad` | otp_grants (migración 0012), verifyOtp grant-aware (reveal exento), GET /api/v1/marbetes/otp-grant, hook useOtpGrant + diálogos Add/Revoke grant-aware; api 6 suites/56 tests, web 29 suites/142 tests; integración diferida (sin DB local) |
 | T4 | `4e819f9` | POST /api/v1/marbetes/bulk-xlsx + taxonomía de errores + workbook de errores + plantilla oficial en apps/web/public/assets/; api 7 suites/75 tests; shared+web ok |
 | T5 | `893c2ea` | Modal carga masiva rediseñado (dropzone .xlsx, overlay 6 etapas, resultado con 4 métricas de error, plantilla, errores xlsx, OTP grant-aware); web 29 suites/151 tests |
-| T6 | pendiente | — |
+| T6 | `78c9798` | GET /api/v1/matriculas + /counters, POST /assign (batch tx + OTP grant), /unassign (motivo), /sync (Canvas paging → students_cache, primer write path), migración 0013 (assigned_by + acciones audit); api 9 suites/105 tests. Follow-up: lógica de grant duplicada entre MarbetesService y MatriculasService (extraer helper compartido) |
 | T7 | pendiente | — |
 | T8 | pendiente | — |

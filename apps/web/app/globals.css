@@ -2283,4 +2283,486 @@
       border-bottom: 0;
     }
   }
+
+  /* ----- Assignment / "Asignación de marbetes" screen (WU v3) -----
+   * Per canon (/planQuorum/dev/quorum-design/design/Inec/Inec/css/assignment-marbetes.css).
+   * Ported verbatim and adapted to the existing `.inventory-page`
+   * chrome. The Reusable shell, table-pagination, app-alert, custom-select
+   * and admin-action styles above are intentionally NOT re-declared —
+   * this section only adds the assignment-specific pieces (metrics
+   * variant overrides, tabs, panels, action bar, review modal,
+   * unassign context). */
+
+  /* Per-row danger button used by the unassign modal action row.
+   * Distinct from `row-action--danger` (table row) and
+   * `btn--destructive` (Radix) because the maquette wants a quiet
+   * (outline) variant that still picks up the alert-error-text hue.
+   * Disabled state borrows the `row-action:disabled` palette. */
+  .btn--danger-quiet {
+    min-height: 2.75rem;
+    border: 1px solid var(--color-alert-error-text);
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 1rem;
+    background: var(--color-background);
+    color: var(--color-alert-error-text);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease;
+  }
+  .btn--danger-quiet:hover:not(:disabled) {
+    background: var(--color-alert-error-bg);
+  }
+  .btn--danger-quiet:focus-visible {
+    outline: 2px solid var(--color-alert-error-text);
+    outline-offset: 2px;
+  }
+  .btn--danger-quiet:disabled {
+    border-color: var(--color-disabled-bg);
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-text);
+    cursor: not-allowed;
+    opacity: 0.72;
+  }
+
+  .assignment-page { position: relative; }
+
+  /* The four-card grid: takes the existing 4-col inventory layout
+   * but lets us override it at the assignment-metrics scope without
+   * touching the marbetes / dispositivos variants. */
+  .assignment-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .assignment-metrics .assignment-metric[data-filter-source="metric"] {
+    cursor: pointer;
+    text-align: start;
+  }
+
+  /* Donut variants per canon: the Total card draws available +
+   * assigned halves with white separator bands; available / assigned
+   * cards draw a single segment + remainder. The conic-gradient is
+   * computed in the React component (DonutChart) and applied inline;
+   * these rules add the override surfaces + the white separators
+   * for the `total` variant. */
+  .assignment-metrics .metric-card__chart--total {
+    --available-angle: 180deg;
+    --assigned-angle: 180deg;
+    --chart-background: conic-gradient(
+      from -90deg,
+      var(--color-secondary-500) 0 var(--available-angle),
+      var(--color-background) var(--available-angle) calc(var(--available-angle) + 4deg),
+      var(--color-assigned-text) calc(var(--available-angle) + 4deg) calc(var(--available-angle) + 4deg + var(--assigned-angle)),
+      var(--color-surface-subtle) calc(var(--available-angle) + 4deg + var(--assigned-angle)) 360deg
+    );
+  }
+  .assignment-metrics .metric-card__chart--total::after {
+    background: conic-gradient(
+      from -90deg,
+      var(--color-background) 0 4deg,
+      transparent 4deg calc(var(--available-angle) - 4deg),
+      var(--color-background) calc(var(--available-angle) - 4deg) calc(var(--available-angle) + 4deg),
+      transparent calc(var(--available-angle) + 4deg) calc(var(--available-angle) + var(--assigned-angle)),
+      var(--color-background) calc(var(--available-angle) + var(--assigned-angle)) calc(var(--available-angle) + var(--assigned-angle) + 4deg),
+      transparent calc(var(--available-angle) + var(--assigned-angle) + 4deg) 360deg
+    );
+  }
+  .assignment-metrics .metric-card__chart--available {
+    --progress-angle: 180deg;
+    --chart-background: conic-gradient(
+      from -90deg,
+      var(--color-secondary-500) 0 var(--progress-angle),
+      var(--color-background) var(--progress-angle) calc(var(--progress-angle) + 4deg),
+      var(--color-surface-subtle) calc(var(--progress-angle) + 4deg) 360deg
+    );
+  }
+  .assignment-metrics .metric-card__chart--assigned {
+    --progress-angle: 180deg;
+    --chart-background: conic-gradient(
+      from -90deg,
+      var(--color-assigned-text) 0 var(--progress-angle),
+      var(--color-background) var(--progress-angle) calc(var(--progress-angle) + 4deg),
+      var(--color-surface-subtle) calc(var(--progress-angle) + 4deg) 360deg
+    );
+  }
+
+  .assignment-page__header { margin-block-end: var(--space-5); }
+
+  .assignment-metric { min-height: 8rem; cursor: default; }
+  .assignment-metric:hover { border-color: var(--color-border); transform: none; }
+
+  /* Inventory shortage: the "Marbetes disponibles" card flashes the
+   * alert-warning border when fewer marbetes exist than unassigned
+   * matrículas, so the operator sees the bottleneck before opening
+   * the bulk assign modal. */
+  .assignment-inventory-card.is-inventory-shortage {
+    border-color: var(--color-alert-warning-text);
+  }
+  .assignment-inventory-card.is-inventory-shortage .assignment-inventory-status {
+    color: var(--color-alert-warning-text);
+  }
+  .assignment-metric--attention {
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 0.0625rem var(--color-primary-500), var(--shadow-surface);
+  }
+
+  .assignment-workspace { display: grid; gap: var(--space-5); }
+
+  /* Tab strip + tabs: hover flips the muted text to primary; the
+   * active tab adds the secondary underline + shifts the colour. */
+  .assignment-tabs {
+    display: flex;
+    gap: var(--space-5);
+    border-block-end: 0.0625rem solid var(--color-border);
+  }
+  .assignment-tab {
+    min-height: 3rem;
+    margin-block-end: -0.0625rem;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-block-end: 0.1875rem solid transparent;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .assignment-tab:hover { color: var(--color-text-primary); }
+  .assignment-tab.is-active {
+    border-color: var(--color-secondary-500);
+    color: var(--color-secondary-600);
+  }
+  .assignment-tab span {
+    margin-inline-start: var(--space-1);
+    color: inherit;
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+
+  .assignment-panel { display: grid; gap: var(--space-4); }
+  .assignment-panel[hidden] { display: none; }
+
+  .assignment-list-header { margin-block-end: 0; }
+  .assignment-list-header h2 { color: var(--color-text-primary); }
+  .assignment-list-header__hint {
+    margin: var(--space-1) 0 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  /* Selection bar: lists the active selection count + hint, and
+   * surfaces the primary "Asignar marbetes" action when N ≥ 1. The
+   * limit message is conditionally shown when the selection reaches
+   * the available marbetes count (cannot select more rows than there
+   * are marbetes to assign). */
+  .assignment-action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
+    box-shadow: 0 0.125rem 0.5rem rgb(41 41 41 / 4%);
+  }
+  .assignment-selection-copy { display: grid; gap: 0.125rem; }
+  .assignment-selection-copy strong { color: var(--color-text-primary); font-size: var(--font-size-sm); }
+  .assignment-selection-copy span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+  .assignment-limit-message {
+    margin: calc(var(--space-3) * -1) 0 0;
+    color: var(--color-alert-warning-text);
+    font-size: var(--font-size-sm);
+  }
+
+  /* "Limpiar" pill inside the inventory-search input. Matches the
+   * maquette's small secondary-600 ghost button. */
+  .assignment-search-clear {
+    border: 0;
+    background: transparent;
+    color: var(--color-secondary-600);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+  }
+
+  /* Row checkbox (left column on the unassigned table). 18px box
+   * with accent-color tinted by the brand. `:disabled` flips the
+   * cursor so the operator understands the row is at the limit. */
+  .assignment-checkbox {
+    width: 1.125rem;
+    height: 1.125rem;
+    accent-color: var(--color-secondary-500);
+    cursor: pointer;
+  }
+  .assignment-checkbox:disabled { cursor: not-allowed; }
+
+  /* Override the global data-table centering for the matricula id
+   * column so the value reads naturally. The rest of the columns
+   * remain centered (canon row 1, paired with the checkbox). */
+  .assignment-table th:nth-child(2),
+  .assignment-table td:nth-child(2) { text-align: start; }
+  .assignment-table .data-table__id {
+    color: var(--color-text-primary);
+    font-weight: 700;
+  }
+  .assignment-table .data-table__id { white-space: nowrap; }
+  .assignment-row__action { white-space: nowrap; }
+
+  /* Empty state. Renders as a borderless box with the centred copy
+   * used by both panels when a search returns no rows. */
+  .assignment-empty {
+    padding: var(--space-8) var(--space-4);
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+  .assignment-empty strong {
+    display: block;
+    margin-block-end: var(--space-1);
+    color: var(--color-text-primary);
+  }
+
+  /* Bulk / single assign modal. Width matches the maquette (max
+   * 58rem); height is constrained by viewport so the review list
+   * scrolls independently. Grid rows map to: icon + title + close
+   * (auto) / scrollable content (minmax 0 1fr) / actions (auto). */
+  .assignment-modal {
+    width: min(100%, 58rem);
+    max-height: calc(100dvh - 3rem);
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .assignment-modal--narrow { width: min(100%, 38rem); }
+  .assignment-modal .modal-dialog__content {
+    min-height: 0;
+    gap: var(--space-4);
+    overflow: hidden;
+  }
+  .assignment-modal .modal-dialog__actions { margin-top: var(--space-5); }
+
+  /* Review list (per-row marbete picker). Sticky header inside a
+   * scrollable container so the column titles stay visible while
+   * scrolling long batches. The `.is-select-open` modifier locks
+   * overflow so the positioned dropdown menu does not cause the
+   * container to scroll-jump. */
+  .assignment-review {
+    display: grid;
+    max-height: min(22rem, 42dvh);
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+  .assignment-review.is-select-open { overflow: hidden; }
+
+  .assignment-review__header,
+  .assignment-review__row {
+    display: grid;
+    grid-template-columns: minmax(12rem, 0.85fr) minmax(0, 1.65fr);
+    align-items: center;
+    column-gap: var(--space-6);
+    row-gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+  .assignment-review__header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted-strong);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .assignment-review__row {
+    border-block-start: 0.0625rem solid var(--color-border);
+    font-size: var(--font-size-sm);
+  }
+  .assignment-review__enrollment { font-weight: 700; }
+  .assignment-review__tag { display: grid; gap: var(--space-2); }
+
+  /* The custom-select inside a review row needs to span the whole
+   * tag column. We bump the trigger height a touch to match the
+   * maquette and pin the menu to the trigger via JS (position:fixed)
+   * so it escapes the scrollable review container. */
+  .assignment-review__select { width: 100%; min-width: 0; }
+  .assignment-review__select .custom-select__trigger { min-height: 2.75rem; }
+
+  /* Searchable filter input above the option list (revealed when
+   * the operator opens a per-row picker). */
+  .assignment-review__search {
+    width: 100%;
+    min-height: 2.75rem;
+    border: 0.0625rem solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.8rem;
+    background: var(--color-background);
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+  }
+  .assignment-review__search::placeholder {
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+  .assignment-review__search:hover { border-color: var(--color-secondary-500); }
+  .assignment-review__search:focus,
+  .assignment-review__search:focus-visible {
+    border-color: var(--color-secondary-500);
+    outline: none;
+    box-shadow: 0 0 0 0.25rem rgb(53 132 86 / 14%);
+  }
+
+  /* Override the menu positioning so the dropdown can use fixed
+   * coordinates (we position it via JS to escape the scrollable
+   * container). */
+  .assignment-review__select .custom-select__menu {
+    top: auto;
+    bottom: auto;
+    z-index: 95;
+    max-height: 13rem;
+    overflow: hidden;
+  }
+  .assignment-review__select .custom-select__options {
+    min-width: 0;
+    max-height: 12rem;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-1);
+    overflow-y: auto;
+    list-style: none;
+  }
+  .assignment-review__select .custom-select__option[hidden] { display: none; }
+
+  .assignment-option-empty {
+    margin: 0;
+    padding: var(--space-2);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    text-align: center;
+  }
+
+  /* Summary bar at the foot of the bulk modal: count, availability
+   * copy, validation badge. The validation badge colour flips when
+   * a duplicate marbete is selected for two rows. */
+  .assignment-modal-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+  }
+  .assignment-modal-summary strong { color: var(--color-text-primary); }
+  .assignment-validation {
+    margin-inline-start: auto;
+    color: var(--color-success-text);
+    font-weight: 700;
+  }
+  .assignment-validation.is-invalid { color: var(--color-alert-error-text); }
+
+  /* Unassign context dl: 3-up grid of (Matrícula / Marbete / Fecha)
+   * boxes that summarise the row being unassigned. Stacks to one
+   * column at <45rem via the responsive block below. */
+  .assignment-context {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-3);
+    margin: 0;
+  }
+  .assignment-context div {
+    padding: var(--space-3);
+    border: 0.0625rem solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+  .assignment-context dt { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+  .assignment-context dd {
+    margin: var(--space-1) 0 0;
+    color: var(--color-text-primary);
+    font-weight: 700;
+  }
+
+  /* Inline error below the reason picker: hidden until the user
+   * tries to confirm without selecting a motivo. */
+  .assignment-field-error {
+    color: var(--color-alert-error-text);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+  }
+
+  /* Re-style the unassign submit button. The maquette uses an outline
+   * variant that picks up the danger hue so the row reads "this is a
+   * destructive action" without painting the entire button red. */
+  .assignment-modal [data-confirm-unassign] {
+    border-color: var(--color-alert-error-text);
+    color: var(--color-alert-error-text);
+  }
+  .assignment-modal [data-confirm-unassign]:disabled {
+    border-color: var(--color-disabled-bg);
+  }
+
+  /* Responsive: collapses the metrics grid to 2 cols on tablet, the
+   * review rows to 1 col on phone, and flattens the limit message
+   * bar to a stacked layout. Mirrors the canon @media rules. */
+  @media (max-width: 45rem) {
+    .assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .assignment-metric { min-height: 6.875rem; }
+    .assignment-modal { max-height: calc(100dvh - 2rem); }
+    .assignment-review { max-height: 38dvh; }
+    .assignment-action-bar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .assignment-action-bar .btn { width: 100%; }
+    .assignment-tabs { gap: var(--space-3); }
+    .assignment-tab { flex: 1; }
+    .assignment-review__header { display: none; }
+    .assignment-review__row {
+      grid-template-columns: 1fr;
+      gap: var(--space-2);
+    }
+    .assignment-review__tag {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .assignment-modal-summary {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .assignment-validation { margin-inline-start: 0; }
+    .assignment-context { grid-template-columns: 1fr; }
+  }
+  @media (min-width: 45.01rem) and (max-width: 64rem) {
+    .assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 64.01rem) {
+    #panel-unassigned .assignment-table th:first-child,
+    #panel-unassigned .assignment-table td:first-child {
+      width: 4rem;
+      text-align: center;
+      white-space: nowrap;
+    }
+    #panel-assigned .assignment-table { table-layout: fixed; }
+    #panel-assigned .assignment-table th:nth-child(1),
+    #panel-assigned .assignment-table td:nth-child(1) { width: 18%; }
+    #panel-assigned .assignment-table th:nth-child(2),
+    #panel-assigned .assignment-table td:nth-child(2) { width: 22%; text-align: start; }
+    #panel-assigned .assignment-table th:nth-child(3),
+    #panel-assigned .assignment-table td:nth-child(3) { width: 15%; }
+    #panel-assigned .assignment-table th:nth-child(4),
+    #panel-assigned .assignment-table td:nth-child(4) { width: 18%; }
+    #panel-assigned .assignment-table th:nth-child(5),
+    #panel-assigned .assignment-table td:nth-child(5) { width: 15%; }
+    #panel-assigned .assignment-table th:nth-child(6),
+    #panel-assigned .assignment-table td:nth-child(6) { width: 18%; }
+  }
+  @media (max-width: 30rem) {
+    .assignment-metric { min-height: 5.875rem; }
+  }
 }
