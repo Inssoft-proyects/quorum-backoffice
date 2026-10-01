@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { MarbeteDetailResponse, UserRole } from '@quorum-backoffice/shared';
 import { PlusCircle, Upload } from 'lucide-react';
@@ -21,6 +21,14 @@ import { MarbetesTable } from './marbetes-table';
 interface Props {
   items: MarbeteDetailResponse[];
   userRole: UserRole;
+}
+
+/** Auto-dismiss timeout for the global success banner (canon: 5s). */
+const APP_ALERT_AUTO_DISMISS_MS = 5000;
+
+interface InfoBanner {
+  title: string;
+  detail: string;
 }
 
 /**
@@ -162,14 +170,55 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   }
 
   const [lastRevealedCode, setLastRevealedCode] = useState<string | null>(null);
+  const [infoBanner, setInfoBanner] = useState<InfoBanner | null>(null);
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showInfoBanner(banner: InfoBanner): void {
+    if (dismissTimer.current) {
+      clearTimeout(dismissTimer.current);
+    }
+    setInfoBanner(banner);
+    dismissTimer.current = setTimeout(() => {
+      setInfoBanner(null);
+      dismissTimer.current = null;
+    }, APP_ALERT_AUTO_DISMISS_MS);
+  }
+
+  function dismissInfoBanner(): void {
+    if (dismissTimer.current) {
+      clearTimeout(dismissTimer.current);
+      dismissTimer.current = null;
+    }
+    setInfoBanner(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimer.current) {
+        clearTimeout(dismissTimer.current);
+      }
+    };
+  }, []);
 
   const handleRevealed = (fullCode: string) => {
     setLastRevealedCode(fullCode);
     refresh();
   };
 
+  const handleAdded = () => {
+    refresh();
+    showInfoBanner({
+      title: 'Marbete guardado.',
+      detail: 'Se registró en el inventario con estado Disponible.',
+    });
+  };
+
   const handleRevoked = () => {
     refresh();
+    showInfoBanner({
+      title: 'Marbete dado de baja.',
+      detail: 'El marbete dejó de estar en circulación.',
+    });
   };
 
   return (
@@ -197,7 +246,10 @@ export function MarbetesPageClient({ items, userRole }: Props) {
         ) : null}
       </header>
 
-      <section className="metrics-section" aria-label="Resumen del inventario">
+      <section className="metrics-section" aria-labelledby="metrics-title">
+        <h2 className="sr-only" id="metrics-title">
+          Indicadores del inventario
+        </h2>
         <div className="metrics-grid">
           <MetricCard
             label="Total"
@@ -233,6 +285,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
             meta="Atención"
             active={filter === 'attention'}
             percentageLabel={`${Math.round((counts.porAtender / Math.max(counts.total, 1)) * 100)}% del total`}
+            percentageAriaLabel={`${Math.round((counts.porAtender / Math.max(counts.total, 1)) * 100)}% del inventario requiere atención`}
             pills={
               counts.porAtender > 0
                 ? [
@@ -304,7 +357,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
       <AddMarbeteDialog
         open={adding}
         onOpenChange={setAdding}
-        onSaved={refresh}
+        onSaved={handleAdded}
       />
       <RevealMarbeteDialog
         marbeteId={revealing?.id ?? 0}
@@ -322,6 +375,52 @@ export function MarbetesPageClient({ items, userRole }: Props) {
         }}
         onRevoked={handleRevoked}
       />
+
+      {/* Global dismissable success banner (canon: .app-alert in
+       * components.css). Shown after Add / Revoke successes. Reveal
+       * keeps its own reveal-confirmation banner below the table to
+       * preserve the existing UX. */}
+      <div
+        className="app-alert app-alert--success"
+        role="status"
+        aria-live="polite"
+        data-testid="app-alert-success"
+        hidden={infoBanner === null}
+      >
+        <span className="app-alert__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path
+              d="m6.5 12.5 3.5 3.5 7.5-8"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.5}
+            />
+          </svg>
+        </span>
+        <p className="app-alert__message">
+          <strong data-testid="app-alert-title">{infoBanner?.title ?? ''}</strong>{' '}
+          <span data-testid="app-alert-detail">{infoBanner?.detail ?? ''}</span>
+        </p>
+        <button
+          type="button"
+          className="app-alert__close"
+          aria-label="Cerrar alerta"
+          data-testid="app-alert-close"
+          onClick={dismissInfoBanner}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="m6 6 12 12M18 6 6 18"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth={2}
+            />
+          </svg>
+        </button>
+      </div>
       <BulkUploadDialog
         open={bulkOpen}
         onOpenChange={setBulkOpen}

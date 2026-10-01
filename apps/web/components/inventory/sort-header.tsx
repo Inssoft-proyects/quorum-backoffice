@@ -17,6 +17,12 @@ export interface SortHeaderProps {
   onSort: (key: string) => void;
   align?: 'left' | 'right';
   className?: string;
+  /** Accessible label announced by screen readers when activating the
+   * sort button in the "ascending" direction. Matches the
+   * maquette's `aria-label` on the `<button class="sort-button">`. */
+  ariaLabel?: string;
+  /** Sort state when the column is inactive. Defaults to "none". */
+  ariaSortDefault?: 'none' | 'ascending' | 'descending';
 }
 
 /**
@@ -36,6 +42,8 @@ export function SortHeader({
   onSort,
   align = 'left',
   className,
+  ariaLabel,
+  ariaSortDefault = 'none',
 }: SortHeaderProps) {
   const isActive = currentSort?.key === sortKey;
   const direction = isActive ? currentSort?.direction : null;
@@ -55,14 +63,17 @@ export function SortHeader({
           ? 'ascending'
           : direction === 'desc'
             ? 'descending'
-            : 'none'
+            : ariaSortDefault
       }
+      data-sort-key={sortKey}
     >
       <button
         type="button"
         className={cn('sort-button', isActive && 'is-active')}
         data-sort-direction={dataAttr}
+        data-sort-key={sortKey}
         data-testid={`sort-${sortKey}`}
+        aria-label={ariaLabel ?? `Ordenar ${label}`}
         onClick={() => onSort(sortKey)}
       >
         <span>{label}</span>
