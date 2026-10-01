@@ -5,6 +5,15 @@
  *   - OTP is enforced on POST/PATCH/DELETE via X-OTP-Code header
  *   - Every destructive op also emits an audit_log entry (via AuditService)
  *
+ * WU #5 (v3 destroy grant):
+ *   - Destructive marbete ops (create / update+assign / delete /
+ *     bulk_create) consult a per-actor grant cache before requiring
+ *     an OTP. Within an active 20-minute window the operator may
+ *     proceed WITHOUT re-entering an OTP. `marbete.reveal` always
+ *     requires a fresh per-op OTP and is NOT grant-eligible.
+ *   - GET /api/v1/marbetes/otp-grant exposes the actor's current
+ *     window so the UI can hide the OTP field while it is active.
+ *
  * Auth (WU6) replaces `x-test-actor` with `req.session.user.id`.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -17,9 +26,11 @@ import {
   MarbeteIdParam,
   RevealMarbeteRequest,
   UpdateMarbeteRequest,
+  type OtpGrantStatusResponse,
 } from '@quorum-backoffice/shared';
 import { MarbetesService } from '../services/marbetes-service';
 import { OtpClient } from '../services/otp-client';
+import { OtpGrantService } from '../services/otp-grant-service';
 import { requireSession, requireRole } from '../plugins/rbac';
 import { parseCsvCodes } from '../lib/marbete-id';
 
@@ -45,17 +56,45 @@ export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void
     serviceToken: app.config.OTP_SERVICE_TOKEN,
   });
 
+  // Per-actor OTP grant cache. TTL is driven by config so operators can
+  // tune the window per environment. The service stays constructable
+  // without it (existing tests that omit `deps.grant` keep the strict
+  // per-op OTP behaviour).
+  const grantTtlMs = app.config.OTP_GRANT_TTL_MINUTES * 60 * 1000;
+  const grant = new OtpGrantService(app.pg as unknown as import('pg').Pool, {
+    ttlMs: grantTtlMs,
+  });
+
   const getService = (): MarbetesService =>
     new MarbetesService({
       pool: app.pg as unknown as import('pg').Pool,
       log: app.log,
       otp,
+      grant,
     });
 
   app.get('/api/v1/marbetes/counters', { preHandler: requireSession() }, async () => {
     const svc = getService();
     return svc.counters();
   });
+
+  // WU #5 (v3 destroy grant): expose the session actor's grant cache so
+  // the UI can decide whether to hide the OTP input field. Backoffice
+  // uses the same response shape regardless of whether the cache is
+  // configured: `{ active: false, expiresAt: null }` means "OTP
+  // required", which is the safe default for an environment that has
+  // not wired the grant service.
+  app.get<{ Reply: OtpGrantStatusResponse }>(
+    '/api/v1/marbetes/otp-grant',
+    { preHandler: requireSession() },
+    async (req, reply) => {
+      const actor = actorFromRequest(req);
+      const svc = getService();
+      const status = await svc.getGrantStatus(actor);
+      reply.header('cache-control', 'no-store');
+      return status;
+    },
+  );
 
   app.get('/api/v1/marbetes', { preHandler: requireSession() }, async (req) => {
     const filter = ListMarbetesFilter.parse(req.query);

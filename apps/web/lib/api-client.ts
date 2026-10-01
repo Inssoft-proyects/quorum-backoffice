@@ -33,6 +33,7 @@ import {
   type MarbeteCountersResponse,
   type MarbeteDetailResponse,
   type MeResponse,
+  type OtpGrantStatusResponse,
   type RevealMarbeteResponse,
   type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
@@ -121,15 +122,14 @@ async function apiPost<T>(path: string, body: unknown, cookie?: string): Promise
 async function apiDeleteWithOtp<T>(
   path: string,
   body: object,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<T> {
+  const extra: Record<string, string> = { 'content-type': 'application/json' };
+  if (otpCode !== undefined) extra['x-otp-code'] = otpCode;
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
-    headers: buildHeaders(cookie, {
-      'content-type': 'application/json',
-      'x-otp-code': otpCode,
-    }),
+    headers: buildHeaders(cookie, extra),
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -140,15 +140,14 @@ async function apiDeleteWithOtp<T>(
 async function apiPostWithOtp<T>(
   path: string,
   body: object,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<T> {
+  const extra: Record<string, string> = { 'content-type': 'application/json' };
+  if (otpCode !== undefined) extra['x-otp-code'] = otpCode;
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: buildHeaders(cookie, {
-      'content-type': 'application/json',
-      'x-otp-code': otpCode,
-    }),
+    headers: buildHeaders(cookie, extra),
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -159,15 +158,14 @@ async function apiPostWithOtp<T>(
 async function apiPatchWithOtp<T>(
   path: string,
   body: object,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<T> {
+  const extra: Record<string, string> = { 'content-type': 'application/json' };
+  if (otpCode !== undefined) extra['x-otp-code'] = otpCode;
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'PATCH',
-    headers: buildHeaders(cookie, {
-      'content-type': 'application/json',
-      'x-otp-code': otpCode,
-    }),
+    headers: buildHeaders(cookie, extra),
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -230,6 +228,20 @@ export async function getMarbeteCounters(cookie?: string): Promise<MarbeteCounte
   return apiGet<MarbeteCountersResponse>('/api/v1/marbetes/counters', cookie);
 }
 
+/**
+ * Read the session actor's current OTP grant window for the marbete
+ * scope family. The dialogs (add / revoke) call this on open and use
+ * the response to decide whether to hide the OTP input field.
+ *
+ * `OtpGrantStatusResponse` is the shared DTO contract (see
+ * packages/shared/src/dto/marbete.ts). When the grant service is not
+ * configured the server returns `{ active: false, expiresAt: null }`,
+ * which the dialogs treat as "OTP required" — the safe default.
+ */
+export async function getMarbeteOtpGrant(cookie?: string): Promise<OtpGrantStatusResponse> {
+  return apiGet<OtpGrantStatusResponse>('/api/v1/marbetes/otp-grant', cookie);
+}
+
 export async function listMarbetes(
   filter: z.input<typeof ListMarbetesFilter>,
   cookie?: string,
@@ -251,7 +263,7 @@ export async function getMarbete(id: number, cookie?: string): Promise<MarbeteDe
 export async function deleteMarbete(
   id: number,
   req: DeleteMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
   return apiDeleteWithOtp<MarbeteDetailResponse>(
@@ -276,7 +288,7 @@ export async function getStudentByCanvasId(
 
 export async function createMarbete(
   req: CreateMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
   return apiPostWithOtp<MarbeteDetailResponse>('/api/v1/marbetes', req, otpCode, cookie);
@@ -285,7 +297,7 @@ export async function createMarbete(
 export async function updateMarbete(
   id: number,
   req: UpdateMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
   return apiPatchWithOtp<MarbeteDetailResponse>(
@@ -299,7 +311,7 @@ export async function updateMarbete(
 export async function revealMarbete(
   id: number,
   req: RevealMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<RevealMarbeteResponse> {
   return apiPostWithOtp<RevealMarbeteResponse>(

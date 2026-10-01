@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { PlusCircle } from 'lucide-react';
 import { ApiError, createMarbete } from '@/lib/api-client';
 import {
@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
+import { useOtpGrant } from './use-otp-grant';
 
 export interface AddMarbeteDialogProps {
   open: boolean;
@@ -34,6 +35,13 @@ export interface AddMarbeteDialogProps {
  * (or any error), we surface it inline — the dialog's UX stays clean while
  * the parent remains the only place that needs to know about OTP plumbing.
  *
+ * WU #5 (v3 destroy grant): the dialog consumes `useOtpGrant` and,
+ * while the session actor has an active 20-minute window for the
+ * marbete scope family, the OTP input is replaced by an
+ * "OTP vigente hasta HH:MM" note and the request is submitted without
+ * the `x-otp-code` header. When the grant is missing the dialog
+ * falls back to today's OTP-required behaviour.
+ *
  * Validation mirror: matches CreateMarbeteRequest (code 8-128 chars, all
  * digits per the maquette's input pattern). Submit is disabled while the
  * input fails the rule.
@@ -42,8 +50,23 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const grant = useOtpGrant();
 
   const valid = /^\d{8,128}$/.test(code);
+  const grantActive = grant.status?.active === true;
+
+  // Refresh grant status whenever the dialog is opened. The hook also
+  // fires on mount, but a parent that toggles `open` rapidly without
+  // unmounting would otherwise read the stale status from the last
+  // successful op.
+  useEffect(() => {
+    if (open) {
+      void grant.refresh();
+    }
+    // grant.refresh is stable per the hook contract; depending on it
+    // would re-run the effect on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function reset() {
     setCode('');
@@ -65,11 +88,18 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
     setLoading(true);
     setError(null);
     try {
-      // Maquette is silent on OTP plumbing — we pass an empty string which
-      // will fail server-side with `otp_required` if OTP enforcement is on.
-      // The Alert renders that error message so the UX degrades gracefully.
-      await createMarbete({ code }, '');
+      // Submit without the x-otp-code header when a grant is active;
+      // otherwise pass an empty string which fails server-side with
+      // `otp_required` if OTP enforcement is on. The Alert renders
+      // that error so the UX degrades gracefully.
+      const otpCode: string | undefined = grantActive ? undefined : '';
+      await createMarbete({ code }, otpCode);
       reset();
+      // Refresh grant status before unmount so the next dialog open
+      // reads a fresh value (the destructive op may have minted a
+      // grant). The dialog closes immediately so the refresh happens
+      // in the background.
+      void grant.refresh();
       onSaved();
       onOpenChange(false);
     } catch (err) {
@@ -86,6 +116,14 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
       setLoading(false);
     }
   }
+
+  const expiresAt = grant.status?.expiresAt ?? null;
+  const expiresLabel = expiresAt
+    ? new Date(expiresAt).toLocaleTimeString('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -140,6 +178,16 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
               Solo dígitos numéricos. Se enmascarará una vez registrado por seguridad.
             </p>
           </div>
+
+          {grantActive && expiresLabel ? (
+            <Alert
+              variant="success"
+              role="status"
+              data-testid="add-marbete-grant-note"
+            >
+              OTP vigente hasta {expiresLabel}. No necesitas capturar un c\u00f3digo nuevo.
+            </Alert>
+          ) : null}
 
           <DialogFooter className="modal-dialog__actions">
             <Button

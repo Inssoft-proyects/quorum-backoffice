@@ -170,3 +170,26 @@ export interface BulkCreateMarbetesResponse {
   failures: BulkCreateMarbeteFailure[];
   auditId: number | null;
 }
+
+// ---- OTP grant status (20-minute destructive-marbetel window) ----
+//
+// After an actor verifies a fresh single-use OTP against quorum-otp for
+// a grant-eligible scope (`marbete.create`, `marbete.update`,
+// `marbete.delete`, `marbete.bulk_create`), the BackOffice records a
+// per-actor grant row with a TTL window (default 20 minutes,
+// configurable via `OTP_GRANT_TTL_MINUTES`). Further destructive ops
+// within the window proceed WITHOUT re-entering an OTP. `marbete.reveal`
+// is intentionally NOT grant-eligible: every reveal still requires a
+// fresh per-op OTP.
+//
+// The UI calls `GET /api/v1/marbetes/otp-grant` once on dialog open and
+// uses the result to decide whether to hide the OTP input field.
+export interface OtpGrantStatusResponse {
+  /** True when the actor has an unexpired grant for the marbete scope. */
+  active: boolean;
+  /**
+   * ISO 8601 timestamp of the grant's expiry. `null` when `active` is
+   * false (the UI treats that case as "OTP required").
+   */
+  expiresAt: string | null;
+}

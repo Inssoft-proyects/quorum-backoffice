@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Ban } from 'lucide-react';
 import { ApiError, deleteMarbete } from '@/lib/api-client';
 import { Alert } from '@/components/ui/alert';
@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useOtpGrant } from './use-otp-grant';
 
 export interface RevokeMarbeteDialogProps {
   marbeteId: number;
@@ -37,6 +38,13 @@ const REASONS: ReadonlyArray<{ value: string; label: string }> = [
  * delete-dialog. Reuses the same `deleteMarbete` API contract (still
  * gated by OTP) but with the redesign's motivo / comment shape and
  * maquette styling.
+ *
+ * WU #5 (v3 destroy grant): the dialog consumes `useOtpGrant` and,
+ * while the session actor has an active 20-minute window for the
+ * marbete scope family, the request is submitted without the
+ * `x-otp-code` header and a green "OTP vigente hasta HH:MM" note is
+ * rendered. When the grant is missing the dialog falls back to
+ * today's OTP-required behaviour.
  */
 export function RevokeMarbeteDialog({
   marbeteId,
@@ -48,11 +56,22 @@ export function RevokeMarbeteDialog({
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const grant = useOtpGrant();
 
   // The API requires >= 3 chars in `reason`; we reject entirely empty
   // values at the dialog level so the maquette's "Motivo obligatorio"
   // expectation maps to a single selectable reason (maquette behavior).
   const valid = reason.length > 0;
+  const grantActive = grant.status?.active === true;
+
+  // Refresh grant status whenever the dialog is opened. See the matching
+  // hook in add-marbete-dialog.tsx for the rationale.
+  useEffect(() => {
+    if (open) {
+      void grant.refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function reset() {
     setReason('');
@@ -80,8 +99,14 @@ export function RevokeMarbeteDialog({
       const composed = comment.trim()
         ? `${REASONS.find((r) => r.value === reason)?.label ?? reason}: ${comment.trim()}`
         : REASONS.find((r) => r.value === reason)?.label ?? reason;
-      await deleteMarbete(marbeteId, { reason: composed }, '');
+      const otpCode: string | undefined = grantActive ? undefined : '';
+      await deleteMarbete(marbeteId, { reason: composed }, otpCode);
       reset();
+      // Refresh grant status before unmount so the next dialog open
+      // reads a fresh value (the destructive op may have minted a
+      // grant). The dialog closes immediately so the refresh happens
+      // in the background.
+      void grant.refresh();
       onRevoked();
       onOpenChange(false);
     } catch (err) {
@@ -100,6 +125,14 @@ export function RevokeMarbeteDialog({
       setLoading(false);
     }
   }
+
+  const expiresAt = grant.status?.expiresAt ?? null;
+  const expiresLabel = expiresAt
+    ? new Date(expiresAt).toLocaleTimeString('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -169,6 +202,16 @@ export function RevokeMarbeteDialog({
               data-testid="deactivate-comment"
             />
           </div>
+
+          {grantActive && expiresLabel ? (
+            <Alert
+              variant="success"
+              role="status"
+              data-testid="revoke-marbete-grant-note"
+            >
+              OTP vigente hasta {expiresLabel}. No necesitas capturar un c\u00f3digo nuevo.
+            </Alert>
+          ) : null}
 
           <DialogFooter className="modal-dialog__actions">
             <Button

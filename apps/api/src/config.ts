@@ -39,6 +39,23 @@ const ConfigSchema = z.object({
   LOGIN_OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   LOGIN_OTP_REQUEST_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
 
+  /**
+   * 20-minute OTP grant window for destructive marbete operations.
+   *
+   * When an admin verifies a fresh single-use 6-digit OTP against
+   * quorum-otp for a grant-eligible scope (today: `marbete.create`,
+   * `marbete.update`, `marbete.delete`, `marbete.bulk_create`), the
+   * BackOffice records a grant row that lets the actor skip the
+   * per-op OTP verify for this many minutes. `marbete.reveal` is
+   * intentionally NOT grant-eligible.
+   *
+   * Stored as minutes for readability; converted to milliseconds at
+   * use site (see OtpGrantService). Operators set this per
+   * environment — production may want a longer or shorter window
+   * depending on operational risk tolerance.
+   */
+  OTP_GRANT_TTL_MINUTES: z.coerce.number().int().positive().default(20),
+
   ALLOWED_ORIGIN: z.string().url().optional(),
 
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
