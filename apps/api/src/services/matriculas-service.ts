@@ -76,6 +76,31 @@ const ASSIGN_GRANT_SCOPES = new Set(['marbete.update']);
 const SYNC_MAX_ROWS = 20_000;
 const SYNC_PAGE_LIMIT = 100;
 
+/**
+ * Local extension of `SyncMatriculasResponse` (the shared DTO lives
+ * in `packages/shared/src/dto/matricula.ts` and is intentionally
+ * NOT widened — the backoffice-applicable F4 follow-up only
+ * adds two fields that operators read from the sync log:
+ *
+ *   - `deactivated`: rows flipped to `is_active=false` because the
+ *     latest sync walked a COMPLETE Canvas roster and they were no
+ *     longer in it. Zero on incomplete syncs.
+ *   - `incomplete`: true when the sync could not walk the full
+ *     roster (cap hit, total mismatch, empty roster). When true, no
+ *     rows were deactivated.
+ *
+ * Fastify serialises the extra fields straight into the JSON
+ * response (the shared DTO is a TypeScript hint, not a wire
+ * contract); the route keeps its existing `Reply: SyncMatriculasResponse`
+ * declaration because the local type extends the shared one.
+ */
+export type SyncMatriculasResult = SyncMatriculasResponse & {
+  /** Number of cached rows marked is_active=false on a complete sync. */
+  deactivated: number;
+  /** True when the sync did NOT walk the full Canvas roster. */
+  incomplete: boolean;
+};
+
 export interface AssignValidationError {
   index: number;
   code: string;
@@ -441,10 +466,26 @@ export class MatriculasService {
 
   /**
    * Page through CanvasClient.listStudents and upsert into
-   * students_cache. The portal-api's `/v1/students` endpoint does
-   * NOT surface an enrollment/active field, so every returned row
-   * is treated as `is_active=true`; rows missing from the latest
-   * sync are deliberately NOT auto-deactivated (follow-up work).
+   * students_cache.
+   *
+   * F4 follow-up: when the sync walked a COMPLETE Canvas roster
+   * (pages cover the published total, total > 0, and neither the
+   * 20k row cap nor the 200-page cap fired), the service hands the
+   * full synced id list to `PgMatriculasRepo.deactivateMissing`,
+   * which marks every cached row that is `is_active=TRUE` and is
+   * NOT in the list as `is_active=FALSE`. The local response
+   * shape (`SyncMatriculasResult`) extends `SyncMatriculasResponse`
+   * with `deactivated` (count of rows flipped) and `incomplete`
+   * (true when we did NOT walk the full roster).
+   *
+   * The portal-api /v1/students endpoint does not expose per-user
+   * enrollment status, so the deactivation relies on ABSENCE from the
+   * roster — if a student drops out of the published total we mark
+   * them inactive. Incomplete rosters (cap hit, partial-page early
+   * termination where the upstream advertises more rows, or an
+   * empty roster) MUST NOT trigger deactivation: a partial snapshot
+   * is unsafe to use as a "still enrolled" signal, and we surface
+   * `incomplete: true` so operators know to investigate.
    *
    * No audit row is written: the sync is read-only toward Canvas
    * and only mutates the local cache. The action enum does not
@@ -454,7 +495,7 @@ export class MatriculasService {
   async sync(
     actor: string,
     _meta: RequestMeta = {},
-  ): Promise<SyncMatriculasResponse> {
+  ): Promise<SyncMatriculasResult> {
     if (!this.canvas) {
       throw new AppError(
         'canvas_client_not_configured',
@@ -466,10 +507,19 @@ export class MatriculasService {
     const startedAt = Date.now();
     let offset = 0;
     let total = 0;
+    // Track the upstream total we saw on the last page so the post-
+    // loop completeness check compares apples (e.g. a partial page
+    // that exits via `items.length < SYNC_PAGE_LIMIT` still has a
+    // `response.total` higher than what we actually ingested).
+    let lastResponseTotal = 0;
     let created = 0;
     let updated = 0;
     let unchanged = 0;
     let skipped = 0;
+    // Accumulate canvas_user_ids across iterations so the
+    // deactivation call gets the full list (a single UPDATE with
+    // an array parameter, per the F4 trade-off).
+    const syncedCanvasIds: number[] = [];
 
     // Hard cap on the number of rows we will ingest in a single
     // sync to avoid an infinite loop when the upstream returns
@@ -488,6 +538,9 @@ export class MatriculasService {
         fullName: s.full_name,
         email: s.email,
       }));
+      // Record them on every iteration so the deactivation call gets
+      // the union of every page (order is irrelevant to the SQL).
+      for (const s of items) syncedCanvasIds.push(s.canvas_user_id);
       const result = await this.repo.upsertMany(upsertRows);
       created += result.inserted;
       updated += result.updated;
@@ -502,6 +555,7 @@ export class MatriculasService {
 
       total += items.length;
       offset += items.length;
+      lastResponseTotal = response.total;
 
       if (items.length < SYNC_PAGE_LIMIT) break;
       if (offset >= response.total) break;
@@ -520,13 +574,41 @@ export class MatriculasService {
     // without a breaking change.
     skipped = 0;
 
+    // Completeness rule (F4): the sync walked a COMPLETE roster iff
+    //   1. at least one Canvas row was ingested (`total > 0`), AND
+    //   2. the loop terminated WITHOUT triggering the cap (the loop
+    //      throws on cap hit, so the fact we are here means the cap
+    //      did not fire), AND
+    //   3. the rows ingested equals the last upstream-published total
+    //      (`total === lastResponseTotal`).
+    // When any condition fails we surface `incomplete=true` and
+    // DO NOT call `deactivateMissing`: a partial snapshot is unsafe
+    // to use as a "still enrolled" signal because the rows we did
+    // NOT see might just be late in the page sequence.
+    const complete = total > 0 && total === lastResponseTotal;
+    const incomplete = !complete;
+
+    let deactivated = 0;
+    if (complete) {
+      deactivated = await this.repo.deactivateMissing(syncedCanvasIds);
+    }
+
     const durationMs = Date.now() - startedAt;
 
     // No audit row: the sync is read-only toward Canvas and the
     // audit_action enum does not have a 'matricula.sync' value.
     // Piggy-backing on a marbete action would mislead auditors.
 
-    return { total, created, updated, unchanged, skipped, durationMs };
+    return {
+      total,
+      created,
+      updated,
+      unchanged,
+      skipped,
+      durationMs,
+      deactivated,
+      incomplete,
+    };
   }
 
   // ---- Internals ----

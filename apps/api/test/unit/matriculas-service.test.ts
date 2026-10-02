@@ -71,6 +71,16 @@ interface MockOptions {
   captured?: CapturedQuery[];
   /** Captured INSERT INTO audit_log payloads (entity_type, after_jsonb). */
   auditInserts?: { entityType: string | null; afterJson: unknown }[];
+  /**
+   * Captured deactivation UPDATE calls (the F4 follow-up
+   * `UPDATE students_cache SET is_active = FALSE ... NOT
+   * (canvas_user_id = ANY($1))` issued after a complete sync).
+   * Default handler returns rowCount=0 unless `deactivationResult`
+   * is overridden.
+   */
+  deactivationCalls?: { sql: string; params: unknown[] }[];
+  /** rowCount returned by the deactivation UPDATE. */
+  deactivationResult?: number;
 }
 
 /**
@@ -118,6 +128,8 @@ function makePool(opts: MockOptions = {}): pg.Pool {
   const responses = opts.responses ?? [];
   const captured = opts.captured ?? [];
   const auditInserts = opts.auditInserts ?? [];
+  const deactivationCalls = opts.deactivationCalls ?? [];
+  const deactivationResult = opts.deactivationResult ?? 0;
 
   const queue = [...responses];
 
@@ -183,6 +195,16 @@ function makePool(opts: MockOptions = {}): pg.Pool {
         const afterJson = afterJsonText ? JSON.parse(afterJsonText) : null;
         auditInserts.push({ entityType, afterJson });
         return { rows: [] } as unknown as T;
+      }
+
+      // Deactivation UPDATE (F4 follow-up): sync calls
+      // `repo.deactivateMissing(syncedIds)` only after a COMPLETE
+      // Canvas roster walk; the handler captures the call so
+      // complete/incomplete tests can assert it. Incomplete rosters
+      // never reach this branch.
+      if (/UPDATE students_cache\s+SET is_active = FALSE/i.test(sql)) {
+        deactivationCalls.push({ sql, params });
+        return { rows: [], rowCount: deactivationResult } as unknown as T;
       }
 
       // Hand-out queued response
@@ -729,6 +751,144 @@ describe('MatriculasService.sync — paging math + upsert counts', () => {
     expect(r.created).toBe(1);
     expect(r.updated).toBe(3);
     expect(r.unchanged).toBe(0);
+  });
+
+  it('complete roster: deactivates cached rows missing from the roster and reports the count', async () => {
+    // 3 items on a single page, total=3 → complete (no caps hit).
+    // 5 cached rows are now absent from Canvas → 5 deactivations.
+    const canvas = makeCanvasClient([
+      {
+        total: 3,
+        items: [
+          { id: 1, canvas_user_id: 101, full_name: 'A', email: 'a@x' },
+          { id: 2, canvas_user_id: 102, full_name: 'B', email: 'b@x' },
+          { id: 3, canvas_user_id: 103, full_name: 'C', email: 'c@x' },
+        ],
+      },
+    ]);
+    // upsertMany returns 3 inserted (xmax=0). The deactivation UPDATE
+    // is matched by the dedicated handler and returns rowCount=5.
+    const responses = [
+      {
+        rows: [
+          { canvas_user_id: 101, xmax: 0 },
+          { canvas_user_id: 102, xmax: 0 },
+          { canvas_user_id: 103, xmax: 0 },
+        ],
+      },
+    ];
+    const deactivationCalls: { sql: string; params: unknown[] }[] = [];
+    const pool = makePool({ responses, deactivationCalls, deactivationResult: 5 });
+    const svc = buildService({ pool, canvas: canvas.client });
+    const r = await svc.sync('admin');
+    expect(r).toMatchObject({
+      total: 3,
+      created: 3,
+      updated: 0,
+      unchanged: 0,
+      skipped: 0,
+      incomplete: false,
+      deactivated: 5,
+    });
+    // deactivateMissing was called once, with the full synced id list
+    // in the $1 array parameter, and the WHERE clause negates the
+    // canvas_user_id = ANY($1) predicate (the F4 trade-off: a single
+    // UPDATE per complete sync).
+    expect(deactivationCalls).toHaveLength(1);
+    const call = deactivationCalls[0]!;
+    expect(call.params[0]).toEqual([101, 102, 103]);
+    expect(call.sql).toMatch(/UPDATE students_cache/i);
+    expect(call.sql).toMatch(/SET is_active = FALSE/i);
+    // Allow `$1` or `$1::bigint[]` — Postgres uses `::bigint[]` as
+    // the array type hint. The cast is optional in the SQL.
+    expect(call.sql).toMatch(/NOT \(canvas_user_id = ANY\(\$1(?:::bigint\[\])?\)\)/i);
+  });
+
+  it('incomplete roster (partial page where response.total > items.length) → no deactivation', async () => {
+    // 50 items returned, response.total=200 → loop exits via
+    // `items.length < SYNC_PAGE_LIMIT` after a SINGLE iteration, but
+    // 50 < 200 → incomplete. deactivateMissing MUST NOT be called.
+    const items = Array.from({ length: 50 }, (_, i) => ({
+      id: i + 1,
+      canvas_user_id: 1000 + i,
+      full_name: `S${i}`,
+      email: `s${i}@x`,
+    }));
+    const canvas = makeCanvasClient([{ total: 200, items }]);
+    const responses = [
+      { rows: items.map((r) => ({ canvas_user_id: r.canvas_user_id, xmax: 0 })) },
+    ];
+    const deactivationCalls: { sql: string; params: unknown[] }[] = [];
+    const pool = makePool({ responses, deactivationCalls });
+    const svc = buildService({ pool, canvas: canvas.client });
+    const r = await svc.sync('admin');
+    expect(r).toMatchObject({
+      total: 50,
+      incomplete: true,
+      deactivated: 0,
+    });
+    expect(deactivationCalls).toHaveLength(0);
+  });
+
+  it('incomplete roster (empty roster, total=0) → no deactivation', async () => {
+    const canvas = makeCanvasClient([{ total: 0, items: [] }]);
+    const deactivationCalls: { sql: string; params: unknown[] }[] = [];
+    const pool = makePool({ deactivationCalls });
+    const svc = buildService({ pool, canvas: canvas.client });
+    const r = await svc.sync('admin');
+    expect(r).toMatchObject({
+      total: 0,
+      incomplete: true,
+      deactivated: 0,
+    });
+    expect(deactivationCalls).toHaveLength(0);
+  });
+
+  it('complete multi-page roster: deactivateMissing receives the union of all page ids', async () => {
+    // Triangulate the multi-page complete path: two FULL pages of
+    // 100 → loop terminates via `offset >= response.total` (200/200).
+    // The deactivation call must receive ALL 200 ids, not just the
+    // last page's.
+    const fullPage = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      canvas_user_id: 1000 + i,
+      full_name: `S${i}`,
+      email: `s${i}@x`,
+    }));
+    const secondPage = Array.from({ length: 100 }, (_, i) => ({
+      id: 100 + i + 1,
+      canvas_user_id: 2000 + i,
+      full_name: `T${i}`,
+      email: `t${i}@x`,
+    }));
+    const canvas = makeCanvasClient([
+      { total: 200, items: fullPage },
+      { total: 200, items: secondPage },
+    ]);
+    const responses = [
+      { rows: fullPage.map((r) => ({ canvas_user_id: r.canvas_user_id, xmax: 0 })) },
+      { rows: secondPage.map((r) => ({ canvas_user_id: r.canvas_user_id, xmax: 0 })) },
+    ];
+    const deactivationCalls: { sql: string; params: unknown[] }[] = [];
+    const pool = makePool({
+      responses,
+      deactivationCalls,
+      deactivationResult: 7,
+    });
+    const svc = buildService({ pool, canvas: canvas.client });
+    const r = await svc.sync('admin');
+    expect(r).toMatchObject({
+      total: 200,
+      created: 200,
+      incomplete: false,
+      deactivated: 7,
+    });
+    expect(deactivationCalls).toHaveLength(1);
+    const ids = deactivationCalls[0]!.params[0] as number[];
+    // The id list is the union of both pages, in ingestion order.
+    expect(ids).toHaveLength(200);
+    expect(ids.slice(0, 100)).toEqual(fullPage.map((x) => x.canvas_user_id));
+    expect(ids.slice(100, 200)).toEqual(secondPage.map((x) => x.canvas_user_id));
   });
 });
 

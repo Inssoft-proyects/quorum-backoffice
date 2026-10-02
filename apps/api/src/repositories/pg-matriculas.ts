@@ -13,6 +13,11 @@
  *     ON CONFLICT (canvas_user_id) DO UPDATE so an out-of-order
  *     sync page still converges. The sync flow sets `is_active=true`
  *     and `last_synced_at=now()` on every matched row.
+ *   - deactivateMissing: the F4 follow-up deactivation path. After
+ *     a COMPLETE Canvas roster walk, the service hands the full list
+ *     of synced canvas_user_ids here to mark every cache row that
+ *     is still active AND is NOT in the list as `is_active=false`.
+ *     See the method doc-comment for the trade-off discussion.
  *
  * Naming: rows keep snake_case at the SQL boundary; the service
  * translates to camelCase DTOs. The public-API row type extends the
@@ -310,5 +315,51 @@ export class PgMatriculasRepo {
       else updated += 1;
     }
     return { inserted, updated };
+  }
+
+  /**
+   * F4 follow-up: deactivate cached rows missing from the latest
+   * Canvas roster walk.
+   *
+   * Single UPDATE statement with a `NOT (canvas_user_id = ANY($1))`
+   * predicate. Efficient enough for the 20k sync cap: the `id =` index
+   * family + the bitmap-OR of the negated ANY array keep the planner on
+   * a sequential scan over `students_cache` (the table is small at
+   * 20k rows). The trade-off — one UPDATE per complete sync instead
+   * of a per-row DELETE — is documented in the parent task: we want
+   * the "missing from the roster" transition to converge in O(1)
+   * round-trips, not O(N).
+   *
+   * `last_synced_at` is bumped to `now()` for deactivated rows too:
+   * the row DID receive a sync event (the "you're gone" event), and
+   * keeping the timestamp fresh means a UI filter "synced in the last
+   * 24h" still surfaces a clean state to operators.
+   *
+   * Pre-condition (caller-enforced): `canvasUserIds` is the COMPLETE
+   * set of ids the latest sync ingested. If the caller passes an
+   * incomplete list, this method will deactivate rows that are
+   * still active in Canvas — the service guards against this by only
+   * calling it when the loop walked every Canvas row (see
+   * `MatriculasService.sync`).
+   *
+   * Returns the number of rows actually flipped to `is_active=false`
+   * (pg returns this from the UPDATE ... SET rowCount).
+   */
+  async deactivateMissing(canvasUserIds: number[]): Promise<number> {
+    // Empty array → negation matches every active row → would mark
+    // the entire cache inactive. Guard at the repo level because the
+    // service-level guard (`total > 0`) can change in future
+    // refactors without the test suite noticing.
+    if (canvasUserIds.length === 0) return 0;
+
+    const r = await this.client.query(
+      `UPDATE students_cache
+          SET is_active = FALSE,
+              last_synced_at = now()
+        WHERE is_active = TRUE
+          AND NOT (canvas_user_id = ANY($1::bigint[]))`,
+      [canvasUserIds],
+    );
+    return r.rowCount ?? 0;
   }
 }
