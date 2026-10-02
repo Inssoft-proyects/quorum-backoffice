@@ -499,6 +499,56 @@ describe('AsociarPageClient', () => {
     );
   });
 
+  /**
+   * G5 verification follow-up: the assigned-tab search used to match
+   * the marbete's secret publicUid (the full credential code) which
+   * leaks credentials through the search autocomplete. After the
+   * G5 fix the search only matches VISIBLE fields — canvasUserId,
+   * fullName, email, and the masked code (X***NN).
+   *
+   * We assert:
+   *   1. Searching by the marbete's publicUid does NOT match the
+   *      assigned row (filter is hidden, count is empty).
+   *   2. Searching by the masked code DOES match (the visible
+   *      "X***NN" string is allowed).
+   *   3. Searching by matricula fullName still matches.
+   */
+  it('G5: assigned search excludes marbete.publicUid (visible fields only)', () => {
+    installFetchMock();
+    render(
+      <AsociarPageClient
+        initialMatriculas={defaultAssigned()}
+        initialCounters={baseCounters}
+        initialAvailableMarbetes={defaultAvailable()}
+        initialStatus="assigned"
+        initialSearch=""
+        userRole="admin"
+      />,
+    );
+
+    // 1) publicUid fragment must NOT match.
+    const search = screen.getByTestId('assigned-search');
+    fireEvent.change(search, { target: { value: 'm-AB12' } });
+    expect(screen.getByTestId('assigned-empty')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('assigned-search-count'),
+    ).toHaveTextContent('(0)');
+
+    // 2) maskedCode fragment MUST match (visible field).
+    fireEvent.change(search, { target: { value: '1***AB' } });
+    expect(screen.queryByTestId('assigned-empty')).toBeNull();
+    expect(
+      screen.getByTestId('assigned-search-count'),
+    ).toHaveTextContent(/\(1\)/);
+
+    // 3) fullName fragment still matches.
+    fireEvent.change(search, { target: { value: 'Ana' } });
+    expect(screen.queryByTestId('assigned-empty')).toBeNull();
+    expect(
+      screen.getByTestId('assigned-search-count'),
+    ).toHaveTextContent(/\(1\)/);
+  });
+
   it('dismisses the success banner via the close button', async () => {
     const counts = installFetchMock();
     const user = userEvent.setup();

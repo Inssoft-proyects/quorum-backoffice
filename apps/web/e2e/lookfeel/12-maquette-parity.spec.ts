@@ -561,20 +561,27 @@ async function maskWithExpansion(
 
 interface ScreenSpec {
   appPath: string;
-  /** Where the maquette crops come from. For /marbetes the whole page is
-   * comparable; for the other three, only the chrome regions are. */
+  /** Where the maquette crops come from. For /marbetes + /asociar the
+   * whole page is comparable (both maquettes are full-page designs);
+   * for the other three, only the chrome regions are. */
   scope: 'full' | 'chrome';
 }
 
 /**
- * The four authed screens. The maquette only defines a marbetes-style
- * inventory page; for /dashboard, /dispositivos, /audit the spec runs
- * chrome-region pixel-diff (shared header, sidebar, metric grid,
- * search shell) plus structural checks. For /marbetes we run a full
- * page pixel-diff with dynamic regions masked.
+ * The authed screens covered by the hybrid equivalence harness.
+ *
+ *   /marbetes  — full-page diff against inventario-credenciales.html
+ *   /asociar   — full-page diff against asignacion-marbetes.html
+ *                (WU v3; the page renders the same chrome as the
+ *                marbetes inventory plus a tab strip + assignment
+ *                workspace, all of which the canon declares).
+ *   /dispositivos, /audit, /dashboard — chrome-only diff (the
+ *                maquette canon does not ship a layout for them, so
+ *                we only assert the shared chrome stays in sync).
  */
 const SCREENS: ReadonlyArray<ScreenSpec> = [
   { appPath: '/marbetes', scope: 'full' },
+  { appPath: '/asociar', scope: 'full' },
   { appPath: '/dispositivos', scope: 'chrome' },
   { appPath: '/audit', scope: 'chrome' },
   { appPath: '/dashboard', scope: 'chrome' },
@@ -672,18 +679,27 @@ test.describe('BackOffice ↔ Maquette hybrid equivalence (T4)', () => {
       const appPath = path.join(APP_DIR, `${appName}.png`);
       await page.screenshot({ path: appPath, fullPage: true });
 
-      // 3) Navigate to the maquette + screenshot. We open the canonical
-      // inventory-credenciales.html page at the same viewport.
+      // 3) Navigate to the maquette + screenshot. The /asociar screen
+      // has its own canon page (asignacion-marbetes.html); the other
+      // four share inventario-credenciales.html. We pick the page
+      // per-screen so the maquette crop stays faithful to the canon.
+      const maquetteHtml =
+        screen.appPath === '/asociar'
+          ? 'asignacion-marbetes.html'
+          : 'inventario-credenciales.html';
       const maquettePage = await page.context().newPage();
       await maquettePage.setViewportSize(VIEWPORT);
-      await maquettePage.goto(`${maquette.baseUrl}/inventario-credenciales.html`);
+      await maquettePage.goto(`${maquette.baseUrl}/${maquetteHtml}`);
       await maquettePage
         .waitForLoadState('networkidle', { timeout: 15_000 })
         .catch(() => {});
       // Give the maquette's font (Montserrat via Google Fonts) a moment
       // to settle; the maquette declares its own @import in tokens.css.
       await maquettePage.evaluate(() => document.fonts?.ready).catch(() => {});
-      const maquettePath = path.join(BASELINES_DIR, 'inventario-credenciales.png');
+      const maquettePath = path.join(
+        BASELINES_DIR,
+        `${maquetteHtml.replace(/\.html$/, '')}.png`,
+      );
       await maquettePage.screenshot({ path: maquettePath, fullPage: true });
       await maquettePage.close();
 
@@ -713,7 +729,7 @@ test.describe('BackOffice ↔ Maquette hybrid equivalence (T4)', () => {
         const maquetteBoxHandle = await maquettePage.context().newPage();
         try {
           await maquetteBoxHandle.setViewportSize(VIEWPORT);
-          await maquetteBoxHandle.goto(`${maquette.baseUrl}/inventario-credenciales.html`);
+          await maquetteBoxHandle.goto(`${maquette.baseUrl}/${maquetteHtml}`);
           await maquetteBoxHandle
             .waitForLoadState('networkidle', { timeout: 15_000 })
             .catch(() => {});
@@ -806,10 +822,11 @@ async function resolveAppBox(
  * Build the structural checks for one screen.
  *
  * Pattern checks come straight from the maquette canon (see
- * diseno/maqueta_Inec/Inec/inventario-credenciales.html). Color
- * checks pin a handful of canonical selectors to their maquette
- * tokens so a regression in globals.css is caught before the
- * pixel-diff step even runs.
+ * diseno/maqueta_Inec/Inec/inventario-credenciales.html and
+ * diseno/maqueta_Inec/Inec/asignacion-marbetes.html). Color checks
+ * pin a handful of canonical selectors to their maquette tokens so
+ * a regression in globals.css is caught before the pixel-diff step
+ * even runs.
  *
  * The structural assertions vary by screen:
  *   - /dashboard is a KPI overview: no `.inventory-search`, no table,
@@ -818,6 +835,11 @@ async function resolveAppBox(
  *     than masking a regression.
  *   - /audit is read-only by design: no CTA buttons in the header.
  *     The primary-cta-bg check is N/A.
+ *   - /asociar is the "Asignación de marbetes" canon: same chrome as
+ *     /marbetes (inventory-page + inventory-header + metrics-grid)
+ *     PLUS the assignment-tabs strip + assignment-action-bar. The
+ *     primary-cta-bg check is N/A (the maquette only ships the admin
+ *     sync button on the inventory-header; no primary CTA in canon).
  *   - /dispositivos + /marbetes render the full chrome (header +
  *     metrics + search + table + pagination). For these we wait
  *     briefly for the table to populate before asserting (the
@@ -883,6 +905,28 @@ async function buildStructuralChecks(
       id: 'has-search-shell',
       description: 'page renders .inventory-search shell',
       pass: (await page.locator('.inventory-search').count()) >= 1,
+    });
+  }
+
+  // /asociar — assignment-specific canon classes (maquette v3,
+  // asignacion-marbetes.html). The page renders a tab strip + an
+  // action bar on top of the regular inventory chrome; we assert
+  // the three canon classes here.
+  if (appPath === '/asociar') {
+    checks.push({
+      id: 'has-assignment-page',
+      description: 'page renders .assignment-page wrapper (maquette v3 canon)',
+      pass: (await page.locator('.assignment-page').count()) >= 1,
+    });
+    checks.push({
+      id: 'has-assignment-tabs',
+      description: 'page renders .assignment-tabs tab strip',
+      pass: (await page.locator('.assignment-tabs').count()) >= 1,
+    });
+    checks.push({
+      id: 'has-assignment-action-bar',
+      description: 'page renders .assignment-action-bar (unassigned panel)',
+      pass: (await page.locator('.assignment-action-bar').count()) >= 1,
     });
   }
 
@@ -956,10 +1000,10 @@ async function buildStructuralChecks(
   // Cargar marbetes" pair uses the primary token on the right-most
   // button (only /marbetes shows two CTAs in the maquette canon).
   // We pick the right-most .inventory-header button and check it
-  // for primary-500. /audit, /dashboard, and /dispositivos have
-  // no primary CTA in the maquette (the dispositivos page only
-  // ships an outline "Registrar dispositivo" trigger); we mark
-  // the check N/A on those screens so a regression in the chrome
+  // for primary-500. /audit, /dashboard, /dispositivos and /asociar
+  // have no primary CTA in the maquette (asociar's canon only ships
+  // the "Sincronizar matrículas" outline button in the header); we
+  // mark the check N/A on those screens so a regression in the chrome
   // does not falsely fail on a missing-but-unexpected primary CTA.
   if (appPath !== '/marbetes') {
     checks.push({

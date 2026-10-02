@@ -227,12 +227,16 @@ export function AsociarPageClient({
   const filteredAssigned = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return assignedItems;
+    // G5 micro-fix (verification follow-ups): the search must only
+    // match VISIBLE fields. marbete.publicUid is the marbete's
+    // secret code; matching against it leaks credentials through
+    // search autocomplete. The visible "X***NN"-formatted
+    // maskedCode stays searchable as before.
     return assignedItems.filter(
       (m) =>
         String(m.canvasUserId).toLowerCase().includes(q) ||
         m.fullName.toLowerCase().includes(q) ||
         m.email.toLowerCase().includes(q) ||
-        (m.marbete?.publicUid.toLowerCase().includes(q) ?? false) ||
         (m.marbete?.maskedCode.toLowerCase().includes(q) ?? false),
     );
   }, [assignedItems, search]);
