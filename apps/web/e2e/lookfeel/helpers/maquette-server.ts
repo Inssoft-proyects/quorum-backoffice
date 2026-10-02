@@ -39,6 +39,13 @@ export interface MaquetteServerHandle {
  * The in-repo copy `diseno/maqueta_Inec/Inec/` is a stale fallback kept
  * for offline runs. `MAQUETTE_DIR` (absolute path) overrides everything.
  *
+ * Override contract (F5/WU13 follow-up): `MAQUETTE_DIR` is the canonical
+ * CI pin — when exported, it wins over every other candidate below
+ * (quorum-design sibling checkout, in-repo copy, __dirname-relative
+ * fallback). The CI gate `scripts/ci-checks.sh` exports
+ * `MAQUETTE_DIR=${MAQUETTE_DIR:-/planQuorum/dev/quorum-design/design/Inec/Inec}`
+ * before any lookfeel work so every CI run uses the same canon.
+ *
  * The harness runs from `apps/web` (Playwright's CWD); we resolve against
  * `process.cwd()` and `import.meta.url` to cover both `playwright test`
  * invocations and direct `node` runs.
