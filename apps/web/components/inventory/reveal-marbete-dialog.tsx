@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { OtpInput } from '@/components/ui/otp-input';
 import { ApiError, revealMarbete } from '@/lib/api-client';
 
 export interface RevealMarbeteDialogProps {
@@ -34,11 +35,19 @@ const REASONS: ReadonlyArray<{ value: string; label: string }> = [
 /**
  * "Revelar marbete" dialog (maquette v2).
  *
- * WU #1 (WU #1 in HANDOFF): Calls POST /api/v1/marbetes/:id/reveal and
- * returns the full publicUid via onRevealed. The original scanned code is
- * never recoverable (only code_hash is stored), so "reveal" simply lifts
- * the mask applied by maskCode(publicUid). The motivation is recorded in
- * audit_log; the response carries the unmasked publicUid.
+ * WU #1 (HANDOFF): Calls POST /api/v1/marbetes/:id/reveal and returns
+ * the full publicUid via onRevealed. The original scanned code is
+ * never recoverable (only code_hash is stored), so "reveal" simply
+ * lifts the mask applied by maskCode(publicUid). The motivation is
+ * recorded in audit_log; the response carries the unmasked publicUid.
+ *
+ * D-4 (per-op OTP by design): reveal is NEVER grant-eligible — even
+ * when the session actor holds an active 20-minute grant for the
+ * marbete scope, the server requires a fresh OTP for every reveal so
+ * the audit trail is unambiguous. The dialog therefore ALWAYS renders
+ * the OtpInput in alphanumeric mode (matching the quorum-otp 31-char
+ * alphabet) and forwards the 6-char code on the `x-otp-code` header
+ * of the destructive call. There is no grant fetch and no grant note.
  */
 export function RevealMarbeteDialog({
   marbeteId,
@@ -48,14 +57,18 @@ export function RevealMarbeteDialog({
 }: RevealMarbeteDialogProps) {
   const [reason, setReason] = useState('');
   const [comment, setComment] = useState('');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const valid = reason.length > 0;
+  const reasonValid = reason.length > 0;
+  const otpReady = otp.length === 6;
+  const canSubmit = reasonValid && otpReady && !loading;
 
   function reset() {
     setReason('');
     setComment('');
+    setOtp('');
     setError(null);
     setLoading(false);
   }
@@ -67,17 +80,18 @@ export function RevealMarbeteDialog({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!valid) {
+    if (!reasonValid) {
       setError('Selecciona un motivo antes de continuar.');
       return;
     }
+    if (!otpReady) return;
     setLoading(true);
     setError(null);
     try {
       const response = await revealMarbete(
         marbeteId,
         { motivo: reason, comentario: comment.length > 0 ? comment : undefined },
-        '', // OTP header; UI does not collect one. Server enforces only if AUTH_OTP_REQUIRED=true.
+        otp,
       );
       onRevealed(response.code);
       reset();
@@ -85,7 +99,9 @@ export function RevealMarbeteDialog({
     } catch (err) {
       const msg =
         err instanceof ApiError
-          ? err.message
+          ? err.code === 'otp_invalid'
+            ? 'Código OTP inválido o expirado.'
+            : err.message
           : err instanceof Error
             ? err.message
             : 'No se pudo revelar el marbete.';
@@ -111,12 +127,14 @@ export function RevealMarbeteDialog({
           >
             Selecciona el motivo antes de revelar el número completo del marbete{' '}
             <strong data-testid="reveal-marbete-id">CRD-{String(marbeteId).padStart(4, '0')}</strong>.
+            Por política de auditoría se solicita un código OTP fresco para cada revelación,
+            incluso si tienes una ventana de OTP vigente para marbetes.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="modal-dialog__content" noValidate>
           {error ? (
-            <Alert variant="destructive" role="alert">
+            <Alert variant="destructive" role="alert" data-testid="reveal-marbete-error">
               {error}
             </Alert>
           ) : null}
@@ -164,6 +182,28 @@ export function RevealMarbeteDialog({
             />
           </div>
 
+          <div className="form-field reveal-marbete__otp">
+            <span className="form-field__label form-field__label--row">
+              <span>Código OTP</span>
+              <span className="form-field__required">Obligatorio</span>
+            </span>
+            <div data-testid="reveal-marbete-otp">
+              <OtpInput
+                mode="alphanumeric"
+                value={otp}
+                onChange={(v) => {
+                  setOtp(v);
+                  if (error) setError(null);
+                }}
+                disabled={loading}
+                aria-label="Código OTP"
+              />
+            </div>
+            <p className="form-field__hint" id="reveal-otp-help">
+              La revelación nunca consume la ventana de OTP vigente; ingresa un código fresco.
+            </p>
+          </div>
+
           <DialogFooter className="modal-dialog__actions">
             <Button
               type="button"
@@ -175,7 +215,7 @@ export function RevealMarbeteDialog({
             </Button>
             <Button
               type="submit"
-              disabled={!valid || loading}
+              disabled={!canSubmit}
               data-testid="reveal-marbete-submit"
             >
               {loading ? 'Revelando…' : 'Revelar marbete'}

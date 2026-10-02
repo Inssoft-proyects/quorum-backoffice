@@ -195,4 +195,45 @@ describe('AssignReviewModal', () => {
     expect(args[0]).toEqual([{ canvasUserId: 1, marbeteId: 10 }]);
     expect(args[1]).toBe('111111');
   });
+
+  // D-1 — the OTP input must accept the alphanumeric OTP alphabet
+  // (uppercase A–Z0–9) and forward the full string on confirm. Prior
+  // to the fix the OtpInput was in default numeric mode, so letters
+  // were stripped and the operator could not enter a real code.
+  it('accepts an alphanumeric OTP and forwards it on confirm', async () => {
+    installFetchMock();
+    const user = userEvent.setup();
+    const onConfirm = jest.fn();
+    render(
+      <AssignReviewModal
+        open
+        onOpenChange={jest.fn()}
+        enrollments={[
+          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
+        ]}
+        available={[{ id: 10, maskedCode: '3***10' }]}
+        availableMarbetesTotal={1}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await user.selectOptions(screen.getByTestId('assign-review-select-1'), '10');
+    const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i }) as HTMLInputElement[];
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
+    // Every filled box renders its char (D-2 alignment).
+    expect(otpInputs.map((b) => b.value)).toEqual(['A', 'B', '1', '2', 'C', 'D']);
+
+    await user.click(screen.getByTestId('assign-review-confirm'));
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    });
+    const args = onConfirm.mock.calls[0] as [
+      { canvasUserId: number; marbeteId: number }[],
+      string | undefined,
+    ];
+    expect(args[0]).toEqual([{ canvasUserId: 1, marbeteId: 10 }]);
+    expect(args[1]).toBe('AB12CD');
+  });
 });

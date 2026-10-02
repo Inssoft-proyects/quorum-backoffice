@@ -716,4 +716,80 @@ describe('BulkUploadDialog (.xlsx dropzone, maquette v3)', () => {
     });
     expect(screen.getByTestId('bulk-upload-empty-state')).toBeInTheDocument();
   });
+
+  // T16 (D-1) — the OTP input must accept uppercase letters + digits
+  // (the canonical OTP alphabet) so an operator can type / paste an
+  // issued code like "AB12CD". Prior to the fix the input was in
+  // numeric mode and stripped every letter on keystroke or paste.
+  it('accepts an alphanumeric OTP (e.g. "AB12CD") and forwards it on submit when no grant is active', async () => {
+    const handle = installFetchMock({
+      grantActive: false,
+      expiresAt: null,
+      destructiveStatus: 200,
+      destructiveBody: makeSuccessBody({ total: 1, created: 1, failed: 0 }),
+    });
+    const user = userEvent.setup();
+    render(
+      <BulkUploadDialog open={true} onOpenChange={() => {}} onSaved={() => {}} />,
+    );
+
+    // Type an alphanumeric OTP across the 6 boxes.
+    await typeOtp(user, 'AB12CD');
+    const inputs1 = screen.getAllByRole('textbox', { name: /Digit/i }) as HTMLInputElement[];
+    expect(inputs1.map((b) => b.value)).toEqual(['A', 'B', '1', '2', 'C', 'D']);
+
+    // Submit fires with x-otp-code === 'AB12CD' (not stripped, not rejected).
+    const fileInput = screen.getByTestId('bulk-upload-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeXlsxFile()] } });
+    await waitFor(() => {
+      expect(screen.getByTestId('bulk-upload-selected-state')).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId('bulk-upload-submit'));
+
+    await waitForResultView();
+
+    const create = handle
+      .read()
+      .find(
+        (c) => c.url.includes('/api/v1/marbetes/bulk-xlsx') && c.method === 'POST',
+      );
+    expect(create).toBeDefined();
+    expect(create!.headers['x-otp-code']).toBe('AB12CD');
+  });
+
+  // T17 (D-1) — pasting an alphanumeric OTP also forwards the full
+  // string. Covers the paste path (handlePaste in OtpInput) which
+  // strips non-A-Z0-9 in numeric mode but preserves in alphanumeric.
+  it('accepts a pasted alphanumeric OTP and forwards it on submit', async () => {
+    const handle = installFetchMock({
+      grantActive: false,
+      expiresAt: null,
+      destructiveStatus: 200,
+      destructiveBody: makeSuccessBody({ total: 1, created: 1, failed: 0 }),
+    });
+    const user = userEvent.setup();
+    render(
+      <BulkUploadDialog open={true} onOpenChange={() => {}} onSaved={() => {}} />,
+    );
+    const firstOtp = screen.getAllByRole('textbox', { name: /Digit/i })[0]!;
+    await user.click(firstOtp);
+    await user.paste('3KL9YH');
+
+    const fileInput = screen.getByTestId('bulk-upload-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeXlsxFile()] } });
+    await waitFor(() => {
+      expect(screen.getByTestId('bulk-upload-selected-state')).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId('bulk-upload-submit'));
+
+    await waitForResultView();
+
+    const create = handle
+      .read()
+      .find(
+        (c) => c.url.includes('/api/v1/marbetes/bulk-xlsx') && c.method === 'POST',
+      );
+    expect(create).toBeDefined();
+    expect(create!.headers['x-otp-code']).toBe('3KL9YH');
+  });
 });

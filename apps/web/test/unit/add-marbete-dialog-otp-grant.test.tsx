@@ -115,7 +115,7 @@ describe('AddMarbeteDialog — OTP grant window', () => {
     expect(create!.headers['x-otp-code']).toBeUndefined();
   });
 
-  it('without an active grant: the grant note is NOT rendered; submit does send x-otp-code', async () => {
+  it('without an active grant: the grant note is NOT rendered; submit does send the typed OTP on x-otp-code', async () => {
     const handle = installGrantAwareFetch({
       grantActive: false,
       expiresAt: null,
@@ -131,8 +131,19 @@ describe('AddMarbeteDialog — OTP grant window', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('add-marbete-grant-note')).toBeNull();
     });
+    // OTP input must be visible + submit disabled until a 6-char
+    // alphanumeric code is typed (D-3).
+    expect(screen.getByTestId('add-marbete-otp')).toBeInTheDocument();
+    expect(screen.getByTestId('add-marbete-submit')).toBeDisabled();
 
     await user.type(screen.getByTestId('credential-number-input'), '91234567');
+    const otpInputs = screen.getAllByRole("textbox", { name: /Digit/i }) as HTMLInputElement[];
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
+    await waitFor(() => {
+      expect(screen.getByTestId('add-marbete-submit')).not.toBeDisabled();
+    });
     await user.click(screen.getByTestId('add-marbete-submit'));
 
     await waitFor(() => {
@@ -143,11 +154,9 @@ describe('AddMarbeteDialog — OTP grant window', () => {
     const captured = handle.read();
     const create = captured.find((c) => c.url.match(/\/api\/v1\/marbetes$/) && c.method === 'POST');
     expect(create).toBeDefined();
-    // Today's behaviour: the dialog passes an empty string when the
-    // grant is missing; the API client sends the x-otp-code header
-    // even when the value is empty so the server can surface the
-    // otp_required error.
-    expect(create!.headers['x-otp-code']).toBe('');
+    // D-3 fix: the dialog forwards the captured OTP instead of an
+    // empty string (which used to fail server-side with otp_required).
+    expect(create!.headers['x-otp-code']).toBe('AB12CD');
   });
 
   it('refreshes the grant status when the dialog is opened', async () => {
@@ -167,6 +176,73 @@ describe('AddMarbeteDialog — OTP grant window', () => {
       const captured = handle.read();
       expect(captured.some((c) => c.url.includes('/api/v1/marbetes/otp-grant'))).toBe(true);
     });
+  });
+
+  // D-3 — the AddMarbeteDialog must render an OTP input (grant-aware,
+  // same shape as bulk-upload + unassign). Prior to the fix the
+  // dialog submitted x-otp-code: '' which always failed server-side
+  // when AUTH_OTP_REQUIRED was on.
+  it('without an active grant: renders the OTP input and a successful submit sends it on x-otp-code', async () => {
+    const handle = installGrantAwareFetch({
+      grantActive: false,
+      expiresAt: null,
+      destructiveStatus: 201,
+      destructiveBody: detailResponseBody,
+    });
+    const user = userEvent.setup();
+    render(
+      <AddMarbeteDialog open={true} onOpenChange={() => {}} onSaved={() => {}} />,
+    );
+
+    // The OTP input should be visible when no grant is active.
+    await waitFor(() => {
+      expect(screen.getByTestId('add-marbete-otp')).toBeInTheDocument();
+    });
+    const otpInputs = screen.getAllByRole("textbox", { name: /Digit/i }) as HTMLInputElement[];
+    expect(otpInputs).toHaveLength(6);
+    // Submit is disabled until the OTP is filled (and the code is valid).
+    expect(screen.getByTestId('add-marbete-submit')).toBeDisabled();
+
+    await user.type(screen.getByTestId('credential-number-input'), '91234567');
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
+    await waitFor(() => {
+      expect(screen.getByTestId('add-marbete-submit')).not.toBeDisabled();
+    });
+    await user.click(screen.getByTestId('add-marbete-submit'));
+
+    await waitFor(() => {
+      const captured = handle.read();
+      expect(
+        captured.find((c) => c.url.match(/\/api\/v1\/marbetes$/) && c.method === 'POST'),
+      ).toBeDefined();
+    });
+    const captured = handle.read();
+    const create = captured.find(
+      (c) => c.url.match(/\/api\/v1\/marbetes$/) && c.method === 'POST',
+    );
+    expect(create).toBeDefined();
+    expect(create!.headers['x-otp-code']).toBe('AB12CD');
+  });
+
+  it('without an active grant: submitting without an OTP leaves submit disabled', async () => {
+    installGrantAwareFetch({
+      grantActive: false,
+      expiresAt: null,
+      destructiveStatus: 201,
+      destructiveBody: detailResponseBody,
+    });
+    const user = userEvent.setup();
+    render(
+      <AddMarbeteDialog open={true} onOpenChange={() => {}} onSaved={() => {}} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('add-marbete-otp')).toBeInTheDocument();
+    });
+    await user.type(screen.getByTestId('credential-number-input'), '91234567');
+    // Without an OTP the submit button must stay disabled.
+    expect(screen.getByTestId('add-marbete-submit')).toBeDisabled();
   });
 });
 

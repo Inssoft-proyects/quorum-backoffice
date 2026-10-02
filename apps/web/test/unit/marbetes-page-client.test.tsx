@@ -173,6 +173,12 @@ describe('MarbetesPageClient (maquette v2)', () => {
     await user.click(screen.getByTestId('add-marbete-trigger'));
     const codeInput = await screen.findByTestId('credential-number-input');
     await user.type(codeInput, '91234567');
+    // D-3: the AddMarbeteDialog now requires an OTP when no grant is
+    // active. Type one so the submit button enables.
+    const otpInputs = (await screen.findAllByRole("textbox", { name: /Digit/i })) as HTMLInputElement[];
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
     await user.click(screen.getByTestId('add-marbete-submit'));
 
     // The success banner is now visible with the canonical title +
@@ -212,6 +218,12 @@ describe('MarbetesPageClient (maquette v2)', () => {
     await user.click(screen.getByTestId('add-marbete-trigger'));
     const codeInput = await screen.findByTestId('credential-number-input');
     await user.type(codeInput, '91234567');
+    // D-3: the AddMarbeteDialog now requires an OTP when no grant is
+    // active. Type one so the submit button enables.
+    const otpInputs = (await screen.findAllByRole("textbox", { name: /Digit/i })) as HTMLInputElement[];
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
     await user.click(screen.getByTestId('add-marbete-submit'));
 
     const alert = await screen.findByTestId('app-alert-success');

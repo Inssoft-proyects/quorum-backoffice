@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
+import { OtpInput } from '@/components/ui/otp-input';
 import { useOtpGrant } from './use-otp-grant';
 
 export interface AddMarbeteDialogProps {
@@ -27,33 +28,33 @@ export interface AddMarbeteDialogProps {
 /**
  * "Agregar marbete" dialog (maquette v2).
  *
- * The maquette only shows a single numeric code field; the previous design
- * also collected an optional student and an OTP. The maquette intentionally
- * drops those from the visible flow. The backend still requires the OTP
- * header for destructive writes, so we still route through `createMarbete`
- * via the existing API client. If the API responds with `otp_required`
- * (or any error), we surface it inline — the dialog's UX stays clean while
- * the parent remains the only place that needs to know about OTP plumbing.
- *
  * WU #5 (v3 destroy grant): the dialog consumes `useOtpGrant` and,
  * while the session actor has an active 20-minute window for the
  * marbete scope family, the OTP input is replaced by an
  * "OTP vigente hasta HH:MM" note and the request is submitted without
  * the `x-otp-code` header. When the grant is missing the dialog
- * falls back to today's OTP-required behaviour.
+ * renders the OTP input (mode alphanumeric — same alphabet as the
+ * quorum-otp service) and submits with the captured 6-char code on
+ * `x-otp-code`.
  *
  * Validation mirror: matches CreateMarbeteRequest (code 8-128 chars, all
  * digits per the maquette's input pattern). Submit is disabled while the
- * input fails the rule.
+ * input fails the rule OR the OTP requirement (when no grant is active).
  */
 export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDialogProps) {
   const [code, setCode] = useState('');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const grant = useOtpGrant();
 
-  const valid = /^\d{8,128}$/.test(code);
+  const codeValid = /^\d{8,128}$/.test(code);
   const grantActive = grant.status?.active === true;
+  // OTP is required only when no grant is active. The grant-aware
+  // hidden input contract matches the bulk-upload / assign-review /
+  // unassign modals so the dialogs share one OTP surface.
+  const otpReady = grantActive || otp.length === 6;
+  const canSubmit = codeValid && otpReady && !loading;
 
   // Refresh grant status whenever the dialog is opened. The hook also
   // fires on mount, but a parent that toggles `open` rapidly without
@@ -70,6 +71,7 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
 
   function reset() {
     setCode('');
+    setOtp('');
     setError(null);
     setLoading(false);
   }
@@ -81,18 +83,17 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!valid) {
+    if (!codeValid) {
       setError('Ingresa un número de marbete válido (8-128 dígitos).');
       return;
     }
+    if (!otpReady) return;
     setLoading(true);
     setError(null);
     try {
       // Submit without the x-otp-code header when a grant is active;
-      // otherwise pass an empty string which fails server-side with
-      // `otp_required` if OTP enforcement is on. The Alert renders
-      // that error so the UX degrades gracefully.
-      const otpCode: string | undefined = grantActive ? undefined : '';
+      // otherwise pass the captured 6-char OTP code (modes alphanumeric).
+      const otpCode: string | undefined = grantActive ? undefined : otp;
       await createMarbete({ code }, otpCode);
       reset();
       // Refresh grant status before unmount so the next dialog open
@@ -107,9 +108,11 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
         err instanceof ApiError
           ? err.code === 'otp_required'
             ? 'Esta acción requiere un código OTP. Configura el módulo OTP en el entorno.'
-            : err.code === 'validation_error'
-              ? 'Datos inválidos.'
-              : err.message
+            : err.code === 'otp_invalid'
+              ? 'Código OTP inválido o expirado.'
+              : err.code === 'validation_error'
+                ? 'Datos inválidos.'
+                : err.message
           : 'Error de red. Intenta de nuevo.';
       setError(msg);
     } finally {
@@ -185,9 +188,28 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
               role="status"
               data-testid="add-marbete-grant-note"
             >
-              OTP vigente hasta {expiresLabel}. No necesitas capturar un c\u00f3digo nuevo.
+              OTP vigente hasta {expiresLabel}. No necesitas capturar un código nuevo.
             </Alert>
-          ) : null}
+          ) : (
+            <div className="form-field add-marbete__otp">
+              <span className="form-field__label form-field__label--row">
+                <span>Código OTP</span>
+                <span className="form-field__required">Obligatorio</span>
+              </span>
+              <div data-testid="add-marbete-otp">
+                <OtpInput
+                  mode="alphanumeric"
+                  value={otp}
+                  onChange={(v) => {
+                    setOtp(v);
+                    if (error) setError(null);
+                  }}
+                  disabled={loading}
+                  aria-label="Código OTP"
+                />
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="modal-dialog__actions">
             <Button
@@ -201,7 +223,7 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
             <Button
               type="submit"
               variant="default"
-              disabled={!valid || loading}
+              disabled={!canSubmit}
               data-testid="add-marbete-submit"
             >
               {loading ? 'Guardando…' : 'Guardar en inventario'}

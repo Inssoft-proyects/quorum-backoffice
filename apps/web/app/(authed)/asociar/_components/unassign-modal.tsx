@@ -269,6 +269,7 @@ export function UnassignModal({
               </span>
               <div data-testid="unassign-otp">
                 <OtpInput
+                  mode="alphanumeric"
                   value={otp}
                   onChange={(v) => {
                     setOtp(v);

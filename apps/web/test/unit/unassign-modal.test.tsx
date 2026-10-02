@@ -157,4 +157,42 @@ describe('UnassignModal', () => {
     const args = onConfirm.mock.calls[0] as [unknown, string | undefined];
     expect(args[1]).toBeUndefined();
   });
+
+  // D-1 — the OTP input must accept the alphanumeric OTP alphabet
+  // (uppercase A–Z0–9). Letters were stripped prior to the fix,
+  // blocking the operator from entering any issued code.
+  it('accepts an alphanumeric OTP and forwards it on confirm', async () => {
+    installFetchMock();
+    const user = userEvent.setup();
+    const onConfirm = jest.fn();
+    render(
+      <UnassignModal
+        open
+        onOpenChange={jest.fn()}
+        context={baseContext}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByTestId('unassign-reason-select'),
+      'dano-fisico',
+    );
+    const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i }) as HTMLInputElement[];
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
+    expect(otpInputs.map((b) => b.value)).toEqual(['A', 'B', '1', '2', 'C', 'D']);
+
+    await user.click(screen.getByTestId('unassign-confirm'));
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    });
+    const args = onConfirm.mock.calls[0] as [
+      { marbeteId: number; reason: string; comentario?: string },
+      string | undefined,
+    ];
+    expect(args[0].marbeteId).toBe(10);
+    expect(args[1]).toBe('AB12CD');
+  });
 });

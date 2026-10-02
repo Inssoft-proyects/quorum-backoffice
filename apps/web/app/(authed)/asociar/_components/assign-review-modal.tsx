@@ -324,6 +324,7 @@ export function AssignReviewModal({
               </span>
               <div data-testid="assign-review-otp">
                 <OtpInput
+                  mode="alphanumeric"
                   value={otp}
                   onChange={(v) => {
                     setOtp(v);

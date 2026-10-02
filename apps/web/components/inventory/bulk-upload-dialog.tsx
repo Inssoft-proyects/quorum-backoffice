@@ -436,6 +436,7 @@ export function BulkUploadDialog({
                   </span>
                   <div data-testid="bulk-upload-otp">
                     <OtpInput
+                      mode="alphanumeric"
                       value={otp}
                       onChange={(v) => {
                         setOtp(v);
