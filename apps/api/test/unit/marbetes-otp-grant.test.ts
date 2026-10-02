@@ -26,6 +26,7 @@
 import type pg from 'pg';
 import type { FastifyBaseLogger } from 'fastify';
 import { MarbetesService } from '../../src/services/marbetes-service';
+import { MatriculasService } from '../../src/services/matriculas-service';
 import { OtpClient } from '../../src/services/otp-client';
 import { OtpGrantService } from '../../src/services/otp-grant-service';
 import { AppError } from '../../src/lib/errors';
@@ -363,5 +364,117 @@ describe('MarbetesService.getGrantStatus', () => {
     });
     const status = await svc.getGrantStatus('admin');
     expect(status).toEqual({ active: false, expiresAt: null });
+  });
+});
+
+/**
+ * WU G3/F3: behavioural proof that `MarbetesService.verifyOtp` and
+ * `MatriculasService.verifyOtpGrant` now share the same helper
+ * (`lib/otp-grant-verify.ts`). Both services funnel through the same
+ * captured fetch and exercise the same three paths — grant hit,
+ * grant miss + provider call, grant mint on success. The marbetes
+ * flow uses `marbete.create`; the matriculas flow uses
+ * `marbete.update` (the action it always consumes). Destructive
+ * bodies intentionally fail (empty rows) after `verifyOtp` returns,
+ * which is OK because the OTP call + grant mint already happened.
+ */
+describe('MarbetesService + MatriculasService — shared verifyOtpWithGrant helper', () => {
+  it('hit / miss / mint produce identical side effects across both services', async () => {
+    // Single capturer shared by both services. The OtpClient
+    // instance is reused so a provider call from either service is
+    // observable in one place.
+    const capture = makeCapturingFetch(
+      (code) =>
+        code === '111111'
+          ? { status: 200, body: { valid: true, otp_id: 'OTP-FRESH' } }
+          : { status: 409, body: { error: 'verify_rejected' } },
+    );
+    const otp = new OtpClient({
+      baseUrl: 'http://127.0.0.1:65535',
+      serviceToken: 'test-token-1234567890',
+      fetchImpl: capture.fetch,
+    });
+
+    // Two grant mocks — separate instances because the helper mints
+    // on success and we want to assert each service minted exactly
+    // one row. Both are seeded with the same active grant so the
+    // hit path is identical from the caller's perspective.
+    const activeGrantRow = {
+      id: 1,
+      actor: 'admin',
+      scope: 'marbete',
+      otp_id: 'OTP-CACHED',
+      created_at: new Date('2025-01-01T12:00:00Z'),
+      expires_at: new Date('2025-01-01T12:20:00Z'),
+    };
+    const marbetesGrant = makeGrantService({ rows: [{ ...activeGrantRow }] });
+    const matriculasGrant = makeGrantService({ rows: [{ ...activeGrantRow, id: 2 }] });
+
+    const marbetesSvc = new MarbetesService({
+      pool: makePool(),
+      log: silentLogger,
+      otp,
+      grant: marbetesGrant,
+    });
+    const matriculasSvc = new MatriculasService({
+      pool: makePool(),
+      log: silentLogger,
+      otp,
+      grant: matriculasGrant,
+    });
+
+    // ---- HIT path: active grant → neither service touches the provider.
+    await marbetesSvc
+      .create('admin', { code: '12345678' }, undefined)
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+    await matriculasSvc
+      .assignBulk(
+        'admin',
+        { pairs: [{ canvasUserId: 101, marbeteId: 10 }] },
+        undefined,
+      )
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+    expect(capture.calls).toHaveLength(0);
+    expect(marbetesGrant.__rows).toHaveLength(1); // untouched
+    expect(matriculasGrant.__rows).toHaveLength(1); // untouched
+
+    // ---- MISS path: clear the grants and pass a valid OTP. Both
+    //      services should now call the provider exactly once and
+    //      mint exactly one fresh grant in their respective mock.
+    marbetesGrant.__rows.length = 0;
+    matriculasGrant.__rows.length = 0;
+
+    await marbetesSvc
+      .create('admin', { code: '12345678' }, '111111')
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+    await matriculasSvc
+      .assignBulk(
+        'admin',
+        { pairs: [{ canvasUserId: 101, marbeteId: 10 }] },
+        '111111',
+      )
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+
+    expect(capture.calls).toHaveLength(2);
+    expect(marbetesGrant.__rows).toHaveLength(1);
+    expect(matriculasGrant.__rows).toHaveLength(1);
+    expect(marbetesGrant.__rows[0]!.otp_id).toBe('OTP-FRESH');
+    expect(matriculasGrant.__rows[0]!.otp_id).toBe('OTP-FRESH');
+    // Both services stamp the helper-canonical scope into the grant
+    // row so audit / future-cache lookups stay aligned.
+    expect(marbetesGrant.__rows[0]!.scope).toBe('marbete');
+    expect(matriculasGrant.__rows[0]!.scope).toBe('marbete');
   });
 });

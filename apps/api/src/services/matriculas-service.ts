@@ -48,6 +48,7 @@ import { PgMarbeteRepo } from '../repositories/pg-marbetes';
 import { OtpClient } from './otp-client';
 import { OtpGrantService } from './otp-grant-service';
 import { CanvasClient } from './canvas-client';
+import { verifyOtpWithGrant } from '../lib/otp-grant-verify';
 
 interface RequestMeta {
   ip?: string | null;
@@ -531,9 +532,17 @@ export class MatriculasService {
   // ---- Internals ----
 
   /**
-   * Grant-aware OTP verify. Mirrors MarbetesService.verifyOtp's
-   * grant-eligible path: a hit on the grant cache skips the
-   * provider; a miss requires a fresh OTP and mints a new grant.
+   * Grant-aware OTP verify. Thin wrapper around the shared
+   * `verifyOtpWithGrant` helper (see `lib/otp-grant-verify.ts`):
+   *   - if the action is not in `ASSIGN_GRANT_SCOPES`, returns
+   *     `{ otpId: 'noop' }` without consulting the helper.
+   *   - otherwise delegates to the helper, supplying the
+   *     assign/unassign-specific `otp_required` message so the API
+   *     envelope stays byte-identical to the pre-extraction copy.
+   *
+   * The helper centralises: grant-cache lookup (`otp_grant_hit`),
+   * per-op OTP verify (`otp_verify_failed` warn + `otp_invalid`),
+   * and best-effort grant INSERT (`otp_grant_insert_failed` warn).
    *
    * Returns `{ otpId }` for the audit service. Throws AppError on
    * failure.
@@ -544,41 +553,18 @@ export class MatriculasService {
     otpCode: string | undefined,
   ): Promise<{ otpId: string }> {
     if (!ASSIGN_GRANT_SCOPES.has(action)) return { otpId: 'noop' };
-    if (this.grant) {
-      const existing = await this.grant.findActive(actor, GRANT_SCOPE);
-      if (existing) {
-        this.log.debug({ actor, action, grantId: existing.id }, 'otp_grant_hit');
-        return { otpId: existing.otp_id };
-      }
-    }
-    if (!otpCode) {
-      throw new AppError(
-        'otp_required',
-        'X-OTP-Code header missing; assign / unassign require a single-use 6-char OTP or an active grant window.',
-        401,
-        { action },
-      );
-    }
-    const r = await this.otp.verify({ subject: actor, scope: action, code: otpCode });
-    if (!r.ok) {
-      throw new AppError(
-        'otp_invalid',
-        `otp verify rejected: ${r.reason}`,
-        401,
-        { action, reason: r.reason },
-      );
-    }
-    if (this.grant && r.otpId !== 'noop') {
-      try {
-        await this.grant.create(actor, GRANT_SCOPE, r.otpId);
-      } catch (err) {
-        this.log.warn(
-          { actor, action, otpId: r.otpId, err: (err as Error).message },
-          'otp_grant_insert_failed',
-        );
-      }
-    }
-    return { otpId: r.otpId };
+    return verifyOtpWithGrant(
+      { otp: this.otp, grant: this.grant, log: this.log },
+      {
+        actor,
+        action,
+        otpCode,
+        grantEligible: true,
+        grantScope: GRANT_SCOPE,
+        otpRequiredMessage:
+          'X-OTP-Code header missing; assign / unassign require a single-use 6-char OTP or an active grant window.',
+      },
+    );
   }
 
   private toListItem(row: ListMatriculasRow): MatriculaListItem {

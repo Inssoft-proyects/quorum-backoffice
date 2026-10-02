@@ -14,6 +14,7 @@ import { PgStudentRepo } from '../repositories/pg-students';
 import { OtpClient } from './otp-client';
 import { AuditService } from './audit-service';
 import { OtpGrantService } from './otp-grant-service';
+import { verifyOtpWithGrant } from '../lib/otp-grant-verify';
 import type {
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
@@ -138,7 +139,10 @@ export class MarbetesService {
   /**
    * Verify the actor is authorized to perform a destructive marbete op.
    *
-   * Behaviour matrix:
+   * Behaviour matrix (delegated to `verifyOtpWithGrant` in
+   * `lib/otp-grant-verify.ts` — this method is a thin wrapper that
+   * decides whether the action is destructive at all and whether it
+   * is grant-eligible, then forwards everything else):
    *
    *  - Non-destructive action (list / counters / detail):
    *      no-op. Returns `{ otpId: 'noop' }`.
@@ -148,7 +152,8 @@ export class MarbetesService {
    *      security guarantee — reveal returns the unmasked publicUid,
    *      which is the only read-type we surface to the world, so it
    *      must not inherit the same window as the other destructive
-   *      ops.
+   *      ops. Implemented by passing `grantEligible: false` to the
+   *      helper.
    *  - Grant-eligible action (create / update / delete / bulk_create)
    *    with an active grant for `(actor, GRANT_SCOPE)`:
    *      return the grant's otp_id without calling the provider. The
@@ -172,64 +177,16 @@ export class MarbetesService {
     otpCode: string | undefined,
   ): Promise<{ otpId: string }> {
     if (!DESTRUCTIVE_ACTIONS.has(action)) return { otpId: 'noop' };
-
-    // reveal: ALWAYS per-op OTP, never consult the grant cache.
-    if (action === 'marbete.reveal') {
-      return this.verifyFreshOtp(actor, action, otpCode);
-    }
-
-    // Grant-eligible path: try the cache first.
-    if (GRANT_ELIGIBLE_ACTIONS.has(action) && this.grant) {
-      const existing = await this.grant.findActive(actor, GRANT_SCOPE);
-      if (existing) {
-        this.log.debug({ actor, action, grantId: existing.id }, 'otp_grant_hit');
-        return { otpId: existing.otp_id };
-      }
-    }
-
-    // Grant-miss path: require a fresh OTP and verify it.
-    const verified = await this.verifyFreshOtp(actor, action, otpCode);
-
-    // On success, mint a grant so subsequent destructive ops within
-    // the window skip the per-op OTP. Best-effort — the destructive
-    // op MUST NOT be undone if the grant insert fails.
-    if (
-      GRANT_ELIGIBLE_ACTIONS.has(action) &&
-      this.grant &&
-      verified.otpId !== 'noop'
-    ) {
-      try {
-        await this.grant.create(actor, GRANT_SCOPE, verified.otpId);
-      } catch (err) {
-        this.log.warn(
-          { actor, action, otpId: verified.otpId, err: (err as Error).message },
-          'otp_grant_insert_failed',
-        );
-      }
-    }
-    return verified;
-  }
-
-  /**
-   * Per-operation OTP verify (no grant cache consultation). Throws
-   * AppError on failure; returns `{ otpId }` on success.
-   */
-  private async verifyFreshOtp(
-    actor: string,
-    action: string,
-    otpCode: string | undefined,
-  ): Promise<{ otpId: string }> {
-    if (!otpCode) {
-      throw new AppError('otp_required', 'X-OTP-Code header missing; destructive operations require a single-use 6-char OTP.', 401, {
+    return verifyOtpWithGrant(
+      { otp: this.otp, grant: this.grant, log: this.log },
+      {
+        actor,
         action,
-      });
-    }
-    const r = await this.otp.verify({ subject: actor, scope: action, code: otpCode });
-    if (!r.ok) {
-      this.log.warn({ actor, action, reason: r.reason }, 'otp_verify_failed');
-      throw new AppError('otp_invalid', `otp verify rejected: ${r.reason}`, 401, { action, reason: r.reason });
-    }
-    return { otpId: r.otpId };
+        otpCode,
+        grantEligible: GRANT_ELIGIBLE_ACTIONS.has(action),
+        grantScope: GRANT_SCOPE,
+      },
+    );
   }
 
   async list(filter: ListMarbetesFilter): Promise<ListMarbetesResponse> {
