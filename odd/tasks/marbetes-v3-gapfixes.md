@@ -89,5 +89,5 @@ Flujos G1: LOGIN ✅, MENÚ ✅, MARBETES layout ✅ (banner NO TESTED por D-3),
 
 - Issue: https://github.com/Inssoft-proyects/quorum-backoffice/issues/5 (`enhancement`; el repo no usa labels `type:*` ni template de PR)
 - Rama `feature/marbetes-v3-asignacion` → base `master` (default branch verificado vía gh, cuenta `ci-admin-inssoftmx`)
-- PR: (se registra el número al crearlo)
+- PR: https://github.com/Inssoft-proyects/quorum-backoffice/pull/6 (base `master`, `Closes #5`)
 - Nota RDD: el consentimiento del candidato quedó registrado `declined` por el host interactivo (candidate-scoped, sin linaje); la entrega se hizo bajo política normal del repositorio
