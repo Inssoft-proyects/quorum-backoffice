@@ -399,7 +399,7 @@ export function BulkUploadDialog({
 
               <a
                 className="btn btn--secondary bulk-upload__template-link"
-                href="/assets/plantilla-carga-masiva-marbetes.xlsx"
+                href="/backoffice/assets/plantilla-carga-masiva-marbetes.xlsx"
                 download
                 data-testid="bulk-upload-template-link"
               >

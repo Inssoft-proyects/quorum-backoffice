@@ -226,7 +226,7 @@ describe('BulkUploadDialog (.xlsx dropzone, maquette v3)', () => {
     expect(screen.getByText('Arrastra y suelta tu archivo aquí')).toBeInTheDocument();
     expect(screen.getByTestId('bulk-upload-template-link')).toHaveAttribute(
       'href',
-      '/assets/plantilla-carga-masiva-marbetes.xlsx',
+      '/backoffice/assets/plantilla-carga-masiva-marbetes.xlsx',
     );
   });
 
