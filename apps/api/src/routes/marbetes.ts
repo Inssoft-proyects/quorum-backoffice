@@ -310,6 +310,14 @@ export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void
       reply.header('cache-control', 'no-store');
       return {
         ...bulk,
+        // bulkCreate only knows about the parsed survivors; the parser-
+        // level failures (invalid_chars, duplicate_in_file, ...) live
+        // outside its totals. Recompute the row-level counters over ALL
+        // registered rows so the summary line ("M errores encontrados de
+        // N filas registradas") is truthful.
+        total: parsed.survivors.length + allFailures.length,
+        created: bulk.created,
+        failed: allFailures.length,
         successes: unifiedSuccesses,
         failures: unifiedFailures,
         skippedExampleRows: parsed.skippedExampleRows,

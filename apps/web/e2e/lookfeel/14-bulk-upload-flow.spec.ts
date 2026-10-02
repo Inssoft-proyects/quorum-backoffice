@@ -282,5 +282,17 @@ async function fetchFreshOtp(): Promise<string> {
     'scripts',
     'get-admin-otp.sh',
   );
-  return execFileSync(script, [], { encoding: 'utf-8' }).trim();
+  return execFileSync(script, [], {
+    encoding: 'utf-8',
+    // quorum-otp matches subject + scope on verify (pg-otp-repo). The
+    // API derives the actor from the session EMAIL (actorFromRequest →
+    // req.session.user.email = admin@quorum.local) and verifies with
+    // scope marbete.bulk_create — so the token must be minted for that
+    // exact subject+scope pair, not the script's login/admin defaults.
+    env: {
+      ...process.env,
+      E2E_OTP_SUBJECT: 'admin@quorum.local',
+      E2E_OTP_SCOPE: 'marbete.bulk_create',
+    },
+  }).trim();
 }
