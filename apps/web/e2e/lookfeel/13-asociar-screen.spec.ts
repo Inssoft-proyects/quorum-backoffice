@@ -78,11 +78,22 @@ test.describe('T13 — /asociar design v3', () => {
     // 4 metric cards from the maquette canon. Use scoped regex anchors
     // to avoid matching "Matrículas totales" against "total" elsewhere
     // on the page (the donut centre label, the modal, etc.).
+    //
+    // "Disponibles" is ambiguous on the page: the article card carries
+    // the label "Marbetes disponibles" (substring match) AND the
+    // MetricCard button carries the label "Disponibles". A bare
+    // `hasText: 'Disponibles'` filter would resolve to two elements
+    // and trip Playwright's strict-mode check. We anchor the button
+    // card with `getByRole('button', { name: /^Disponibles\b/ })` (the
+    // accessible name begins at the label slot, not the article) and
+    // keep the article card on its unique label "Marbetes disponibles".
     const metrics = page.locator('.metric-card');
     await expect(metrics).toHaveCount(4);
     await expect(metrics.filter({ hasText: 'Matrículas totales' })).toBeVisible();
     await expect(metrics.filter({ hasText: 'Marbetes disponibles' })).toBeVisible();
-    await expect(metrics.filter({ hasText: 'Disponibles' })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: /^Disponibles\b/ }),
+    ).toBeVisible();
     await expect(metrics.filter({ hasText: 'Asignados' })).toBeVisible();
 
     // Both tabs render with the canon labels.

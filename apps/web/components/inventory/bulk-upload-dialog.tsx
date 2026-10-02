@@ -384,70 +384,72 @@ export function BulkUploadDialog({
             ) : null}
 
             <div className="bulk-upload">
-              <div className="bulk-upload__heading">
-                <h2>Carga tu archivo .xlsx</h2>
-                <p>
-                  Selecciona un archivo .xlsx con los números de marbete que
-                  deseas agregar al inventario.
-                </p>
-              </div>
-
-              <BulkUploadDropzone
-                selectedFile={selectedFile}
-                onFileSelected={handleFileSelected}
-              />
-
-              <a
-                className="btn btn--secondary bulk-upload__template-link"
-                href="/backoffice/assets/plantilla-carga-masiva-marbetes.xlsx"
-                download
-                data-testid="bulk-upload-template-link"
-              >
-                <svg
-                  className="btn__icon btn__icon--xlsx"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  focusable="false"
-                >
-                  <path d="M14 2H6.75A1.75 1.75 0 0 0 5 3.75v16.5C5 21.22 5.78 22 6.75 22h10.5c.97 0 1.75-.78 1.75-1.75V7.75L14 2Z" />
-                  <path d="M14 2v5.75h5" />
-                  <path d="M8.5 16.5 11 14m0 2.5L8.5 14m4.75 2.5v-5m0 5h2.25" />
-                </svg>
-                <span>Descargar plantilla</span>
-              </a>
-              <p className="form-field__hint" data-testid="bulk-upload-template-hint">
-                Usa la plantilla oficial para evitar errores de formato.
-              </p>
-
-              {grantActive && grantExpiresLabel ? (
-                <p
-                  className="bulk-upload__grant-note"
-                  role="status"
-                  data-testid="bulk-upload-grant-note"
-                >
-                  OTP vigente hasta {grantExpiresLabel}. No necesitas capturar
-                  un código nuevo.
-                </p>
-              ) : (
-                <div className="form-field bulk-upload__otp">
-                  <span className="form-field__label form-field__label--row">
-                    <span>Código OTP</span>
-                    <span className="form-field__required">Obligatorio</span>
-                  </span>
-                  <div data-testid="bulk-upload-otp">
-                    <OtpInput
-                      mode="alphanumeric"
-                      value={otp}
-                      onChange={(v) => {
-                        setOtp(v);
-                        if (error) setError(null);
-                      }}
-                      disabled={submitting}
-                      aria-label="Código OTP"
-                    />
-                  </div>
+              <div className="bulk-upload__scrollable" data-testid="bulk-upload-scrollable">
+                <div className="bulk-upload__heading">
+                  <h2>Carga tu archivo .xlsx</h2>
+                  <p>
+                    Selecciona un archivo .xlsx con los números de marbete que
+                    deseas agregar al inventario.
+                  </p>
                 </div>
-              )}
+
+                <BulkUploadDropzone
+                  selectedFile={selectedFile}
+                  onFileSelected={handleFileSelected}
+                />
+
+                <a
+                  className="btn btn--secondary bulk-upload__template-link"
+                  href="/backoffice/assets/plantilla-carga-masiva-marbetes.xlsx"
+                  download
+                  data-testid="bulk-upload-template-link"
+                >
+                  <svg
+                    className="btn__icon btn__icon--xlsx"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M14 2H6.75A1.75 1.75 0 0 0 5 3.75v16.5C5 21.22 5.78 22 6.75 22h10.5c.97 0 1.75-.78 1.75-1.75V7.75L14 2Z" />
+                    <path d="M14 2v5.75h5" />
+                    <path d="M8.5 16.5 11 14m0 2.5L8.5 14m4.75 2.5v-5m0 5h2.25" />
+                  </svg>
+                  <span>Descargar plantilla</span>
+                </a>
+                <p className="form-field__hint" data-testid="bulk-upload-template-hint">
+                  Usa la plantilla oficial para evitar errores de formato.
+                </p>
+
+                {grantActive && grantExpiresLabel ? (
+                  <p
+                    className="bulk-upload__grant-note"
+                    role="status"
+                    data-testid="bulk-upload-grant-note"
+                  >
+                    OTP vigente hasta {grantExpiresLabel}. No necesitas capturar
+                    un código nuevo.
+                  </p>
+                ) : (
+                  <div className="form-field bulk-upload__otp">
+                    <span className="form-field__label form-field__label--row">
+                      <span>Código OTP</span>
+                      <span className="form-field__required">Obligatorio</span>
+                    </span>
+                    <div data-testid="bulk-upload-otp">
+                      <OtpInput
+                        mode="alphanumeric"
+                        value={otp}
+                        onChange={(v) => {
+                          setOtp(v);
+                          if (error) setError(null);
+                        }}
+                        disabled={submitting}
+                        aria-label="Código OTP"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="modal-dialog__actions">
                 <Button

@@ -185,20 +185,25 @@ test.describe('T14 — bulk upload modal flow', () => {
     // 6-digit OTP. Mint a fresh OTP per spec so reusing one across
     // runs doesn't burn the OTP service. We type it into the 6-box
     // OtpInput that the form renders.
-    const otpInput = page
-      .locator('[data-testid="bulk-upload-otp"]')
-      .locator('input')
-      .first();
-    if ((await otpInput.count()) > 0) {
+    //
+    // Fill pattern: focus the first box (aria-label "Digit 1 of 6")
+    // and drive the shared keyboard so the OtpInput's auto-advance
+    // handler fills the remaining five boxes. Mirrors the contract
+    // already used by helpers/login.ts (`loginAs`) and the canonical
+    // `fillOtpBoxes` helper in 10-auth-otp.spec.ts. The previous
+    // pattern (`.fill(firstChar)` + per-character `keyboard.type`
+    // for the rest) raced the React state update after `.fill()`:
+    // the first box accepted the character but the parent state had
+    // not yet advanced focus to box 2, so `keyboard.type` typed
+    // into the still-focused box 1 and the OtpInput's per-field
+    // maxLength swallowed the second character — submit stayed
+    // disabled. The click+keyboard.type workflow avoids the race by
+    // typing the full string against the live focus shifts.
+    const firstOtpBox = page.getByRole('textbox', { name: 'Digit 1 of 6' });
+    if ((await firstOtpBox.count()) > 0) {
       const freshOtp = await fetchFreshOtp();
-      await otpInput.fill(freshOtp.slice(0, 1));
-      // The OtpInput auto-advances via keyboard handlers. Fall back
-      // to keyboard.type for the remaining boxes (the OtpInput's
-      // per-box maxLength is 1; typing each digit separately avoids
-      // a race that swallows the second digit).
-      for (let i = 1; i < freshOtp.length; i += 1) {
-        await page.keyboard.type(freshOtp[i] ?? '');
-      }
+      await firstOtpBox.click();
+      await page.keyboard.type(freshOtp);
     }
 
     await page.getByTestId('bulk-upload-submit').click();

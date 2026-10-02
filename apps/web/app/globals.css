@@ -2211,8 +2211,68 @@
     display: none;
   }
 
+  /* ----- Bulk upload dialog: viewport-bound so actions stay reachable -----
+   * Per canon (mirrors `.assignment-modal` above, also referenced by
+   * diseno/maqueta_Inec/Inec/css/components.css): the dialog is
+   * constrained to `100dvh - 3rem` so it never overflows the
+   * viewport. The grid rows map to: header (auto) / scrollable
+   * content (minmax 0 1fr) / actions (auto, the third row is
+   * intentionally empty — the actions are pinned via the
+   * `.bulk-upload__scrollable` + `.modal-dialog__actions` split inside
+   * `.modal-dialog__content`).
+   *
+   * The dialog is required because the OTP input + dropzone can grow
+   * the form's intrinsic height beyond the 800px viewport default; if
+   * unconstrained, the dialog overflows top + bottom and the "Cancelar"
+   * button falls outside the viewport (test 10 of
+   * e2e/lookfeel/14-bulk-upload-flow.spec.ts). */
+  .bulk-upload__dialog {
+    width: min(100%, 58rem);
+    max-height: calc(100dvh - 3rem);
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .bulk-upload__dialog .modal-dialog__content {
+    min-height: 0;
+    overflow: hidden;
+    /* Cancel the .modal-dialog__content default `margin-top: 2rem` so
+     * the form sits flush under the dialog header inside the 1fr row. */
+    margin-top: 0;
+  }
+  .bulk-upload__dialog .bulk-upload {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+    /* Cancel the .bulk-upload default `margin-top: 1.5rem` so the
+     * scrollable region aligns with the dialog header. */
+    margin-top: 0;
+  }
+  .bulk-upload__dialog .bulk-upload__scrollable {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: grid;
+    gap: 1.25rem;
+    /* Reserve a sliver of trailing space so the scrollbar doesn't
+     * visually overlap the last grid row. */
+    padding-block-end: 0.25rem;
+  }
+  .bulk-upload__dialog .modal-dialog__actions {
+    flex-shrink: 0;
+    margin-top: var(--space-4);
+  }
+
   /* ----- Bulk upload responsive ----- */
   @media (max-width: 45rem) {
+    .bulk-upload__dialog {
+      /* On phone viewports the dialog hugs the viewport edges more
+       * tightly (the gap above + below the centered dialog shrinks
+       * from 1.5rem to 1rem). */
+      max-height: calc(100dvh - 2rem);
+    }
     .bulk-upload__dropzone {
       min-height: 16rem;
       padding: 1.25rem 1rem;

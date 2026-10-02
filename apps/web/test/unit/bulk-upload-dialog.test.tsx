@@ -792,4 +792,66 @@ describe('BulkUploadDialog (.xlsx dropzone, maquette v3)', () => {
     expect(create).toBeDefined();
     expect(create!.headers['x-otp-code']).toBe('3KL9YH');
   });
+
+  // T18 (D-5 / F-2) — the dialog hosts a `.bulk-upload__scrollable`
+  // wrapper around the dropzone + template link + OTP region so the
+  // actions row stays reachable (the 18rem dropzone + OTP input can
+  // otherwise push the actions row off the bottom of the dialog at
+  // small viewports). The wrapper is a sibling of
+  // `.modal-dialog__actions` so the actions are pinned via flexbox
+  // while the scrollable content scrolls. We assert the structural
+  // contract: the scrollable wrapper contains the dropzone and the
+  // OTP field, and the actions row is NOT a descendant of the
+  // scrollable wrapper (otherwise it would scroll out of view).
+  it('wraps the dropzone + OTP region in a scrollable container so the actions stay pinned', async () => {
+    installFetchMock({ grantActive: false, expiresAt: null });
+    render(
+      <BulkUploadDialog open={true} onOpenChange={() => {}} onSaved={() => {}} />,
+    );
+
+    const scrollable = screen.getByTestId('bulk-upload-scrollable');
+    expect(scrollable).toBeInTheDocument();
+
+    // The dropzone (empty state) lives inside the scrollable wrapper.
+    expect(
+      scrollable.querySelector('[data-testid="bulk-upload-empty-state"]'),
+    ).not.toBeNull();
+
+    // The OTP field (no grant active) lives inside the scrollable wrapper.
+    expect(
+      scrollable.querySelector('[data-testid="bulk-upload-otp"]'),
+    ).not.toBeNull();
+
+    // The Cancelar / Subir archivo actions are a SIBLING of the
+    // scrollable wrapper (pinned at the dialog bottom via the
+    // `.bulk-upload` flex column), not a descendant — otherwise the
+    // actions would scroll with the content and become unreachable
+    // when the form overflows the dialog.
+    const actions = screen.getByRole('button', { name: 'Cancelar' }).parentElement;
+    expect(actions).toBeInTheDocument();
+    expect(actions?.classList.contains('modal-dialog__actions')).toBe(true);
+    expect(actions?.contains(scrollable)).toBe(false);
+  });
+
+  // T19 (D-5 / F-2) — when the grant is active the OTP field is
+  // replaced by the grant-note; the scrollable wrapper should still
+  // host the grant-note (the only field above the actions) so the
+  // same pinning contract holds on the grant-active path.
+  it('wraps the grant-note inside the scrollable container when a grant is active', async () => {
+    installFetchMock({
+      grantActive: true,
+      expiresAt: '2025-01-01T12:20:00Z',
+    });
+    render(
+      <BulkUploadDialog open={true} onOpenChange={() => {}} onSaved={() => {}} />,
+    );
+    const scrollable = await screen.findByTestId('bulk-upload-scrollable');
+    expect(scrollable).toBeInTheDocument();
+    // OTP input is hidden when grant is active.
+    expect(scrollable.querySelector('[data-testid="bulk-upload-otp"]')).toBeNull();
+    // Grant note lives inside the scrollable wrapper.
+    expect(
+      scrollable.querySelector('[data-testid="bulk-upload-grant-note"]'),
+    ).not.toBeNull();
+  });
 });
