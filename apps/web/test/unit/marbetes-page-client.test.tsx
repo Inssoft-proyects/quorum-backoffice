@@ -240,6 +240,12 @@ describe('MarbetesPageClient (maquette v2)', () => {
     await user.click(screen.getByTestId('delete-1'));
     const reasonSelect = await screen.findByTestId('deactivate-reason-select');
     await user.selectOptions(reasonSelect, 'otro');
+    // D-3-class fix: the revoke dialog now requires an OTP when no
+    // grant is active. Type one so the submit button enables.
+    const otpInputs = (await screen.findAllByRole('textbox', { name: /Digit/i })) as HTMLInputElement[];
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
     await user.click(screen.getByTestId('revoke-marbete-submit'));
 
     const alert = await screen.findByTestId('app-alert-success');

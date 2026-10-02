@@ -267,6 +267,8 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
     const note = await screen.findByTestId('revoke-marbete-grant-note');
     expect(note).toBeInTheDocument();
     expect(note.textContent).toMatch(/OTP vigente hasta/i);
+    // OTP input is hidden under an active grant.
+    expect(screen.queryByTestId('revoke-marbete-otp')).toBeNull();
 
     await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'danado');
     await user.click(screen.getByTestId('revoke-marbete-submit'));
@@ -288,7 +290,12 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
     expect(del!.headers['x-otp-code']).toBeUndefined();
   });
 
-  it('without an active grant: the grant note is NOT rendered; submit does send x-otp-code', async () => {
+  // D-3-class fix for RevokeMarbeteDialog: mirror AddMarbeteDialog. The
+  // dialog renders an OtpInput (modes alphanumeric) when no grant is
+  // active and forwards the captured 6-char code on x-otp-code. Prior
+  // to the fix the dialog submitted an empty string which always failed
+  // server-side with otp_required as soon as AUTH_OTP_REQUIRED was on.
+  it('without an active grant: renders the OTP input and forwards the typed OTP on x-otp-code', async () => {
     const handle = installGrantAwareFetch({
       grantActive: false,
       expiresAt: null,
@@ -305,11 +312,29 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
       />,
     );
 
+    // OTP input visible when no grant; grant note absent.
     await waitFor(() => {
       expect(screen.queryByTestId('revoke-marbete-grant-note')).toBeNull();
     });
+    expect(screen.getByTestId('revoke-marbete-otp')).toBeInTheDocument();
+
+    // Submit is disabled until reason + OTP are both filled.
+    expect(screen.getByTestId('revoke-marbete-submit')).toBeDisabled();
 
     await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'danado');
+    // Still disabled: reason alone is not enough.
+    expect(screen.getByTestId('revoke-marbete-submit')).toBeDisabled();
+
+    const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i }) as HTMLInputElement[];
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
+    // Every filled box renders its char (D-2 alignment).
+    expect(otpInputs.map((b) => b.value)).toEqual(['A', 'B', '1', '2', 'C', 'D']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('revoke-marbete-submit')).not.toBeDisabled();
+    });
     await user.click(screen.getByTestId('revoke-marbete-submit'));
 
     await waitFor(() => {
@@ -326,6 +351,74 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
       (c) => c.url.match(/\/api\/v1\/marbetes\/1$/) && c.method === 'DELETE',
     );
     expect(del).toBeDefined();
-    expect(del!.headers['x-otp-code']).toBe('');
+    // The captured OTP is forwarded on the header (not stripped, not empty).
+    expect(del!.headers['x-otp-code']).toBe('AB12CD');
+  });
+
+  it('without an active grant: submitting without an OTP leaves submit disabled', async () => {
+    installGrantAwareFetch({
+      grantActive: false,
+      expiresAt: null,
+      destructiveStatus: 200,
+      destructiveBody: detailResponseBody,
+    });
+    const user = userEvent.setup();
+    render(
+      <RevokeMarbeteDialog
+        marbeteId={1}
+        open={true}
+        onOpenChange={() => {}}
+        onRevoked={() => {}}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('revoke-marbete-otp')).toBeInTheDocument();
+    });
+    await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'danado');
+    // Without an OTP the submit button must stay disabled.
+    expect(screen.getByTestId('revoke-marbete-submit')).toBeDisabled();
+  });
+
+  it('accepts a pasted alphanumeric OTP (e.g. 3KL9YH) and forwards it on x-otp-code', async () => {
+    const handle = installGrantAwareFetch({
+      grantActive: false,
+      expiresAt: null,
+      destructiveStatus: 200,
+      destructiveBody: detailResponseBody,
+    });
+    const user = userEvent.setup();
+    render(
+      <RevokeMarbeteDialog
+        marbeteId={1}
+        open={true}
+        onOpenChange={() => {}}
+        onRevoked={() => {}}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('revoke-marbete-otp')).toBeInTheDocument();
+    });
+    await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'extraviado');
+
+    const firstBox = screen.getAllByRole('textbox', { name: /Digit/i })[0]!;
+    await user.click(firstBox);
+    await user.paste('3KL9YH');
+
+    await user.click(screen.getByTestId('revoke-marbete-submit'));
+    await waitFor(() => {
+      const captured = handle.read();
+      expect(
+        captured.find(
+          (c) => c.url.match(/\/api\/v1\/marbetes\/1$/) && c.method === 'DELETE',
+        ),
+      ).toBeDefined();
+    });
+
+    const captured = handle.read();
+    const del = captured.find(
+      (c) => c.url.match(/\/api\/v1\/marbetes\/1$/) && c.method === 'DELETE',
+    );
+    expect(del).toBeDefined();
+    expect(del!.headers['x-otp-code']).toBe('3KL9YH');
   });
 });
