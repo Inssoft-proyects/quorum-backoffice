@@ -427,60 +427,88 @@ export class MarbetesService {
         tx<T>(fn: (client: import('pg').PoolClient) => Promise<T>): Promise<T>;
       };
       auditId = await txPool.tx(async (client) => {
-        const inserted = await this.repo.bulkInsert(
-          client,
-          ready.map((r) => ({
-            publicUid: r.publicUid,
-            codeHash: r.codeHash,
-            createdBy: actor,
-          })),
-        );
+        try {
+          const inserted = await this.repo.bulkInsert(
+            client,
+            ready.map((r) => ({
+              publicUid: r.publicUid,
+              codeHash: r.codeHash,
+              createdBy: actor,
+            })),
+          );
 
-        // Map the inserted rows back to the original indexes for the
-        // successes list (preserves input order).
-        const byUid = new Map(inserted.map((row) => [row.public_uid, row]));
-        for (const r of ready) {
-          const row = byUid.get(r.publicUid);
-          if (!row) throw AppError.internal('bulk_insert_returned_incomplete');
-          successes.push({
-            id: row.id,
-            publicUid: row.public_uid,
-            status: row.status,
-          });
+          // Map the inserted rows back to the original indexes for the
+          // successes list (preserves input order).
+          const byUid = new Map(inserted.map((row) => [row.public_uid, row]));
+          for (const r of ready) {
+            const row = byUid.get(r.publicUid);
+            if (!row) throw AppError.internal('bulk_insert_returned_incomplete');
+            successes.push({
+              id: row.id,
+              publicUid: row.public_uid,
+              status: row.status,
+            });
+          }
+
+          if (failures.length > 0) {
+            // Partial-success batch: skip the audit row. The caller can
+            // re-submit the failed codes separately if needed.
+            return null;
+          }
+
+          const auditRow = await client.query<{ id: number }>(
+            `INSERT INTO audit_log
+               (actor_id, actor_email, action, entity_type, entity_id,
+                after_jsonb, otp_id, ip, user_agent)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::inet, $9)
+             RETURNING id`,
+            [
+              actor,
+              null,
+              'marbete.bulk_create',
+              'marbete',
+              fileName ?? 'inline-json',
+              JSON.stringify({
+                count: req.items.length,
+                created: successes.length,
+                source,
+                fileName,
+                publicUids: successes.map((s) => s.publicUid),
+                reason: req.reason ?? null,
+              }),
+              otpResult.otpId,
+              meta.ip ?? null,
+              meta.userAgent ?? null,
+            ],
+          );
+          return auditRow.rows[0]?.id ?? null;
+        } catch (err) {
+          // Map pg 23505 to a proper AppError so the global error
+          // handler can render a structured 409 envelope instead of
+          // dropping the raw pg error into the "Unknown" branch
+          // (which historically caused the bulk-xlsx route to log
+          // both the raw pg error AND FST_ERR_REP_ALREADY_SENT
+          // because the response was effectively double-sent).
+          //
+          // The realistic race is on `marbetes_public_uid_key` or
+          // `marbetes_pkey` after `findExistingCodeHashes` cleared
+          // the path a millisecond earlier; we don't try to
+          // distinguish — any 23505 from this transactional path is
+          // a conflict the client can retry.
+          const pgErr = err as { code?: string; constraint?: string };
+          if (pgErr.code === '23505') {
+            throw new AppError(
+              'marbete_bulk_conflict',
+              `bulk insert collided with an existing marbete (constraint: ${pgErr.constraint ?? 'unknown'})`,
+              409,
+              { constraint: pgErr.constraint ?? null },
+            );
+          }
+          // Re-throw everything else (connection errors, AppError.internal
+          // raised by the success-mapping loop, audit_log unique violations,
+          // etc.) unchanged so the caller can keep its existing contract.
+          throw err;
         }
-
-        if (failures.length > 0) {
-          // Partial-success batch: skip the audit row. The caller can
-          // re-submit the failed codes separately if needed.
-          return null;
-        }
-
-        const auditRow = await client.query<{ id: number }>(
-          `INSERT INTO audit_log
-             (actor_id, actor_email, action, entity_type, entity_id,
-              after_jsonb, otp_id, ip, user_agent)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::inet, $9)
-           RETURNING id`,
-          [
-            actor,
-            null,
-            'marbete.bulk_create',
-            'marbete',
-            fileName ?? 'inline-json',
-            JSON.stringify({
-              count: req.items.length,
-              created: successes.length,
-              source,
-              fileName,
-              publicUids: successes.map((s) => s.publicUid),
-              reason: req.reason ?? null,
-            }),
-            otpResult.otpId,
-            meta.ip ?? null,
-            meta.userAgent ?? null,
-          ],
-        );
-        return auditRow.rows[0]?.id ?? null;
       });
     }
     // When `ready.length === 0` (the whole batch was duplicates) we
