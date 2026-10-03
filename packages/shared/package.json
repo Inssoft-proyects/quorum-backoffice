@@ -17,6 +17,10 @@
     "./dto/auth": {
       "types": "./dist/dto/auth.d.ts",
       "default": "./dist/dto/auth.js"
+    },
+    "./dto/audit": {
+      "types": "./dist/dto/audit.d.ts",
+      "default": "./dist/dto/audit.js"
     }
   },
   "files": ["dist"],
