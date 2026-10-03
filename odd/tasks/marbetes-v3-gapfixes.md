@@ -82,7 +82,7 @@ Flujos G1: LOGIN ✅, MENÚ ✅, MARBETES layout ✅ (banner NO TESTED por D-3),
 | --- | --- |
 | Limpieza de códigos fixture `80000*` | ✅ 3 filas eliminadas del inventario desplegado |
 | G9 quorum-canvas (status de enrollments) | ⛔ **Bloqueado verificado**: la fuente del endpoint `/v1/students` no existe en ningún workspace visible (`quorum-canvas/apps/portal-api` solo contiene `_canvas-side/`). Requiere acceso a la fuente real del portal-api desplegado |
-| G9 parte backoffice (F4) | ✅ Aplicado: `sync()` desactiva (`is_active=false`) filas ausentes del roster solo cuando el sync es completo; nunca en sync incompleto |
+| G9 parte backoffice (F4) | ✅ `565d919` desactivación por roster completo + `a48d822` consumo de `is_active` por usuario (contrato portal con `email_hash`) |
 | Entrega | ✅ Issue #5 + push + PR a `master` |
 
 ## 8. Entrega
@@ -91,3 +91,10 @@ Flujos G1: LOGIN ✅, MENÚ ✅, MARBETES layout ✅ (banner NO TESTED por D-3),
 - Rama `feature/marbetes-v3-asignacion` → base `master` (default branch verificado vía gh, cuenta `ci-admin-inssoftmx`)
 - PR: https://github.com/Inssoft-proyects/quorum-backoffice/pull/6 (base `master`, `Closes #5`)
 - Nota RDD: el consentimiento del candidato quedó registrado `declined` por el host interactivo (candidate-scoped, sin linaje); la entrega se hizo bajo política normal del repositorio
+
+## 9. G9 — mapa de descubrimientos (para continuidad)
+
+- **Portal-api real**: `quorum-jitsi/apps/portal-api` (NO `quorum-canvas` — su `apps/portal-api` solo contiene `_canvas-side/` de sync). Tiene tablas `users`, `courses`, `enrollments`, `conferences` (`src/courses/repo.ts`) con `role` + `status`; política PII vinculante: solo `email_hash`, nunca email en claro.
+- **Nuevo endpoint**: `GET /v1/students?search=&limit=&offset=` → `{ total, items: [{ id, canvas_user_id, full_name, email_hash, is_active }] }` (is_active derivado del status de enrollments). En vuelo al cierre — si quedó sin commitear, el diff está en el working tree de `/planQuorum/dev/quorum-jitsi` (apps/portal-api/src/** + test/unit/**).
+- **Consumo backoffice**: `a48d822` — CanvasStudent relajado (email optional + email_hash + is_active optional), sync upserta `is_active` por fila (`EXCLUDED.is_active`), missing email → `''`, F4 `565d919` como safety net.
+- **Wiring operador PENDIENTE** (fuera de código): exponer el portal-api como servicio (hoy no está desplegado; el cluster solo tiene jitsi-web/prosody/jicofo en `quorum-media` y Canvas LMS en `quorum-lms`) y setear `CANVAS_PORTAL_API_URL` (hoy placeholder `https://canvas.invalid/api/v1`) + `CANVAS_PORTAL_API_TOKEN` en `quorum-backoffice-api-config` / secret.
