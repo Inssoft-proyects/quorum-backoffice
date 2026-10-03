@@ -67,3 +67,4 @@ backoffice debe consumirlo. Cierra el gap G9 de `marbetes-v3-gapfixes.md` §9.
 5. Scanner PII estático no cubre `courses/`/`backoffice/`; falta test unitario del escape de LIKE (quorum-jitsi).
 6. Portal: decisiones abiertas — adapter PG de `CourseRepository`, Redis propio para portal (hoy comparte el redis del host con OTP en DB 2), `openbao-0` sigue `0/1 Ready` (readiness 501).
 7. UI: re-confirmación visual del botón "Sincronizar matrículas" en `/asociar` (el endpoint fue probado; el click de Playwright quedó en `/tmp/g9-sync.spec.ts`).
+8. **Transversal (handoff inter-sesiones)**: `BulkCreateMarbeteFailure` requiere `category` en `feature/marbetes-v3-asignacion` pero `master` no la tiene (registrado como B4 por la sesión hermana de `quorum-backoffice-access`) — pendiente de diseño propio del stream Marbetes.
