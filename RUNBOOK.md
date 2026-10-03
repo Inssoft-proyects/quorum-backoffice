@@ -307,6 +307,69 @@ tested but **not deployed**; no live caller exists yet.
   (`deny.dependency_fail` wherever a matrícula would be required) is
   the correct production behavior.
 
+### Manual smoke: device assignment + access decision (B2/B3)
+
+Local-only acceptance smoke for the two new surfaces. Nothing here
+touches production. Prereqs: local Postgres + Redis, `npm run migrate`
+and `npm run seed:e2e` from `apps/api`, and env `DATABASE_URL`,
+`REDIS_URL`, `OTP_SERVICE_URL`/`OTP_SERVICE_TOKEN` (a running
+`quorum-otp`, e.g. its local docker-compose),
+`CANVAS_PORTAL_API_URL`/`CANVAS_PORTAL_API_TOKEN` (unused by these
+flows — placeholder is fine), `SESSION_SECRET`, and
+`BACKOFFICE_SERVICE_TOKENS='demo-caller:demo-secret'`. API dev port:
+3100.
+
+Seed one student and one device:
+
+```sql
+INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
+VALUES (9001, 'Smoke Student', 'smoke@quorum.local', TRUE);
+```
+
+Every destructive call needs a single-use OTP issued by `quorum-otp`
+(`POST /v1/otps`, HMAC-signed) with the exact scope of the operation:
+`dispositivo.create`, `dispositivo.assign`, `dispositivo.unassign`,
+and `access.decision` (subject = `String(canvas_user_id)`). Send it as
+`X-OTP-Code` (admin routes) or as `otp_proof` (access decision).
+
+**Flow A — audited assignment (B2).** Log in (two-step OTP) →
+`POST /api/v1/dispositivos` (create) → `POST /api/v1/dispositivos/:id/assign`
+`{"canvasUserId": 9001}` → 200 with `assignedStudentId`. Reassign to a
+second student → 200 (audit holds both states). `POST .../unassign` →
+200 `assignedStudentId: null`; repeat → 409 `device_not_assigned`.
+Negatives: missing `X-OTP-Code` → 401 `otp_required`; wrong code → 401
+`otp_invalid`; operator/auditor role → 403. Finish with
+`GET /api/v1/audit`: expect `dispositivo.assign` / `dispositivo.unassign`
+rows carrying `otp_id` and before/after snapshots.
+
+**Flow B — machine access decision (B3).** Sign and send:
+
+```bash
+node -e '
+const c = require("crypto");
+const secret = "demo-secret", name = "demo-caller";
+const body = JSON.stringify({ device_id: "SN-SMOKE-1", otp_proof: "<token>", canvas_user_id: 9001 });
+const ts = Math.floor(Date.now() / 1000).toString();
+const sig = c.createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
+console.log(JSON.stringify({ auth: `HMAC ${name} ${ts} ${sig}`, body }));
+' > /tmp/req.json
+AUTH=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("/tmp/req.json")).auth)')
+BODY=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("/tmp/req.json")).body)')
+curl -s -X POST localhost:3100/api/v1/access-decisions \
+  -H "content-type: application/json" -H "authorization: $AUTH" -d "$BODY"
+```
+
+Expected: valid OTP + assigned active device →
+`{"decision":"allow","student_id":...}`; unassigned, revoked, wrong
+owner or inactive-student device → `deny.device_unknown` (identical by
+design); empty `otp_proof` → `deny.otp_missing`; rejected OTP →
+`deny.otp_invalid`; OTP service down → `deny.dependency_fail`; bad or
+missing signature → 401 `deny.idp_untrusted`. No `deny.*` body ever
+contains the serial.
+
+**Out of scope for this smoke**: real Canvas/Jitsi entry, Keycloak SSO
+and SIS lookups — those stay behind the operator gates.
+
 ### Rotate a session secret
 
 `SESSION_SECRET` is used to HMAC-sign cookies. Rotating invalidates
