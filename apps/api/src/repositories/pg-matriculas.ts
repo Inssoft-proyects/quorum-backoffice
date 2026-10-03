@@ -313,8 +313,14 @@ export class PgMatriculasRepo {
     // `xmax = 0` is the standard "INSERT" sentinel returned by
     // RETURNING after ON CONFLICT DO UPDATE. The other rows are
     // updates (no separate "unchanged" signal at the SQL level).
+    //
+    // D-3 fix: the INSERT column list omits `last_synced_at` so the
+    // column DEFAULT `now()` fires on insert. The ON CONFLICT branch
+    // still sets `last_synced_at = now()` so updated rows get a
+    // fresh timestamp. The 4 target columns line up 1:1 with the 4
+    // UNNEST arrays.
     const r = await this.client.query<{ canvas_user_id: number; xmax: number }>(
-      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active, last_synced_at)
+      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
        SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::boolean[])
        ON CONFLICT (canvas_user_id) DO UPDATE
          SET full_name = EXCLUDED.full_name,

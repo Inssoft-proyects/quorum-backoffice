@@ -140,6 +140,18 @@ describe('PgMatriculasRepo.upsertMany', () => {
     expect(captured).toHaveLength(1);
     const sql = captured[0]!.sql;
     expect(sql).toMatch(/INSERT INTO students_cache/i);
+    // D-3 lock: the INSERT column list MUST have exactly 4
+    // columns matching the 4 UNNEST arrays. The column DEFAULT
+    // `now()` fills `last_synced_at` on insert; the ON CONFLICT
+    // branch sets it to now() on update. A regression to the
+    // 5-column / 4-UNNEST shape (the pre-fix production bug)
+    // would break this assertion immediately.
+    expect(sql).toMatch(
+      /INSERT INTO students_cache\s*\(\s*canvas_user_id\s*,\s*full_name\s*,\s*email\s*,\s*is_active\s*\)/i,
+    );
+    expect(sql).not.toMatch(
+      /INSERT INTO students_cache\s*\([^)]*last_synced_at/i,
+    );
     expect(sql).toMatch(
       /UNNEST\(\$1::bigint\[\],\s*\$2::text\[\],\s*\$3::text\[\],\s*\$4::boolean\[\]\)/,
     );
