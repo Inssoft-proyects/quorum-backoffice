@@ -498,6 +498,21 @@ Then run from `apps/web`:
 npm run test:e2e
 ```
 
+For the access-flow suite (`e2e/access-flow.spec.ts`) run against a
+local stack (quorum-otp + API) with:
+
+```bash
+NEXT_PUBLIC_API_URL=http://127.0.0.1:4310 E2E_API_URL=http://127.0.0.1:4310 \
+E2E_OTP_URL=http://127.0.0.1:8085 E2E_OTP_SERVICE_NAME=e2e-service \
+E2E_OTP_SERVICE_TOKEN=<secret> npx playwright test e2e/access-flow.spec.ts
+```
+
+The suite issues its own OTPs out of band through quorum-otp's HMAC API
+(see `e2e/otp-issuer.ts`). Note that the per-route `OtpClient` in
+`dispositivos`/`marbetes` routes signs as `quorum-backoffice` regardless
+of `OTP_SERVICE_NAME`, so a local quorum-otp must register that name
+(see B7 in the ODD task file).
+
 The Playwright config starts `next build && next start` automatically
 via `webServer`. Pre-existing dev server on port 3002 is reused if
 `reuseExistingServer` is enabled (default outside CI).
