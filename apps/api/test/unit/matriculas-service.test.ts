@@ -890,6 +890,157 @@ describe('MatriculasService.sync — paging math + upsert counts', () => {
     expect(ids.slice(0, 100)).toEqual(fullPage.map((x) => x.canvas_user_id));
     expect(ids.slice(100, 200)).toEqual(secondPage.map((x) => x.canvas_user_id));
   });
+
+  // G9 follow-up: portal now publishes per-user enrollment status
+  // (`is_active`) and may omit clear `email` (PII minimisation).
+  // The sync must:
+  //   - propagate the upstream `is_active` flag to the upsert
+  //   - default to TRUE when the portal omits the flag (legacy builds)
+  //   - tolerate missing `email` by storing the empty string (the
+  //     students_cache.email column is NOT NULL) and never
+  //     substitute `email_hash` for it
+  it('propagates is_active=false from the Canvas row into upsertMany', async () => {
+    // Canvas page: 1 item, is_active=false. The sync must forward
+    // the flag to the upsert so the row lands inactive in the cache.
+    // We don't rely on xmax to infer the result here — the assertion
+    // is on the upsertMany parameters.
+    const canvas = makeCanvasClient([
+      {
+        total: 1,
+        items: [
+          {
+            id: 1,
+            canvas_user_id: 101,
+            full_name: 'A',
+            email: 'a@x',
+            is_active: false,
+          },
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      { rows: [{ canvas_user_id: 101, xmax: 0 }] },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    const r = await svc.sync('admin');
+    // Roster is complete: total=1 and response.total=1 match.
+    expect(r).toMatchObject({ total: 1, created: 1, incomplete: false });
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    // Param order: [canvasIds, fullNames, emails, isActives]
+    expect(upsertSql!.params[0]).toEqual([101]);
+    expect(upsertSql!.params[1]).toEqual(['A']);
+    expect(upsertSql!.params[2]).toEqual(['a@x']);
+    expect(upsertSql!.params[3]).toEqual([false]);
+  });
+
+  it('defaults is_active to TRUE when the Canvas row omits it (legacy portal build)', async () => {
+    const canvas = makeCanvasClient([
+      {
+        total: 1,
+        items: [
+          // No `is_active` key — older portal builds do not publish it.
+          { id: 1, canvas_user_id: 101, full_name: 'A', email: 'a@x' },
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      { rows: [{ canvas_user_id: 101, xmax: 0 }] },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    await svc.sync('admin');
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    // Missing flag → treat as still enrolled (today's behaviour).
+    expect(upsertSql!.params[3]).toEqual([true]);
+  });
+
+  it('items without email do not crash; upsertMany receives empty string for the email column', async () => {
+    // Portal enforces PII minimisation: the response may include
+    // only `email_hash`. The backoffice must NOT store `email_hash`
+    // as if it were an email, and must satisfy the NOT NULL
+    // constraint on students_cache.email by storing the empty
+    // string. (See F4 docstring in matriculas-service for the
+    // email-handling decision.)
+    const canvas = makeCanvasClient([
+      {
+        total: 1,
+        items: [
+          {
+            id: 1,
+            canvas_user_id: 101,
+            full_name: 'A',
+            // no `email` — PII minimisation
+            email_hash: 'deadbeef',
+            is_active: true,
+          },
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      { rows: [{ canvas_user_id: 101, xmax: 0 }] },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    const r = await svc.sync('admin');
+    expect(r).toMatchObject({ total: 1, created: 1 });
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    // email column gets the empty string (NOT NULL); is_active
+    // honours the portal flag.
+    expect(upsertSql!.params[2]).toEqual(['']);
+    expect(upsertSql!.params[3]).toEqual([true]);
+    // The email_hash from the portal is never forwarded to the
+    // upsert path — it lives on the wire, not in the cache.
+    const flatParams = JSON.stringify(upsertSql!.params);
+    expect(flatParams).not.toMatch(/deadbeef/);
+  });
+
+  it('mixed page: items with and without is_active are upserted with their own values', async () => {
+    // Triangulate: a single page where some rows publish is_active
+    // and others omit it. The upsertMany receives per-row values,
+    // not a single blanket flag.
+    const canvas = makeCanvasClient([
+      {
+        total: 3,
+        items: [
+          { id: 1, canvas_user_id: 101, full_name: 'A', email: 'a@x', is_active: false },
+          { id: 2, canvas_user_id: 102, full_name: 'B', email: 'b@x' }, // no is_active
+          { id: 3, canvas_user_id: 103, full_name: 'C', email: 'c@x', is_active: true },
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      {
+        rows: [
+          { canvas_user_id: 101, xmax: 0 },
+          { canvas_user_id: 102, xmax: 0 },
+          { canvas_user_id: 103, xmax: 0 },
+        ],
+      },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    await svc.sync('admin');
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    expect(upsertSql!.params[0]).toEqual([101, 102, 103]);
+    expect(upsertSql!.params[3]).toEqual([false, true, true]);
+  });
 });
 
 describe('MatriculasService — grant-aware OTP', () => {

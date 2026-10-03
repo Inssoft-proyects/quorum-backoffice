@@ -33,11 +33,20 @@ import type { StudentRow } from './pg-students';
 
 type Client = pg.Pool | pg.PoolClient;
 
-/** Plain Canvas row (no marbete join). Matches CanvasStudentListResponse.items[]. */
+/** Plain Canvas row (no marbete join). Matches CanvasStudentListResponse.items[].
+ *
+ * G9 follow-up: `isActive` is the per-user enrollment status the
+ * portal now publishes. The service forwards the upstream value
+ * verbatim (defaulting to `true` for legacy portal builds that
+ * omit the flag). The `email` column is the clear-text email the
+ * portal publishes when PII minimisation is OFF; when the portal
+ * omits it, the service stores the empty string.
+ */
 export interface CanvasStudentRow {
   canvasUserId: number;
   fullName: string;
   email: string;
+  isActive: boolean;
 }
 
 /** Upsert outcome counts. Sum equals the row count at ingest time. */
@@ -255,8 +264,15 @@ export class PgMatriculasRepo {
 
   /**
    * Bulk upsert from a Canvas page. ON CONFLICT (canvas_user_id)
-   * updates `full_name`, `email`, `is_active=true`, and
-   * `last_synced_at=now()` for every matched row.
+   * updates `full_name`, `email`, `is_active` (per-row value from
+   * the upstream payload), and `last_synced_at=now()` for every
+   * matched row.
+   *
+   * G9 follow-up: the `is_active` column is now driven by the
+   * upstream payload (per-row, defaults to TRUE at the service
+   * layer when the portal omits the flag). The ON CONFLICT
+   * branch uses `EXCLUDED.is_active` so a row that flipped to
+   * `false` in Canvas is reflected on the next sync.
    *
    * The function counts inserted vs updated vs unchanged by
    * inspecting `xmax`:
@@ -292,20 +308,21 @@ export class PgMatriculasRepo {
     const canvasIds = rows.map((r) => r.canvasUserId);
     const fullNames = rows.map((r) => r.fullName);
     const emails = rows.map((r) => r.email);
+    const isActives = rows.map((r) => r.isActive);
 
     // `xmax = 0` is the standard "INSERT" sentinel returned by
     // RETURNING after ON CONFLICT DO UPDATE. The other rows are
     // updates (no separate "unchanged" signal at the SQL level).
     const r = await this.client.query<{ canvas_user_id: number; xmax: number }>(
       `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active, last_synced_at)
-       SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[])
+       SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::boolean[])
        ON CONFLICT (canvas_user_id) DO UPDATE
          SET full_name = EXCLUDED.full_name,
              email = EXCLUDED.email,
-             is_active = TRUE,
+             is_active = EXCLUDED.is_active,
              last_synced_at = now()
        RETURNING canvas_user_id, xmax`,
-      [canvasIds, fullNames, emails],
+      [canvasIds, fullNames, emails, isActives],
     );
 
     let inserted = 0;

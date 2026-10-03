@@ -536,7 +536,19 @@ export class MatriculasService {
       const upsertRows = items.map((s) => ({
         canvasUserId: s.canvas_user_id,
         fullName: s.full_name,
-        email: s.email,
+        // G9: the portal may omit `email` (PII minimisation).
+        // The students_cache.email column is NOT NULL, so we
+        // store the empty string and never substitute the
+        // portal's `email_hash` for it.
+        email: s.email ?? '',
+        // G9: the portal may publish per-user enrollment
+        // status. When the flag is absent (legacy portal
+        // builds) we keep today's "still enrolled" default;
+        // when present, we forward the upstream value so a
+        // student who dropped out of Canvas lands inactive on
+        // the very next sync — the F4 `deactivateMissing`
+        // roster-walk is the safety net for anything we miss.
+        isActive: s.is_active ?? true,
       }));
       // Record them on every iteration so the deactivation call gets
       // the union of every page (order is irrelevant to the SQL).

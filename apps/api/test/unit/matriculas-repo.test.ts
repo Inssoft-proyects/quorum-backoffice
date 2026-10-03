@@ -119,35 +119,43 @@ describe('PgMatriculasRepo.upsertMany', () => {
     const client = makeClient({ xmaxSequence: [0, 0, 42, 0, 99] });
     const repo = new PgMatriculasRepo(client);
     const r = await repo.upsertMany([
-      { canvasUserId: 1, fullName: 'A', email: 'a@x' },
-      { canvasUserId: 2, fullName: 'B', email: 'b@x' },
-      { canvasUserId: 3, fullName: 'C', email: 'c@x' },
-      { canvasUserId: 4, fullName: 'D', email: 'd@x' },
-      { canvasUserId: 5, fullName: 'E', email: 'e@x' },
+      { canvasUserId: 1, fullName: 'A', email: 'a@x', isActive: true },
+      { canvasUserId: 2, fullName: 'B', email: 'b@x', isActive: true },
+      { canvasUserId: 3, fullName: 'C', email: 'c@x', isActive: false },
+      { canvasUserId: 4, fullName: 'D', email: 'd@x', isActive: true },
+      { canvasUserId: 5, fullName: 'E', email: 'e@x', isActive: true },
     ]);
     expect(r.inserted).toBe(3);
     expect(r.updated).toBe(2);
   });
 
-  it('uses UNNEST + ON CONFLICT (canvas_user_id) DO UPDATE', async () => {
+  it('uses UNNEST + ON CONFLICT (canvas_user_id) DO UPDATE with per-row is_active', async () => {
     const captured: CapturedSql[] = [];
     const client = makeClient({ xmaxSequence: [0], captured });
     const repo = new PgMatriculasRepo(client);
     await repo.upsertMany([
-      { canvasUserId: 100, fullName: 'F', email: 'f@x' },
-      { canvasUserId: 101, fullName: 'G', email: 'g@x' },
+      { canvasUserId: 100, fullName: 'F', email: 'f@x', isActive: true },
+      { canvasUserId: 101, fullName: 'G', email: 'g@x', isActive: false },
     ]);
     expect(captured).toHaveLength(1);
     const sql = captured[0]!.sql;
     expect(sql).toMatch(/INSERT INTO students_cache/i);
-    expect(sql).toMatch(/UNNEST\(\$1::bigint\[\],\s*\$2::text\[\],\s*\$3::text\[\]\)/);
+    expect(sql).toMatch(
+      /UNNEST\(\$1::bigint\[\],\s*\$2::text\[\],\s*\$3::text\[\],\s*\$4::boolean\[\]\)/,
+    );
     expect(sql).toMatch(/ON CONFLICT \(canvas_user_id\) DO UPDATE/i);
-    expect(sql).toMatch(/is_active = TRUE/i);
+    // G9: ON CONFLICT branch uses the upstream is_active (so a
+    // student who dropped out of Canvas lands inactive on the
+    // next sync) rather than the blanket TRUE the pre-G9
+    // upsert path used.
+    expect(sql).toMatch(/is_active = EXCLUDED\.is_active/i);
+    expect(sql).not.toMatch(/is_active = TRUE/i);
     expect(sql).toMatch(/last_synced_at = now\(\)/i);
     expect(captured[0]!.params).toEqual([
       [100, 101],
       ['F', 'G'],
       ['f@x', 'g@x'],
+      [true, false],
     ]);
   });
 });

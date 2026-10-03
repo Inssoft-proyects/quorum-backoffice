@@ -8,9 +8,22 @@
  * In WU3b the integration is read-only: it hydrates the students_cache
  * (via the repository) before returning, so subsequent MarbetesService
  * reads stay inside our DB.
+ *
+ * G9 follow-up: the portal contract was relaxed. `email` is now
+ * OPTIONAL (PII minimisation — portal may return only `email_hash`)
+ * and `is_active` is now OPTIONAL (legacy portal builds do not
+ * publish per-user enrollment status). The Zod schema in
+ * `packages/shared/src/dto/canvas.ts` is the source of truth; we
+ * parse every item with `CanvasStudent.safeParse` so a malformed
+ * row surfaces as `canvas_api_invalid_response` (503) instead of
+ * crashing the sync mid-page.
  */
 import { AppError } from '../lib/errors';
-import type { CanvasStudentListResponse, CanvasStudent } from '@quorum-backoffice/shared';
+import {
+  CanvasStudent,
+  type CanvasStudent as CanvasStudentT,
+  type CanvasStudentListResponse,
+} from '@quorum-backoffice/shared';
 
 interface CanvasClientOptions {
   baseUrl: string;
@@ -56,11 +69,36 @@ export class CanvasClient {
       if (!r.ok) {
         throw AppError.serviceUnavailable(`canvas_api_${r.status}`, { url });
       }
-      const body = (await r.json()) as CanvasStudentListResponse;
-      if (!body || !Array.isArray(body.items)) {
+      const body = (await r.json()) as { total?: unknown; items?: unknown };
+      if (
+        !body ||
+        !Array.isArray(body.items) ||
+        typeof body.total !== 'number'
+      ) {
         throw AppError.serviceUnavailable('canvas_api_invalid_response', { url });
       }
-      return body;
+      // Validate every item against the relaxed Zod schema. The
+      // schema treats `email`, `is_active`, and `email_hash` as
+      // optional, so PII-minimised responses parse cleanly. A
+      // missing required field (id / canvas_user_id / full_name)
+      // still surfaces as `canvas_api_invalid_response` and never
+      // reaches the cache.
+      const parsedItems: CanvasStudentT[] = [];
+      for (const raw of body.items) {
+        const result = CanvasStudent.safeParse(raw);
+        if (!result.success) {
+          throw AppError.serviceUnavailable('canvas_api_invalid_response', {
+            url,
+            issues: result.error.issues,
+          });
+        }
+        parsedItems.push(result.data);
+      }
+      const response: CanvasStudentListResponse = {
+        total: body.total,
+        items: parsedItems,
+      };
+      return response;
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') {
         throw AppError.serviceUnavailable('canvas_api_timeout', { url, timeoutMs: this.timeoutMs });
