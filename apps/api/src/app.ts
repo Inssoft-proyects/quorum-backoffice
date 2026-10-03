@@ -34,6 +34,7 @@ import { registerDispositivosRoutes } from './routes/dispositivos';
 import { registerAuditRoutes } from './routes/audit';
 import { registerAuthRoutes } from './routes/auth';
 import { registerStudentsRoutes } from './routes/students';
+import { registerAccessDecisionsRoutes } from './routes/access-decisions';
 import authDepsPlugin from './plugins/auth-deps';
 
 declare module 'fastify' {
@@ -102,6 +103,13 @@ export async function buildApp(
   await registerAuditRoutes(app as unknown as FastifyInstance);
   await registerAuthRoutes(app as unknown as FastifyInstance);
   await registerStudentsRoutes(app as unknown as FastifyInstance);
+  // B3.2 / Machine-to-machine access-decision endpoint. Registered
+  // alongside the other routes; the route module registers the
+  // captureRawBodyPlugin it needs internally and wires its own
+  // `requireServiceAuth` preHandler from BACKOFFICE_SERVICE_TOKENS +
+  // BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS, failing closed when the
+  // registry is empty.
+  await registerAccessDecisionsRoutes(app as unknown as FastifyInstance);
 
   return app;
 }

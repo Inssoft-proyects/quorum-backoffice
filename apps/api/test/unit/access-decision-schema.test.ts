@@ -26,6 +26,7 @@ import {
   DecisionResponse,
   DenialCode,
   AccessDecision,
+  ACCESS_DECISION_OTP_SCOPE,
 } from '@quorum-backoffice/shared';
 
 describe('DenialCode (shared Zod enum) — deny.* taxonomy', () => {
@@ -66,11 +67,12 @@ describe('DecisionRequest (shared Zod schema)', () => {
     const r = DecisionRequest.safeParse({
       device_id: 'dev-abc-1234',
       otp_proof: 'AB12CD',
+      canvas_user_id: 42,
     });
     expect(r.success).toBe(true);
   });
 
-  it('accepts a fully-populated request (idp_subject, marbete_id, room_id, media_policy)', () => {
+  it('accepts a fully-populated request (idp_subject, marbete_id, room_id, media_policy, canvas_user_id)', () => {
     const r = DecisionRequest.safeParse({
       idp_subject: 'canvas:42',
       marbete_id: 'M-7Q3X9K',
@@ -78,40 +80,108 @@ describe('DecisionRequest (shared Zod schema)', () => {
       otp_proof: 'AB12CD',
       room_id: 'room-jitsi-1',
       media_policy: 'allow_mic_camera',
+      canvas_user_id: 42,
     });
     expect(r.success).toBe(true);
   });
 
   it('rejects a request with no device_id', () => {
-    const r = DecisionRequest.safeParse({ otp_proof: 'AB12CD' });
+    const r = DecisionRequest.safeParse({ otp_proof: 'AB12CD', canvas_user_id: 42 });
     expect(r.success).toBe(false);
   });
 
   it('rejects a request with no otp_proof', () => {
-    const r = DecisionRequest.safeParse({ device_id: 'dev-abc-1234' });
+    const r = DecisionRequest.safeParse({ device_id: 'dev-abc-1234', canvas_user_id: 42 });
     expect(r.success).toBe(false);
   });
 
   it('rejects a request with non-string device_id (e.g. a number)', () => {
-    const r = DecisionRequest.safeParse({ device_id: 42, otp_proof: 'AB12CD' });
+    const r = DecisionRequest.safeParse({
+      device_id: 42,
+      otp_proof: 'AB12CD',
+      canvas_user_id: 42,
+    });
     expect(r.success).toBe(false);
   });
 
   it('rejects a request with empty-string device_id', () => {
-    const r = DecisionRequest.safeParse({ device_id: '', otp_proof: 'AB12CD' });
+    const r = DecisionRequest.safeParse({
+      device_id: '',
+      otp_proof: 'AB12CD',
+      canvas_user_id: 42,
+    });
     expect(r.success).toBe(false);
+  });
+
+  it('rejects a request with no canvas_user_id (the interim identity is REQUIRED for B3.2)', () => {
+    const r = DecisionRequest.safeParse({
+      device_id: 'dev-abc-1234',
+      otp_proof: 'AB12CD',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects a request with non-integer canvas_user_id (e.g. a string)', () => {
+    const r = DecisionRequest.safeParse({
+      device_id: 'dev-abc-1234',
+      otp_proof: 'AB12CD',
+      canvas_user_id: '42',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects a request with non-positive canvas_user_id', () => {
+    const r1 = DecisionRequest.safeParse({
+      device_id: 'dev-abc-1234',
+      otp_proof: 'AB12CD',
+      canvas_user_id: 0,
+    });
+    expect(r1.success).toBe(false);
+    const r2 = DecisionRequest.safeParse({
+      device_id: 'dev-abc-1234',
+      otp_proof: 'AB12CD',
+      canvas_user_id: -7,
+    });
+    expect(r2.success).toBe(false);
+  });
+
+  it('accepts an empty-string otp_proof at the wire boundary (mapped to deny.otp_missing by the service)', () => {
+    const r = DecisionRequest.safeParse({
+      device_id: 'dev-abc-1234',
+      otp_proof: '',
+      canvas_user_id: 42,
+    });
+    expect(r.success).toBe(true);
+  });
+
+it('treats idp_subject as optional and reserved (mapping deferred to IdP)', () => {
+    const r1 = DecisionRequest.safeParse({
+      device_id: 'dev-abc-1234',
+      otp_proof: 'AB12CD',
+      canvas_user_id: 42,
+      idp_subject: 'canvas:42',
+    });
+    expect(r1.success).toBe(true);
+    const r2 = DecisionRequest.safeParse({
+      device_id: 'dev-abc-1234',
+      otp_proof: 'AB12CD',
+      canvas_user_id: 42,
+    });
+    expect(r2.success).toBe(true);
   });
 
   it('treats room_id and media_policy as optional strings', () => {
     const r1 = DecisionRequest.safeParse({
       device_id: 'dev-abc-1234',
       otp_proof: 'AB12CD',
+      canvas_user_id: 42,
       room_id: 'room-x',
     });
     expect(r1.success).toBe(true);
     const r2 = DecisionRequest.safeParse({
       device_id: 'dev-abc-1234',
       otp_proof: 'AB12CD',
+      canvas_user_id: 42,
       media_policy: 'allow_mic_only',
     });
     expect(r2.success).toBe(true);
@@ -193,5 +263,19 @@ describe('AccessDecision (shared literal type)', () => {
     const deny: AccessDecision = 'deny';
     expect(allow).toBe('allow');
     expect(deny).toBe('deny');
+  });
+});
+
+describe('ACCESS_DECISION_OTP_SCOPE (shared constant)', () => {
+  it('is the literal `access.decision` — the scope the access-decision endpoint verifies against', () => {
+    expect(ACCESS_DECISION_OTP_SCOPE).toBe('access.decision');
+  });
+
+  it('is a non-empty string consumable as an OtpClient scope argument', () => {
+    expect(typeof ACCESS_DECISION_OTP_SCOPE).toBe('string');
+    expect(ACCESS_DECISION_OTP_SCOPE.length).toBeGreaterThan(0);
+    // OtpClient scopes are bounded to 64 chars; the constant must
+    // fit inside that envelope to be a valid scope argument.
+    expect(ACCESS_DECISION_OTP_SCOPE.length).toBeLessThanOrEqual(64);
   });
 });

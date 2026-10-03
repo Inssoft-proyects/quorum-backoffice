@@ -61,25 +61,46 @@ export const AccessDecision = z.enum(['allow', 'deny']);
 export type AccessDecision = z.infer<typeof AccessDecision>;
 
 // ---------------------------------------------------------------------------
+// ACCESS_DECISION_OTP_SCOPE
+// ---------------------------------------------------------------------------
+//
+// The scope the access-decision endpoint verifies OTPs against in the
+// quorum-otp service. Exported as a constant (not derived from a
+// runtime config) because the value is part of the wire contract with
+// the OTPs issued out-of-band: any change here requires a coordinated
+// re-issuance of in-flight codes. Keep it short (<=64 chars per the
+// OtpClient scope envelope).
+export const ACCESS_DECISION_OTP_SCOPE = 'access.decision';
+
+// ---------------------------------------------------------------------------
 // DecisionRequest
 // ---------------------------------------------------------------------------
 //
-// The current decision path needs exactly two things:
+// The current decision path needs exactly three things:
 //   1. The device the user is calling from (`device_id`) — the
 //      pairing record in the `dispositivos` table is the
 //      authority on whether the hardware is registered.
 //   2. A pre-issued OTP (`otp_proof`) — the user has either
 //      pasted this in from a sister system or has it on a
-//      secondary device. We verify it against quorum-otp.
+//      secondary device. We verify it against quorum-otp with
+//      scope ACCESS_DECISION_OTP_SCOPE and subject =
+//      String(canvas_user_id). Empty / whitespace-only values are
+//      accepted by the schema and surface as `deny.otp_missing` so
+//      a malformed caller gets a stable deny code rather than a
+//      400 validation error.
+//   3. The interim identity (`canvas_user_id`) — the B3.2 wire
+//      contract resolves ownership against `canvas_user_id`
+//      because the IdP→internal-id mapping is not yet wired.
+//      This field is REQUIRED; once the IdP mapping exists it
+//      will be replaced by a derived identity and `idp_subject`
+//      will carry the upstream token.
 //
 // Everything else is optional context the decision logic may
 // pick up if present:
 //   - `idp_subject`  — the canonical identity from the IdP
-//                      (e.g. `canvas:42`). When the caller is
-//                      portal-api this resolves to a student;
-//                      when it is the jitsi-join coordinator
-//                      the field is omitted and the OTP itself
-//                      is the binding.
+//                      (e.g. `canvas:42`). Reserved for the
+//                      future IdP mapping; currently optional
+//                      and ignored by the decision policy.
 //   - `marbete_id`   — the marbete (physical security tag)
 //                      associated with the device, when known.
 //   - `room_id`      — the Jitsi room the user is trying to
@@ -91,7 +112,11 @@ export const DecisionRequest = z.object({
   idp_subject: z.string().min(1).max(256).optional(),
   marbete_id: z.string().min(1).max(64).optional(),
   device_id: z.string().min(1).max(128),
-  otp_proof: z.string().min(1).max(64),
+  // Empty / whitespace-only are accepted at the wire boundary so the
+  // service can map them to `deny.otp_missing`; the OTP client
+  // layer enforces the actual non-empty content.
+  otp_proof: z.string().max(64),
+  canvas_user_id: z.number().int().positive(),
   room_id: z.string().min(1).max(128).optional(),
   media_policy: z.string().min(1).max(64).optional(),
 });
