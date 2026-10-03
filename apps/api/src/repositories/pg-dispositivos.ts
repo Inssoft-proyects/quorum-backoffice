@@ -27,6 +27,7 @@ export interface DispositivoRow {
   created_by: string;
   revoked_at: Date | null;
   revoked_reason: string | null;
+  assigned_student_id: number | null;
 }
 
 /**
@@ -78,7 +79,7 @@ export class PgDispositivoRepo {
   async findById(id: number): Promise<DispositivoRow | null> {
     const r = await this.client.query<DispositivoRow>(
       `SELECT id, serial_number, brand, model, status, created_at, created_by,
-              revoked_at, revoked_reason
+              revoked_at, revoked_reason, assigned_student_id
          FROM dispositivos
         WHERE id = $1`,
       [id],
@@ -103,7 +104,7 @@ export class PgDispositivoRepo {
     const countResult = await this.client.query<{ total: number }>(countSql, params);
     const total = countResult.rows[0]?.total ?? 0;
     const listSql = `SELECT id, serial_number, brand, model, status, created_at, created_by,
-                            revoked_at, revoked_reason
+                            revoked_at, revoked_reason, assigned_student_id
                        FROM dispositivos ${whereSql}
                        ORDER BY created_at DESC
                        LIMIT $${p++} OFFSET $${p++}`;
@@ -144,7 +145,7 @@ export class PgDispositivoRepo {
               model = COALESCE($3, model)
         WHERE id = $1
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason`,
+                  revoked_at, revoked_reason, assigned_student_id`,
       [id, args.brand ?? null, args.model ?? null],
     );
     return r.rows[0] ?? null;
@@ -158,8 +159,29 @@ export class PgDispositivoRepo {
               status = 'revoked'
         WHERE id = $1 AND status = 'active'
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason`,
+                  revoked_at, revoked_reason, assigned_student_id`,
       [id, reason],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  /**
+   * B2b / Canvas-bound device assignment: write side.
+   *
+   * Sets (or clears, when `studentId` is NULL) the device owner. This is a
+   * pure write: every fail-closed predicate (active device, active student,
+   * existing student) is enforced by the service before calling this method.
+   * Passing NULL always succeeds for an existing row because removing an
+   * owner can never grant access.
+   */
+  async assignStudent(id: number, studentId: number | null): Promise<DispositivoRow | null> {
+    const r = await this.client.query<DispositivoRow>(
+      `UPDATE dispositivos
+          SET assigned_student_id = $2
+        WHERE id = $1
+        RETURNING id, serial_number, brand, model, status, created_at, created_by,
+                  revoked_at, revoked_reason, assigned_student_id`,
+      [id, studentId],
     );
     return r.rows[0] ?? null;
   }
