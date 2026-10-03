@@ -43,6 +43,23 @@ const ConfigSchema = z.object({
 
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
   BOOTSTRAP_ADMIN_PASSWORD: z.string().min(8).optional(),
+
+  // Service-auth (B3.1): inbound HMAC-authenticated callers
+  // (e.g. the Canvas pipeline, the Jitsi join coordinator) are
+  // registered here as `name:secret,name:secret`. The plugin
+  // `requireServiceAuth()` parses this and rejects every call
+  // when the parsed registry is empty, so an unset / empty
+  // env var fails closed at the request boundary. We keep the
+  // field optional in the schema so pre-existing test fixtures
+  // (rbac.test.ts, dispositivos.test.ts, ...) that don't set it
+  // continue to boot; production deployments MUST set it
+  // before the `/api/v1/access/decision` route goes live (B3.2).
+  BACKOFFICE_SERVICE_TOKENS: z.string().default(''),
+  BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
