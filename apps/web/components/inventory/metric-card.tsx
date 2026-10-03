@@ -20,6 +20,10 @@ export interface MetricCardProps
   centerLabel?: string;
   /** Optional sub-label rendered next to the value (e.g. "Solo el 2%"). */
   percentageLabel?: string;
+  /** Accessible description for the percentage slot (canon uses a fuller
+   * sentence than the visible text, e.g. "2% del inventario requiere atención"
+   * vs. the visible "Solo el 2% del total"). */
+  percentageAriaLabel?: string;
   /**
    * Donut variant override. The maquette's "Total" card carries white
    * separator bands between segments; pass "total" to enable them.
@@ -51,6 +55,7 @@ export const MetricCard = React.forwardRef<HTMLButtonElement, MetricCardProps>(
       active = false,
       centerLabel = '100%',
       percentageLabel,
+      percentageAriaLabel,
       chartVariant = 'generic',
       pills,
       className,
@@ -70,26 +75,27 @@ export const MetricCard = React.forwardRef<HTMLButtonElement, MetricCardProps>(
         data-filter={label.toLowerCase()}
         className={cn(
           'metric-card',
-          hasChart && 'metric-card--with-chart',
+          // The canon always tags all four cards with
+          // `metric-card--with-chart` so the layout reserves the
+          // bottom-right space for the donut even on the attention
+          // card (which renders pills instead of a chart).
+          (hasChart || isAttention) && 'metric-card--with-chart',
           isAttention && 'metric-card--attention',
           className,
         )}
         {...props}
       >
         <span className="metric-card__label">{label}</span>
-        {!active ? (
-          <span className="metric-card__filter-chip" data-filter-chip>
-            {active ? 'Filtro activo' : 'Filtrar'}
-          </span>
-        ) : (
-          <span className="metric-card__filter-chip" data-filter-chip>
-            Filtro activo
-          </span>
-        )}
+        <span className="metric-card__filter-chip" data-filter-chip>
+          {active ? 'Filtro activo' : 'Filtrar'}
+        </span>
         {percentageLabel ? (
           <span className="metric-card__value-row">
             <span className="metric-card__value">{value}</span>
-            <span className="metric-card__percentage" aria-label={percentageLabel}>
+            <span
+              className="metric-card__percentage"
+              aria-label={percentageAriaLabel ?? percentageLabel}
+            >
               <b>Solo el </b>
               {percentageLabel}
             </span>

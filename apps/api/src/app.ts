@@ -34,6 +34,7 @@ import { registerDispositivosRoutes } from './routes/dispositivos';
 import { registerAuditRoutes } from './routes/audit';
 import { registerAuthRoutes } from './routes/auth';
 import { registerStudentsRoutes } from './routes/students';
+import { registerMatriculasRoutes } from './routes/matriculas';
 import authDepsPlugin from './plugins/auth-deps';
 
 declare module 'fastify' {
@@ -102,6 +103,7 @@ export async function buildApp(
   await registerAuditRoutes(app as unknown as FastifyInstance);
   await registerAuthRoutes(app as unknown as FastifyInstance);
   await registerStudentsRoutes(app as unknown as FastifyInstance);
+  await registerMatriculasRoutes(app as unknown as FastifyInstance);
 
   return app;
 }

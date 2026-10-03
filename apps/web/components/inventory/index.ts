@@ -38,3 +38,19 @@ export type { RevokeMarbeteDialogProps } from './revoke-marbete-dialog';
 
 export { BulkUploadDialog } from './bulk-upload-dialog';
 export type { BulkUploadDialogProps } from './bulk-upload-dialog';
+
+export { BulkUploadDropzone, formatFileSize } from './bulk-upload-dropzone';
+export type {
+  BulkUploadDropzoneProps,
+  SelectedFile,
+} from './bulk-upload-dropzone';
+
+export { BulkUploadProcessingOverlay } from './bulk-upload-processing-overlay';
+export type {
+  BulkProcessingStage,
+  BulkProcessingStageStatus,
+  BulkUploadProcessingOverlayProps,
+} from './bulk-upload-processing-overlay';
+
+export { BulkUploadResult } from './bulk-upload-result';
+export type { BulkUploadResultProps } from './bulk-upload-result';

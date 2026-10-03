@@ -23,6 +23,7 @@ export function Sidebar({
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Inicio', visible: true },
     { href: '/marbetes', label: 'Marbetes', visible: true },
+    { href: '/asociar', label: 'Asignación de marbetes', visible: true },
     { href: '/dispositivos', label: 'Dispositivos', visible: true },
     {
       href: '/audit',

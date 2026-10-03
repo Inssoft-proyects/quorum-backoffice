@@ -174,6 +174,7 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
           <div className="flex flex-col gap-1.5">
             <Label>Código OTP</Label>
             <OtpInput
+              mode="alphanumeric"
               value={otp}
               onChange={(v) => {
                 setOtp(v);

@@ -1,22 +1,31 @@
 'use client';
 
 import * as React from 'react';
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
-import type { BulkCreateMarbetesResponse } from '@quorum-backoffice/shared';
-import { ApiError, bulkCreateMarbetes } from '@/lib/api-client';
+import type { BulkXlsxCreateResponse } from '@quorum-backoffice/shared';
+import { ApiError, bulkCreateMarbetesXlsx } from '@/lib/api-client';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
+import { useOtpGrant } from './use-otp-grant';
+import {
+  BulkUploadDropzone,
+  formatFileSize,
+  type SelectedFile,
+} from './bulk-upload-dropzone';
+import {
+  BulkUploadProcessingOverlay,
+  type BulkProcessingStage,
+  type BulkProcessingStageStatus,
+} from './bulk-upload-processing-overlay';
+import { BulkUploadResult } from './bulk-upload-result';
 
 export interface BulkUploadDialogProps {
   open: boolean;
@@ -27,336 +36,452 @@ export interface BulkUploadDialogProps {
 }
 
 /**
- * Marbete code format (mirrors apps/api/src/lib/marbete-id.ts):
- * `[A-Za-z0-9._\-:]{8,128}`. The dialog applies the same regex client-
- * side so users see immediate feedback before the round-trip.
+ * Per-stage progress and human-readable status string. Mirrors the
+ * canon processing-steps ordering so the test plan can assert
+ * stage-by-stage transitions.
  */
-const CODE_FORMAT_REGEX = /^[A-Za-z0-9._\-:]{8,128}$/;
-
-/**
- * Lightweight CSV-ish line parser used to power the live "N válidos,
- * M inválidos" stats. Accepts plain newlines and skips a header row
- * whose first field is exactly `code`. Mirrors `parseCsvCodes` from
- * apps/api/src/lib/marbete-id.ts without pulling the full RFC-4180
- * parser into the web bundle.
- */
-function parseInputLines(
-  text: string,
-): { validCount: number; invalidCount: number } {
-  const lines = text.split(/\r?\n/);
-  let validCount = 0;
-  let invalidCount = 0;
-  let firstNonEmptySeen = false;
-  for (const raw of lines) {
-    const trimmed = readFirstField(raw).trim();
-    if (trimmed === '') continue;
-    if (!firstNonEmptySeen) {
-      firstNonEmptySeen = true;
-      // Header detection: only when the first field is exactly `code`,
-      // not when a valid code happens to start with that substring.
-      if (trimmed.toLowerCase() === 'code') continue;
-    }
-    if (CODE_FORMAT_REGEX.test(trimmed)) validCount += 1;
-    else invalidCount += 1;
-  }
-  return { validCount, invalidCount };
+interface ProcessingStepDefinition {
+  key: BulkProcessingStage;
+  /** 0–100 progress when the stage reaches 'complete'. */
+  progress: number;
+  /** Status copy while the stage is 'active'. */
+  message: string;
 }
 
-/**
- * Extract the first field of a CSV line (handles simple `"foo,bar"`
- * quoting) — sufficient for our paste preview. Mirrors the spirit of
- * parseCsvCodes without pulling the full RFC-4180 parser into the web
- * bundle.
- */
-function readFirstField(line: string): string {
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        const next = line[i + 1];
-        if (next === '"') cur += '"';
-        else inQuotes = false;
-      } else if (ch !== undefined) cur += ch;
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ',') {
-      break;
-    } else if (ch !== undefined) {
-      cur += ch;
-    }
+const PROCESSING_STEPS: ReadonlyArray<ProcessingStepDefinition> = [
+  { key: 'read', progress: 14, message: 'Leyendo plantilla .xlsx...' },
+  { key: 'rows', progress: 32, message: 'Preparando marbetes detectados...' },
+  { key: 'format', progress: 52, message: 'Validando formato de los números...' },
+  {
+    key: 'duplicates',
+    progress: 69,
+    message: 'Buscando duplicados en el archivo...',
+  },
+  {
+    key: 'existing',
+    progress: 86,
+    message: 'Comprobando registros existentes...',
+  },
+  {
+    key: 'result',
+    progress: 100,
+    message: 'Asignando vigencia y estado Disponible...',
+  },
+];
+
+/** Per-stage animation delay (ms). Tuned for snappy UX; tests extend
+      // their own waitFor timeouts to accommodate the animation. */
+const STAGE_INTERVAL_MS = 200;
+
+/** Delay between the upload completing and the result view appearing. */
+const RESULT_TRANSITION_MS = 120;
+
+/** Error copy per server ApiError code (canon-aligned Spanish). */
+function errorMessageFor(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'otp_invalid') return 'Código OTP inválido o expirado.';
+    if (err.code === 'otp_required')
+      return 'Esta acción requiere un código OTP.';
+    if (err.code === 'forbidden') return 'No tienes permisos para cargar marbetes.';
+    if (err.code === 'validation_error')
+      return 'El archivo no cumple con el formato requerido.';
+    return err.message;
   }
-  return cur;
+  return 'Error de red. Intenta de nuevo.';
 }
 
+type DialogView = 'form' | 'processing' | 'result';
+
 /**
- * Bulk upload dialog for marbetes (WU #3 / Polish WU v4).
+ * Marbetes .xlsx bulk-upload modal (maquette v3, T5).
  *
- * Flow:
- *  - User pastes a newline-delimited list of codes into the textarea,
- *    or picks a `.csv` file (read locally via FileReader and merged
- *    into the textarea). Live stats show valid / invalid counts.
- *  - User types a 6-digit OTP (admin + OTP enforcement is enforced by
- *    the server for `marbete.bulk_create`).
- *  - On submit we POST `{ items: [{ code }, ...] }` to
- *    `/api/v1/marbetes/bulk`. The response carries per-row outcomes:
- *    full success closes the dialog immediately, partial failure
- *    replaces the form with a summary screen until the user dismisses.
- *  - onSaved fires on every 2xx response (full or partial), so the
- *    parent re-fetches and shows the freshly-created rows.
+ * Flow (per canon /planQuorum/dev/quorum-design/design/Inec/Inec/carga-masiva-marbetes.html):
+ *  1. **Form view** — drag-and-drop or pick a .xlsx file. Selected
+ *     file shows the canon "Datos generados automáticamente" explainer.
+ *     Non-.xlsx picks surface the canon inline error block.
+ *  2. **Submit** — when the user clicks "Subir archivo", we kick off
+ *     POST /api/v1/marbetes/bulk-xlsx and animate the 6-stage
+ *     checklist while the server works. The animation is optimistic;
+ *     if the response arrives before the animation completes, we
+ *     fast-forward the remaining stages. If the animation completes
+ *     first we wait for the response.
+ *  3. **Result view** — always shown after a 2xx response (full or
+ *     partial). The metric cards summarise `categoryCounts`; an
+ *     errors file is auto-downloaded when present. The dialog does
+ *     NOT auto-close — the user dismisses via X, "Subir nuevo
+ *     archivo" (reset), or the "Asignar marbetes" link to /asociar.
+ *
+ * OTP grant (T3): while the session actor has an unexpired grant for
+ * the marbete scope family the OTP input is hidden and the request
+ * is submitted without the `x-otp-code` header. When no grant is
+ * active the OTP input is required (scope marbete.bulk_create).
  */
-export function BulkUploadDialog({ open, onOpenChange, onSaved }: BulkUploadDialogProps) {
-  const [text, setText] = useState('');
-  const [otp, setOtp] = useState('');
-  const [loading, setLoading] = useState(false);
+export function BulkUploadDialog({
+  open,
+  onOpenChange,
+  onSaved,
+}: BulkUploadDialogProps): React.ReactElement {
+  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+  const [otp, setOtp] = useState<string>('');
+  const [view, setView] = useState<DialogView>('form');
+  const [response, setResponse] = useState<BulkXlsxCreateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<BulkCreateMarbetesResponse | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [progress, setProgress] = useState<number>(0);
+  const [stageStatuses, setStageStatuses] = useState<
+    Partial<Record<BulkProcessingStage, BulkProcessingStageStatus>>
+  >({});
+  const [statusMessage, setStatusMessage] = useState<string>('Preparando carga...');
+  const fileInputResetRef = useRef<HTMLInputElement | null>(null);
+  const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const grant = useOtpGrant();
 
-  const { validCount, invalidCount } = useMemo(
-    () => parseInputLines(text),
-    [text],
-  );
+  // Refresh grant status whenever the dialog opens. The hook fetches
+  // on mount, but if a parent toggles `open` without unmounting (e.g.
+  // because the destructive op closed-and-reopened the same dialog)
+  // we still want a fresh value.
+  useEffect(() => {
+    if (open) void grant.refresh();
+    // grant.refresh is stable per the hook contract.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  const otpReady = otp.length === 6;
-  const canSubmit = validCount > 0 && otpReady && !loading;
-
-  function reset() {
-    setText('');
+  // Reset on close.
+  const reset = useCallback(() => {
+    setSelectedFile(null);
     setOtp('');
+    setView('form');
+    setResponse(null);
     setError(null);
-    setLoading(false);
-    setResult(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  }
+    setSubmitting(false);
+    setProgress(0);
+    setStageStatuses({});
+    setStatusMessage('Preparando carga...');
+    if (fileInputResetRef.current) fileInputResetRef.current.value = '';
+    if (stageTimerRef.current) {
+      clearTimeout(stageTimerRef.current);
+      stageTimerRef.current = null;
+    }
+  }, []);
 
   function handleOpenChange(next: boolean) {
     if (!next) reset();
     onOpenChange(next);
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const content = String(reader.result ?? '');
-      // Append (don't clobber) so users can stack multiple CSVs.
-      setText((prev) => (prev.length === 0 ? content : `${prev}\n${content}`));
-    };
-    reader.onerror = () => {
-      setError('No se pudo leer el archivo seleccionado.');
-    };
-    reader.readAsText(file);
-  }
-
-  function buildItems(): Array<{ code: string }> {
-    const items: Array<{ code: string }> = [];
-    const lines = text.split(/\r?\n/);
-    let firstNonEmptySeen = false;
-    for (const raw of lines) {
-      const trimmed = readFirstField(raw).trim();
-      if (trimmed === '') continue;
-      if (!firstNonEmptySeen) {
-        firstNonEmptySeen = true;
-        if (trimmed.toLowerCase() === 'code') continue;
-      }
-      if (CODE_FORMAT_REGEX.test(trimmed)) items.push({ code: trimmed });
-    }
-    return items;
-  }
-
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!canSubmit) return;
-    setLoading(true);
+  function handleFileSelected(file: File) {
+    setSelectedFile({ file, sizeLabel: formatFileSize(file.size) });
     setError(null);
-    try {
-      const items = buildItems();
-      const response = await bulkCreateMarbetes({ items }, otp);
-      setResult(response);
-      onSaved();
-      if (response.failed === 0) {
-        // Full success: close immediately, the parent already refetched.
-        onOpenChange(false);
+  }
+
+  /**
+   * Reset back to the empty form (used by the "Subir nuevo archivo"
+   * button on the result view). Preserves the OTP grant — if a
+   * destructive grant was active, it should still be valid.
+   */
+  async function handleUploadAnother() {
+    reset();
+    await grant.refresh();
+  }
+
+  /**
+   * Animate the 6 stages while the upload request runs. Returns a
+   * promise that resolves once the animation has reached the last
+   * stage and the result is ready to show. The orchestrator decides
+   * when to flip from `processing` to `result` based on the upload
+   * response.
+   */
+  const runStageAnimation = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      let stepIndex = 0;
+
+      function tick() {
+        if (stepIndex >= PROCESSING_STEPS.length) {
+          setStatusMessage('Carga de marbetes completada.');
+          resolve();
+          return;
+        }
+        const step = PROCESSING_STEPS[stepIndex]!;
+        setStageStatuses((prev) => ({ ...prev, [step.key]: 'active' }));
+        setStatusMessage(step.message);
+        stageTimerRef.current = setTimeout(() => {
+          setStageStatuses((prev) => ({ ...prev, [step.key]: 'complete' }));
+          setProgress(step.progress);
+          stepIndex += 1;
+          tick();
+        }, STAGE_INTERVAL_MS);
       }
-      // Partial failure: keep the dialog open with the summary screen so
-      // the user can see which codes were rejected. reset() runs when
-      // the dialog closes via the Cancel button or the X.
+
+      tick();
+    });
+  }, []);
+
+  /**
+   * Fast-forward the stage animation to all-complete when the upload
+   * finishes. Used so the user does not stare at a half-done spinner
+   * if the server is faster than the animation.
+   */
+  const fastForwardStages = useCallback(() => {
+    if (stageTimerRef.current) {
+      clearTimeout(stageTimerRef.current);
+      stageTimerRef.current = null;
+    }
+    const allComplete: Partial<
+      Record<BulkProcessingStage, BulkProcessingStageStatus>
+    > = {};
+    for (const step of PROCESSING_STEPS) allComplete[step.key] = 'complete';
+    setStageStatuses(allComplete);
+    setProgress(100);
+    setStatusMessage('Carga de marbetes completada.');
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedFile) return;
+    const grantActive = grant.status?.active === true;
+    if (!grantActive && otp.length !== 6) return;
+
+    setSubmitting(true);
+    setError(null);
+    setView('processing');
+    setProgress(0);
+    setStageStatuses({});
+    setStatusMessage('Preparando carga...');
+
+    const animationPromise = runStageAnimation();
+
+    try {
+      const otpCode: string | undefined = grantActive ? undefined : otp;
+      const resp = await bulkCreateMarbetesXlsx({
+        file: selectedFile.file,
+        otpCode,
+      });
+
+      // Wait for the stage animation to reach its end (or fast-forward
+      // if the server was faster than the animation).
+      if (stageTimerRef.current !== null) {
+        // Animation still in flight; let it finish naturally.
+        await animationPromise;
+      } else {
+        // Animation already completed; ensure stages show 100%.
+        fastForwardStages();
+      }
+
+      setResponse(resp);
+      // Tiny beat so the user can see the "complete" state before the
+      // result panel swaps in.
+      await waitMs(RESULT_TRANSITION_MS);
+      setView('result');
+      onSaved();
+      // Refresh the grant: a successful destructive op may have minted
+      // a fresh grant that the next dialog open should see.
+      void grant.refresh();
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.code === 'otp_invalid'
-            ? 'Código OTP inválido o expirado.'
-            : err.code === 'otp_required'
-              ? 'Código OTP requerido.'
-              : err.code === 'forbidden'
-                ? 'No tienes permisos para cargar marbetes.'
-                : err.code === 'validation_error'
-                  ? 'Los datos enviados no son válidos.'
-                  : err.message
-          : 'Error de red. Intenta de nuevo.';
+      fastForwardStages();
+      const msg = errorMessageFor(err);
       setError(msg);
+      setView('form');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
+
+  const grantActive = grant.status?.active === true;
+  const grantExpiresAt: string | null = grant.status?.expiresAt ?? null;
+  const grantExpiresLabel = useMemo(() => {
+    if (!grantExpiresAt) return null;
+    return new Date(grantExpiresAt).toLocaleTimeString('es-MX', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }, [grantExpiresAt]);
+  const canSubmit =
+    selectedFile !== null && (grantActive || otp.length === 6) && !submitting;
+
+  const dialogClassName = `bulk-upload__dialog bulk-upload__dialog--${view}`;
+
+  // During processing we ignore Escape and outside clicks per canon
+  // (the upload cannot be cancelled). Outside clicks on the form /
+  // result views use the default Radix behavior (close on outside
+  // click).
+  const handleEscapeOutside = useCallback(
+    (e: Event) => {
+      if (view === 'processing') e.preventDefault();
+    },
+    [view],
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="bulk-upload-dialog">
-        <DialogHeader>
-          <div className="modal-dialog__icon" aria-hidden>
-            <Upload />
-          </div>
-          <DialogTitle className="modal-dialog__title" data-testid="bulk-upload-title">
-            Cargar marbetes
-          </DialogTitle>
-          <DialogDescription
-            className="modal-dialog__description"
-            id="bulk-upload-description"
+      <DialogContent
+        className={dialogClassName}
+        data-testid="bulk-upload-dialog"
+        onEscapeKeyDown={handleEscapeOutside}
+        onPointerDownOutside={handleEscapeOutside}
+        onInteractOutside={handleEscapeOutside}
+      >
+        {view !== 'processing' ? (
+          <DialogHeader>
+            <div className="modal-dialog__icon" aria-hidden>
+              <Upload />
+            </div>
+            <DialogTitle
+              className="modal-dialog__title"
+              data-testid="bulk-upload-title"
+            >
+              Carga masiva de marbetes
+            </DialogTitle>
+            <DialogDescription
+              className="modal-dialog__description"
+              id="bulk-upload-description"
+            >
+              Agrega varios marbetes al inventario mediante un archivo .xlsx.
+            </DialogDescription>
+          </DialogHeader>
+        ) : null}
+
+        {view === 'processing' ? (
+          <BulkUploadProcessingOverlay
+            progress={progress}
+            statusMessage={statusMessage}
+            stages={stageStatuses}
+          />
+        ) : null}
+
+        {view === 'result' && response ? (
+          <BulkUploadResult
+            response={response}
+            onUploadAnother={() => {
+              void handleUploadAnother();
+            }}
+          />
+        ) : null}
+
+        {view === 'form' ? (
+          <form
+            onSubmit={handleSubmit}
+            className="modal-dialog__content"
+            noValidate
+            data-testid="bulk-upload-form"
           >
-            Pega una lista de códigos (uno por línea) o selecciona un archivo CSV.
-            Cada código debe tener entre 8 y 128 caracteres del alfabeto{' '}
-            <code>A–Z a–z 0–9 . _ - :</code>.
-          </DialogDescription>
-        </DialogHeader>
-
-        {result && result.failed > 0 ? (
-          // Partial-failure summary. Replaces the form until the user
-          // dismisses; onSaved already fired so the parent has refetched.
-          <div className="modal-dialog__content" data-testid="bulk-upload-summary">
-            <Alert variant="destructive" role="alert" data-testid="bulk-upload-partial-warning">
-              {`${result.created} creados, ${result.failed} con error.`}
-            </Alert>
-            {result.failures.length > 0 ? (
-              <ul
-                className="modal-dialog__content"
-                data-testid="bulk-upload-failures"
-                aria-label="Códigos rechazados"
-              >
-                {result.failures.slice(0, 20).map((f) => (
-                  <li key={`${f.index}-${f.line ?? 'x'}`}>
-                    {f.line !== null ? `Línea ${f.line}: ` : ''}
-                    <code>{f.code || '(vacío)'}</code> — {f.reason}
-                  </li>
-                ))}
-                {result.failures.length > 20 ? (
-                  <li>…y {result.failures.length - 20} más.</li>
-                ) : null}
-              </ul>
-            ) : null}
-            <p className="form-field__hint" data-testid="bulk-upload-audit">
-              Auditoría: registro #{result.auditId ?? '—'}
-            </p>
-            <DialogFooter className="modal-dialog__actions">
-              <Button
-                type="button"
-                variant="default"
-                onClick={() => handleOpenChange(false)}
-                data-testid="bulk-upload-close"
-              >
-                Cerrar
-              </Button>
-            </DialogFooter>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="modal-dialog__content" noValidate>
             {error ? (
-              <Alert
-                variant="destructive"
+              <p
                 role="alert"
-                data-testid="bulk-upload-error"
+                className="bulk-upload__error"
+                data-testid="bulk-upload-form-error"
               >
-                {error}
-              </Alert>
+                <svg
+                  className="bulk-upload__error-icon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <circle cx={12} cy={12} r={9} />
+                  <path d="M5.64 5.64 18.36 18.36" />
+                </svg>
+                <span>{error}</span>
+              </p>
             ) : null}
 
-            <div className="form-field">
-              <label htmlFor="bulk-upload-codes" className="form-field__label">
-                Códigos
-              </label>
-              <Textarea
-                id="bulk-upload-codes"
-                name="bulk-upload-codes"
-                rows={6}
-                placeholder={'CODE12345678\nCODE23456789'}
-                value={text}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  if (error) setError(null);
-                }}
-                disabled={loading}
-                data-testid="bulk-upload-codes-input"
-              />
-              <div className="form-field__hint" data-testid="bulk-upload-stats">
-                {validCount} válidos, {invalidCount} inválidos
-              </div>
-            </div>
+            <div className="bulk-upload">
+              <div className="bulk-upload__scrollable" data-testid="bulk-upload-scrollable">
+                <div className="bulk-upload__heading">
+                  <h2>Carga tu archivo .xlsx</h2>
+                  <p>
+                    Selecciona un archivo .xlsx con los números de marbete que
+                    deseas agregar al inventario.
+                  </p>
+                </div>
 
-            <div className="form-field">
-              <label htmlFor="bulk-upload-file" className="form-field__label">
-                Archivo CSV (opcional)
-              </label>
-              <input
-                id="bulk-upload-file"
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,text/csv,text/plain"
-                onChange={handleFileChange}
-                disabled={loading}
-                data-testid="bulk-upload-file-input"
-                className="form-field__input"
-              />
-              <p className="form-field__hint">
-                Se leerá localmente y se agregará al contenido del cuadro de texto.
-              </p>
-            </div>
-
-            <div className="form-field">
-              <span className="form-field__label form-field__label--row">
-                <span>Código OTP</span>
-                <span className="form-field__required">Obligatorio</span>
-              </span>
-              <div data-testid="bulk-upload-otp">
-                <OtpInput
-                  value={otp}
-                  onChange={(v) => {
-                    setOtp(v);
-                    if (error) setError(null);
-                  }}
-                  disabled={loading}
-                  aria-label="Código OTP"
+                <BulkUploadDropzone
+                  selectedFile={selectedFile}
+                  onFileSelected={handleFileSelected}
                 />
+
+                <a
+                  className="btn btn--secondary bulk-upload__template-link"
+                  href="/backoffice/assets/plantilla-carga-masiva-marbetes.xlsx"
+                  download
+                  data-testid="bulk-upload-template-link"
+                >
+                  <svg
+                    className="btn__icon btn__icon--xlsx"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M14 2H6.75A1.75 1.75 0 0 0 5 3.75v16.5C5 21.22 5.78 22 6.75 22h10.5c.97 0 1.75-.78 1.75-1.75V7.75L14 2Z" />
+                    <path d="M14 2v5.75h5" />
+                    <path d="M8.5 16.5 11 14m0 2.5L8.5 14m4.75 2.5v-5m0 5h2.25" />
+                  </svg>
+                  <span>Descargar plantilla</span>
+                </a>
+                <p className="form-field__hint" data-testid="bulk-upload-template-hint">
+                  Usa la plantilla oficial para evitar errores de formato.
+                </p>
+
+                {grantActive && grantExpiresLabel ? (
+                  <p
+                    className="bulk-upload__grant-note"
+                    role="status"
+                    data-testid="bulk-upload-grant-note"
+                  >
+                    OTP vigente hasta {grantExpiresLabel}. No necesitas capturar
+                    un código nuevo.
+                  </p>
+                ) : (
+                  <div className="form-field bulk-upload__otp">
+                    <span className="form-field__label form-field__label--row">
+                      <span>Código OTP</span>
+                      <span className="form-field__required">Obligatorio</span>
+                    </span>
+                    <div data-testid="bulk-upload-otp">
+                      <OtpInput
+                        mode="alphanumeric"
+                        value={otp}
+                        onChange={(v) => {
+                          setOtp(v);
+                          if (error) setError(null);
+                        }}
+                        disabled={submitting}
+                        aria-label="Código OTP"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-dialog__actions">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleOpenChange(false)}
+                  disabled={submitting}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  variant="default"
+                  disabled={!canSubmit}
+                  data-testid="bulk-upload-submit"
+                >
+                  {submitting
+                    ? 'Cargando…'
+                    : selectedFile
+                      ? 'Subir archivo'
+                      : 'Subir archivo'}
+                </Button>
               </div>
             </div>
-
-            <DialogFooter className="modal-dialog__actions">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleOpenChange(false)}
-                disabled={loading}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                variant="default"
-                disabled={!canSubmit}
-                data-testid="bulk-upload-submit"
-              >
-                {loading
-                  ? 'Cargando…'
-                  : validCount > 0
-                    ? `Cargar ${validCount} marbetes`
-                    : 'Cargar marbetes'}
-              </Button>
-            </DialogFooter>
           </form>
-        )}
+        ) : null}
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Promise-friendly sleep. */
+function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

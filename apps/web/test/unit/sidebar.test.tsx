@@ -10,6 +10,7 @@ describe('Sidebar', () => {
   it('renders Marbetes and Dispositivos for any role', () => {
     renderWith({ id: 1, email: 'op@example.com', role: 'operator' });
     expect(screen.getByText('Marbetes')).toBeInTheDocument();
+    expect(screen.getByText('Asignación de marbetes')).toBeInTheDocument();
     expect(screen.getByText('Dispositivos')).toBeInTheDocument();
   });
 

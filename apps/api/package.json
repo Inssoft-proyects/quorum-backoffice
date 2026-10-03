@@ -19,7 +19,8 @@
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathPattern=integration",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --coverage --runInBand",
     "migrate": "tsx scripts/migrate.ts",
-    "seed:e2e": "tsx scripts/seed-e2e-users.ts"
+    "seed:e2e": "tsx scripts/seed-e2e-users.ts",
+    "generate:bulk-template": "tsx scripts/generate-bulk-template.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
@@ -30,6 +31,7 @@
     "@quorum-backoffice/shared": "file:../../packages/shared",
     "@types/nodemailer": "^8.0.2",
     "bcrypt": "^6.0.0",
+    "exceljs": "^4.4.0",
     "fastify": "^5.10.0",
     "fastify-plugin": "^5.0.1",
     "ioredis": "^5.4.1",

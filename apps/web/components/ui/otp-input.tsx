@@ -20,10 +20,12 @@ import { cn } from '@/lib/utils';
  * the byte-for-byte behaviour used by the marbetes (create/edit/delete) and
  * dispositivos (create/edit/revoke) dialogs, plus the inventory bulk-upload
  * confirmation. `mode='alphanumeric'` is used by the BackOffice login
- * (`/login`) where the OTP is a 6-character uppercase A–Z0–9 code; in that
- * mode the component forces uppercase, accepts only `A–Z0–9`, exposes
- * `inputMode="text"` and `autoComplete="one-time-code"` so password
- * managers / OS autofill can offer the value.
+ * (`/login`) and the destructive dialogs (bulk-upload, assign-review,
+ * unassign, reveal) where the OTP is a 6-character uppercase A–Z0–9 code
+ * drawn from the quorum-otp 31-char alphabet; in that mode the component
+ * forces uppercase, accepts only `A–Z0–9`, exposes `inputMode="text"` and
+ * `autoComplete="one-time-code"` so password managers / OS autofill can
+ * offer the value.
  *
  * Used by marbete delete (WU8a); reused by create/edit (WU8b), dispositivos
  * dialogs (WU9), inventory bulk-upload, and BackOffice login OTP.
@@ -152,7 +154,7 @@ export function OtpInput({
           inputMode={inputMode}
           autoComplete={isAlpha && i === 0 ? 'one-time-code' : undefined}
           maxLength={1}
-          value={chars[i]?.trim() || ''}
+          value={chars[i] === ' ' ? '' : chars[i]}
           onChange={(e) => handleChange(i, e)}
           onKeyDown={(e) => handleKey(i, e)}
           onPaste={handlePaste}

@@ -123,10 +123,67 @@ Backoffice service.
      https://backoffice.quorum.asistentepro.mx/backoffice/marbetes
    ```
 
+   Para CI / runbooks, prefer `scripts/smoke-post-deploy.sh` (F6) — wraps
+   the probes above plus the bulk-upload template and the unauthenticated
+   `/api/v1/matriculas` route, and adds an optional `SMOKE_API_LOCAL`
+   health/ready probe against the node loopback (port 4100). Example:
+
+   ```bash
+   SMOKE_API_LOCAL=http://127.0.0.1:4100 \
+     bash scripts/smoke-post-deploy.sh
+   ```
+
+   Default target is `https://backoffice.quorum.asistentepro.mx`; override
+   with `SMOKE_BASE_URL=…` for staging. The script exits non-zero on any
+   mismatch and prints a `FAIL — …` summary line.
+
 > Procedimiento manual vía rsync al hostPath **no es el flujo de release
 > soportado**. Sólo se usa en debug local cuando el usuario lo autoriza
 > explícitamente, y el pod debe reiniciarse para tomar el bundle
 > (`kubectl rollout restart`).
+
+### Pre-merge verification gate (`scripts/ci-checks.sh`)
+
+For anything other than a single-file docs change, the feature branch must
+clear `scripts/ci-checks.sh` (F5/WU13 follow-up) before merge. The script
+is bash-only, strict (`set -euo pipefail`), and chains:
+
+1. `packages/shared` — `npm run build` + `npm run typecheck` (consumers
+   compile against `dist/`).
+2. `apps/api` — `npm run typecheck` + `npm test` (unit suite).
+3. `apps/web` — `npm run typecheck` + `npm test` (unit suite).
+
+Optional phases, gated explicitly:
+
+* `DATABASE_URL_TEST=… bash scripts/ci-checks.sh` — also runs
+  `apps/api/test:integration`. The integration suite drops/creates tables;
+  **only run it against a disposable DB** (never against the production
+  cluster or a shared dev DB).
+* `RUN_PARITY=1 bash scripts/ci-checks.sh` — also runs the lookfeel
+  parity harness against the design canon.
+
+Before any lookfeel / parity work the script exports
+`MAQUETTE_DIR=${MAQUETTE_DIR:-/planQuorum/dev/quorum-design/design/Inec/Inec}`,
+so CI pins the canonical maquette directory explicitly. The override is
+honored as the first candidate by
+`apps/web/e2e/lookfeel/helpers/maquette-server.ts:resolveMaquetteDir()`,
+winning over the `quorum-design` sibling checkout and the in-repo
+`diseno/maqueta_Inec/` fallback.
+
+```bash
+# minimal (shared + api unit + web unit)
+bash scripts/ci-checks.sh
+
+# with integration (disposable DB required)
+DATABASE_URL_TEST=postgresql://user:pass@127.0.0.1:5432/quorum_backoffice_test \
+  bash scripts/ci-checks.sh
+
+# with parity harness (RUN_PARITY=1 + Playwright installed)
+RUN_PARITY=1 bash scripts/ci-checks.sh
+```
+
+The script prints a `PASS — …` / `FAIL — …` summary line and exits
+non-zero on any failed gate.
 
 ### Visual parity verification
 

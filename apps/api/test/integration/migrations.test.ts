@@ -60,6 +60,8 @@ describe('migrations runner (integration, real PG)', () => {
       '0009_audit_action_bulk.sql',
       '0010_audit_action_otp_login.sql',
       '0011_backoffice_username.sql',
+      '0012_otp_grants.sql',
+      '0013_matriculas.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -79,6 +81,8 @@ describe('migrations runner (integration, real PG)', () => {
       '0009_audit_action_bulk.sql',
       '0010_audit_action_otp_login.sql',
       '0011_backoffice_username.sql',
+      '0012_otp_grants.sql',
+      '0013_matriculas.sql',
     ]);
   });
 

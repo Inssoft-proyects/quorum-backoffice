@@ -13,6 +13,8 @@ import { PgMarbeteRepo } from '../repositories/pg-marbetes';
 import { PgStudentRepo } from '../repositories/pg-students';
 import { OtpClient } from './otp-client';
 import { AuditService } from './audit-service';
+import { OtpGrantService } from './otp-grant-service';
+import { verifyOtpWithGrant } from '../lib/otp-grant-verify';
 import type {
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
@@ -29,6 +31,7 @@ import type {
   BulkCreateMarbetesResponse,
   BulkCreateMarbeteSuccess,
   BulkCreateMarbeteFailure,
+  BulkFailureCategory,
 } from '@quorum-backoffice/shared';
 
 interface RequestMeta {
@@ -40,6 +43,16 @@ interface ServiceDeps {
   pool: pg.Pool;
   log: FastifyBaseLogger;
   otp: OtpClient;
+  /**
+   * Optional OTP grant service. When present (the production wiring),
+   * grant-eligible actions consult `(actor, 'marbete')` first and skip
+   * the per-op OTP verify while a row is still in the future.
+   * `marbete.reveal` is intentionally NOT grant-eligible and never
+   * consults the grant. The service remains constructable without a
+   * grant (e.g. unit tests) so existing call sites that omit it keep
+   * the strict per-op OTP behaviour.
+   */
+  grant?: OtpGrantService;
 }
 
 const DESTRUCTIVE_ACTIONS = new Set([
@@ -50,15 +63,46 @@ const DESTRUCTIVE_ACTIONS = new Set([
   'marbete.bulk_create',
 ]);
 
+/**
+ * Actions that grant an actor a TTL window after a successful OTP
+ * verify. `marbete.reveal` is intentionally NOT a member: reveal always
+ * requires a fresh per-op OTP and never produces a grant.
+ */
+const GRANT_ELIGIBLE_ACTIONS = new Set([
+  'marbete.create',
+  'marbete.update',
+  'marbete.delete',
+  'marbete.bulk_create',
+]);
+
+/** Scope family for the grant cache. Single today; future scope
+ *  families (e.g. dispositivos) would add their own column value. */
+const GRANT_SCOPE = 'marbete';
+
+/**
+ * Map a per-row failure reason (produced by bulkCreate itself) to a
+ * stable `BulkFailureCategory`. Anything we did not explicitly
+ * recognise lands in 'other' — the route layer may still overwrite the
+ * category based on its own pre-validation (the .xlsx endpoint does
+ * this for length / invalid_chars / duplicate_in_file).
+ */
+function reasonToCategory(reason: string): BulkFailureCategory {
+  if (reason === 'duplicate in batch') return 'duplicate_in_file';
+  if (reason === 'code already exists') return 'already_exists';
+  return 'other';
+}
+
 export class MarbetesService {
   private readonly repo: PgMarbeteRepo;
   private readonly otp: OtpClient;
   private readonly log: FastifyBaseLogger;
+  private readonly grant: OtpGrantService | null;
 
   constructor(private readonly deps: ServiceDeps) {
     this.repo = new PgMarbeteRepo(deps.pool);
     this.otp = deps.otp;
     this.log = deps.log;
+    this.grant = deps.grant ?? null;
   }
 
   /**
@@ -93,8 +137,39 @@ export class MarbetesService {
   }
 
   /**
-   * Verify OTP against quorum-otp. Throws AppError on failure.
-   * For non-destructive operations (list, counters, detail) this is a no-op.
+   * Verify the actor is authorized to perform a destructive marbete op.
+   *
+   * Behaviour matrix (delegated to `verifyOtpWithGrant` in
+   * `lib/otp-grant-verify.ts` — this method is a thin wrapper that
+   * decides whether the action is destructive at all and whether it
+   * is grant-eligible, then forwards everything else):
+   *
+   *  - Non-destructive action (list / counters / detail):
+   *      no-op. Returns `{ otpId: 'noop' }`.
+   *  - `marbete.reveal`:
+   *      ALWAYS per-op OTP. The grant cache is bypassed entirely; the
+   *      provider is consulted on every call. This is a deliberate
+   *      security guarantee — reveal returns the unmasked publicUid,
+   *      which is the only read-type we surface to the world, so it
+   *      must not inherit the same window as the other destructive
+   *      ops. Implemented by passing `grantEligible: false` to the
+   *      helper.
+   *  - Grant-eligible action (create / update / delete / bulk_create)
+   *    with an active grant for `(actor, GRANT_SCOPE)`:
+   *      return the grant's otp_id without calling the provider. The
+   *      caller (route) should also have skipped the X-OTP-Code
+   *      header on the wire; the grant lookup is independent.
+   *  - Grant-eligible action with NO active grant:
+   *      require otpCode, verify via OtpClient, and on success write
+   *      a fresh grant so subsequent ops within the window skip the
+   *      provider. The grant write is best-effort: a failure to
+   *      insert the grant row is logged but does NOT undo the
+   *      already-verified destructive op.
+   *
+   * Throws AppError on failure. The returned `otpId` is what callers
+   * forward into `AuditService.write({ otpId, ... })` so audit rows
+   * stay attributable to the original OTP even when written under a
+   * subsequent grant (we reuse the grant's otp_id).
    */
   private async verifyOtp(
     actor: string,
@@ -102,17 +177,16 @@ export class MarbetesService {
     otpCode: string | undefined,
   ): Promise<{ otpId: string }> {
     if (!DESTRUCTIVE_ACTIONS.has(action)) return { otpId: 'noop' };
-    if (!otpCode) {
-      throw new AppError('otp_required', 'X-OTP-Code header missing; destructive operations require a single-use 6-char OTP.', 401, {
+    return verifyOtpWithGrant(
+      { otp: this.otp, grant: this.grant, log: this.log },
+      {
+        actor,
         action,
-      });
-    }
-    const r = await this.otp.verify({ subject: actor, scope: action, code: otpCode });
-    if (!r.ok) {
-      this.log.warn({ actor, action, reason: r.reason }, 'otp_verify_failed');
-      throw new AppError('otp_invalid', `otp verify rejected: ${r.reason}`, 401, { action, reason: r.reason });
-    }
-    return { otpId: r.otpId };
+        otpCode,
+        grantEligible: GRANT_ELIGIBLE_ACTIONS.has(action),
+        grantScope: GRANT_SCOPE,
+      },
+    );
   }
 
   async list(filter: ListMarbetesFilter): Promise<ListMarbetesResponse> {
@@ -278,7 +352,7 @@ export class MarbetesService {
   async bulkCreate(
     actor: string,
     req: BulkCreateMarbetesRequest,
-    source: 'json' | 'csv',
+    source: 'json' | 'csv' | 'xlsx',
     fileName: string | null,
     otpCode: string | undefined,
     meta: RequestMeta = {},
@@ -297,11 +371,13 @@ export class MarbetesService {
         seen.set(item.code, index);
         survivors.push({ index, code: item.code });
       } else {
+        const reason = 'duplicate in batch';
         failures.push({
           index,
           line: null,
           code: item.code,
-          reason: 'duplicate in batch',
+          reason,
+          category: reasonToCategory(reason),
         });
       }
     });
@@ -315,11 +391,13 @@ export class MarbetesService {
     for (const survivor of survivors) {
       const codeHash = sha256Hex(survivor.code);
       if (existingSet.has(codeHash)) {
+        const reason = 'code already exists';
         failures.push({
           index: survivor.index,
           line: null,
           code: survivor.code,
-          reason: 'code already exists',
+          reason,
+          category: reasonToCategory(reason),
         });
         continue;
       }
@@ -349,60 +427,88 @@ export class MarbetesService {
         tx<T>(fn: (client: import('pg').PoolClient) => Promise<T>): Promise<T>;
       };
       auditId = await txPool.tx(async (client) => {
-        const inserted = await this.repo.bulkInsert(
-          client,
-          ready.map((r) => ({
-            publicUid: r.publicUid,
-            codeHash: r.codeHash,
-            createdBy: actor,
-          })),
-        );
+        try {
+          const inserted = await this.repo.bulkInsert(
+            client,
+            ready.map((r) => ({
+              publicUid: r.publicUid,
+              codeHash: r.codeHash,
+              createdBy: actor,
+            })),
+          );
 
-        // Map the inserted rows back to the original indexes for the
-        // successes list (preserves input order).
-        const byUid = new Map(inserted.map((row) => [row.public_uid, row]));
-        for (const r of ready) {
-          const row = byUid.get(r.publicUid);
-          if (!row) throw AppError.internal('bulk_insert_returned_incomplete');
-          successes.push({
-            id: row.id,
-            publicUid: row.public_uid,
-            status: row.status,
-          });
+          // Map the inserted rows back to the original indexes for the
+          // successes list (preserves input order).
+          const byUid = new Map(inserted.map((row) => [row.public_uid, row]));
+          for (const r of ready) {
+            const row = byUid.get(r.publicUid);
+            if (!row) throw AppError.internal('bulk_insert_returned_incomplete');
+            successes.push({
+              id: row.id,
+              publicUid: row.public_uid,
+              status: row.status,
+            });
+          }
+
+          if (failures.length > 0) {
+            // Partial-success batch: skip the audit row. The caller can
+            // re-submit the failed codes separately if needed.
+            return null;
+          }
+
+          const auditRow = await client.query<{ id: number }>(
+            `INSERT INTO audit_log
+               (actor_id, actor_email, action, entity_type, entity_id,
+                after_jsonb, otp_id, ip, user_agent)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::inet, $9)
+             RETURNING id`,
+            [
+              actor,
+              null,
+              'marbete.bulk_create',
+              'marbete',
+              fileName ?? 'inline-json',
+              JSON.stringify({
+                count: req.items.length,
+                created: successes.length,
+                source,
+                fileName,
+                publicUids: successes.map((s) => s.publicUid),
+                reason: req.reason ?? null,
+              }),
+              otpResult.otpId,
+              meta.ip ?? null,
+              meta.userAgent ?? null,
+            ],
+          );
+          return auditRow.rows[0]?.id ?? null;
+        } catch (err) {
+          // Map pg 23505 to a proper AppError so the global error
+          // handler can render a structured 409 envelope instead of
+          // dropping the raw pg error into the "Unknown" branch
+          // (which historically caused the bulk-xlsx route to log
+          // both the raw pg error AND FST_ERR_REP_ALREADY_SENT
+          // because the response was effectively double-sent).
+          //
+          // The realistic race is on `marbetes_public_uid_key` or
+          // `marbetes_pkey` after `findExistingCodeHashes` cleared
+          // the path a millisecond earlier; we don't try to
+          // distinguish — any 23505 from this transactional path is
+          // a conflict the client can retry.
+          const pgErr = err as { code?: string; constraint?: string };
+          if (pgErr.code === '23505') {
+            throw new AppError(
+              'marbete_bulk_conflict',
+              `bulk insert collided with an existing marbete (constraint: ${pgErr.constraint ?? 'unknown'})`,
+              409,
+              { constraint: pgErr.constraint ?? null },
+            );
+          }
+          // Re-throw everything else (connection errors, AppError.internal
+          // raised by the success-mapping loop, audit_log unique violations,
+          // etc.) unchanged so the caller can keep its existing contract.
+          throw err;
         }
-
-        if (failures.length > 0) {
-          // Partial-success batch: skip the audit row. The caller can
-          // re-submit the failed codes separately if needed.
-          return null;
-        }
-
-        const auditRow = await client.query<{ id: number }>(
-          `INSERT INTO audit_log
-             (actor_id, actor_email, action, entity_type, entity_id,
-              after_jsonb, otp_id, ip, user_agent)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::inet, $9)
-           RETURNING id`,
-          [
-            actor,
-            null,
-            'marbete.bulk_create',
-            'marbete',
-            fileName ?? 'inline-json',
-            JSON.stringify({
-              count: req.items.length,
-              created: successes.length,
-              source,
-              fileName,
-              publicUids: successes.map((s) => s.publicUid),
-              reason: req.reason ?? null,
-            }),
-            otpResult.otpId,
-            meta.ip ?? null,
-            meta.userAgent ?? null,
-          ],
-        );
-        return auditRow.rows[0]?.id ?? null;
       });
     }
     // When `ready.length === 0` (the whole batch was duplicates) we
@@ -491,5 +597,33 @@ export class MarbetesService {
       }
     }
     return { ...base, maskedCode: maskCode(row.public_uid), student };
+  }
+
+  /**
+   * Read the actor's current grant status. When a grant service is
+   * wired (production), the response reflects the active window;
+   * otherwise the actor has no grant and the route returns the
+   * "no grant" shape so the UI can degrade gracefully.
+   *
+   * Only grant-eligible actions share this cache (`marbete.reveal`
+   * remains per-op OTP), but the route surfaces one composite
+   * `OtpGrantStatusResponse` because the UI asks once on dialog open
+   * and toggles the OTP field off for all destructive flows.
+   */
+  async getGrantStatus(actor: string): Promise<{
+    active: boolean;
+    expiresAt: string | null;
+  }> {
+    if (!this.grant) {
+      return { active: false, expiresAt: null };
+    }
+    const existing = await this.grant.findActive(actor, GRANT_SCOPE);
+    if (!existing) {
+      return { active: false, expiresAt: null };
+    }
+    return {
+      active: true,
+      expiresAt: existing.expires_at.toISOString(),
+    };
   }
 }

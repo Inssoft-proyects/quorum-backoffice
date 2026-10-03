@@ -14,14 +14,20 @@
 import type { z } from 'zod';
 import {
   BulkCreateMarbetesRequest,
+  BulkXlsxCreateRequest,
   CreateMarbeteRequest,
   DeleteMarbeteRequest,
   ListAuditFilter,
   ListMarbetesFilter,
+  ListMatriculasFilter,
   RevealMarbeteRequest,
+  UnassignMarbeteRequest,
   UpdateMarbeteRequest,
+  type AssignMarbetesRequest,
+  type AssignMarbetesResponse,
   type AuditEntry,
   type BulkCreateMarbetesResponse,
+  type BulkXlsxCreateResponse,
   type CreateDispositivoRequest,
   type DeleteDispositivoRequest,
   type DispositivoDetailResponse,
@@ -29,11 +35,15 @@ import {
   type ListDispositivosFilter,
   type ListDispositivosResponse,
   type ListMarbetesResponse,
+  type ListMatriculasResponse,
   type LoginRequest,
   type MarbeteCountersResponse,
   type MarbeteDetailResponse,
+  type MatriculasCountersResponse,
   type MeResponse,
+  type OtpGrantStatusResponse,
   type RevealMarbeteResponse,
+  type SyncMatriculasResponse,
   type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
 
@@ -121,15 +131,14 @@ async function apiPost<T>(path: string, body: unknown, cookie?: string): Promise
 async function apiDeleteWithOtp<T>(
   path: string,
   body: object,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<T> {
+  const extra: Record<string, string> = { 'content-type': 'application/json' };
+  if (otpCode !== undefined) extra['x-otp-code'] = otpCode;
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
-    headers: buildHeaders(cookie, {
-      'content-type': 'application/json',
-      'x-otp-code': otpCode,
-    }),
+    headers: buildHeaders(cookie, extra),
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -140,15 +149,14 @@ async function apiDeleteWithOtp<T>(
 async function apiPostWithOtp<T>(
   path: string,
   body: object,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<T> {
+  const extra: Record<string, string> = { 'content-type': 'application/json' };
+  if (otpCode !== undefined) extra['x-otp-code'] = otpCode;
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: buildHeaders(cookie, {
-      'content-type': 'application/json',
-      'x-otp-code': otpCode,
-    }),
+    headers: buildHeaders(cookie, extra),
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -159,15 +167,14 @@ async function apiPostWithOtp<T>(
 async function apiPatchWithOtp<T>(
   path: string,
   body: object,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<T> {
+  const extra: Record<string, string> = { 'content-type': 'application/json' };
+  if (otpCode !== undefined) extra['x-otp-code'] = otpCode;
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'PATCH',
-    headers: buildHeaders(cookie, {
-      'content-type': 'application/json',
-      'x-otp-code': otpCode,
-    }),
+    headers: buildHeaders(cookie, extra),
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -230,6 +237,20 @@ export async function getMarbeteCounters(cookie?: string): Promise<MarbeteCounte
   return apiGet<MarbeteCountersResponse>('/api/v1/marbetes/counters', cookie);
 }
 
+/**
+ * Read the session actor's current OTP grant window for the marbete
+ * scope family. The dialogs (add / revoke) call this on open and use
+ * the response to decide whether to hide the OTP input field.
+ *
+ * `OtpGrantStatusResponse` is the shared DTO contract (see
+ * packages/shared/src/dto/marbete.ts). When the grant service is not
+ * configured the server returns `{ active: false, expiresAt: null }`,
+ * which the dialogs treat as "OTP required" — the safe default.
+ */
+export async function getMarbeteOtpGrant(cookie?: string): Promise<OtpGrantStatusResponse> {
+  return apiGet<OtpGrantStatusResponse>('/api/v1/marbetes/otp-grant', cookie);
+}
+
 export async function listMarbetes(
   filter: z.input<typeof ListMarbetesFilter>,
   cookie?: string,
@@ -251,7 +272,7 @@ export async function getMarbete(id: number, cookie?: string): Promise<MarbeteDe
 export async function deleteMarbete(
   id: number,
   req: DeleteMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
   return apiDeleteWithOtp<MarbeteDetailResponse>(
@@ -276,7 +297,7 @@ export async function getStudentByCanvasId(
 
 export async function createMarbete(
   req: CreateMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
   return apiPostWithOtp<MarbeteDetailResponse>('/api/v1/marbetes', req, otpCode, cookie);
@@ -285,7 +306,7 @@ export async function createMarbete(
 export async function updateMarbete(
   id: number,
   req: UpdateMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
   return apiPatchWithOtp<MarbeteDetailResponse>(
@@ -299,7 +320,7 @@ export async function updateMarbete(
 export async function revealMarbete(
   id: number,
   req: RevealMarbeteRequest,
-  otpCode: string,
+  otpCode: string | undefined,
   cookie?: string,
 ): Promise<RevealMarbeteResponse> {
   return apiPostWithOtp<RevealMarbeteResponse>(
@@ -327,6 +348,85 @@ export async function bulkCreateMarbetes(
     otpCode,
     cookie,
   );
+}
+
+// ---- Marbetes bulk upload via .xlsx (T4) ----
+//
+// Admin-only .xlsx upload to /api/v1/marbetes/bulk-xlsx. Reads the
+// browser File as base64 in the browser and ships it via the
+// shared `BulkXlsxCreateRequest` shape (`fileName` + `contentBase64`).
+// Per-row outcomes share the JSON /bulk shape (successes / failures /
+// auditId) plus xlsx-specific metadata: skipped example rows, a
+// `categoryCounts` histogram, and a downloadable errors workbook.
+// The 20-minute OTP grant window applies exactly like the JSON /bulk
+// endpoint — omit `otpCode` when a grant is active.
+export async function bulkCreateMarbetesXlsx(
+  args: {
+    file: File;
+    reason?: string;
+    otpCode: string | undefined;
+    cookie?: string;
+  },
+): Promise<BulkXlsxCreateResponse> {
+  const contentBase64 = await readFileAsBase64(args.file);
+  const req: z.input<typeof BulkXlsxCreateRequest> = {
+    fileName: args.file.name,
+    contentBase64,
+    ...(args.reason ? { reason: args.reason } : {}),
+  };
+  return apiPostWithOtp<BulkXlsxCreateResponse>(
+    '/api/v1/marbetes/bulk-xlsx',
+    req,
+    args.otpCode,
+    args.cookie,
+  );
+}
+
+/**
+ * Read a browser File as canonical base64.
+ *
+ * Uses FileReader.readAsArrayBuffer() (universally available in
+ * browsers + jsdom) + manual binary concatenation + btoa() so we
+ * don't pull a base64 polyfill into the bundle. btoa() is available
+ * in modern browsers, Node 18+, and jsdom (so the api-client test
+ * environment exercises the same code path). File.arrayBuffer() is
+ * the modern alternative but isn't implemented by jest-environment-
+ * jsdom 30, hence the FileReader fallback.
+ */
+async function readFileAsBase64(file: File): Promise<string> {
+  const buffer = await readFileAsArrayBuffer(file);
+  const bytes = new Uint8Array(buffer);
+  // Chunk the concat so very large workbooks (up to 5 MB) don't
+  // blow the JS string limit on older engines. 0x8000 = 32 KiB.
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Read a File as ArrayBuffer using FileReader. Returns a Promise so
+ * the api-client can be `await`ed. Falls back to `file.arrayBuffer()`
+ * if FileReader is unavailable (modern Node / future jsdom).
+ */
+function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+      } else {
+        reject(new Error('file_read_invalid_result'));
+      }
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('file_read_failed'));
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 // ---- Dispositivos (WU9) ----
@@ -390,6 +490,74 @@ export async function revokeDispositivo(
     otpCode,
     cookie,
   );
+}
+
+// ---- Matrículas (WU v3 "Asignación de marbetes") ----
+//
+// Both `assignMatriculas` and `unassignMatricula` are admin + OTP-gated
+// destructive writes that follow the same grant-aware convention as
+// `createMarbete` / `updateMarbete` / `deleteMarbete`: when an OTP
+// grant is active the dialogs call these with `otpCode: undefined`
+// so the x-otp-code header is OMITTED and the server consults the
+// grant cache; otherwise the dialogs pass a 6-digit code and the
+// header IS sent.
+export async function listMatriculas(
+  filter: z.input<typeof ListMatriculasFilter>,
+  cookie?: string,
+): Promise<ListMatriculasResponse> {
+  const qs = buildQueryString({
+    status: filter.status,
+    search: filter.search,
+    isActive: filter.isActive,
+    limit: filter.limit,
+    offset: filter.offset,
+  });
+  return apiGet<ListMatriculasResponse>(`/api/v1/matriculas${qs}`, cookie);
+}
+
+export async function getMatriculasCounters(
+  cookie?: string,
+): Promise<MatriculasCountersResponse> {
+  return apiGet<MatriculasCountersResponse>('/api/v1/matriculas/counters', cookie);
+}
+
+export async function assignMatriculas(
+  req: z.input<typeof AssignMarbetesRequest>,
+  otpCode: string | undefined,
+  cookie?: string,
+): Promise<AssignMarbetesResponse> {
+  return apiPostWithOtp<AssignMarbetesResponse>(
+    '/api/v1/matriculas/assign',
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+export async function unassignMatricula(
+  req: z.input<typeof UnassignMarbeteRequest>,
+  otpCode: string | undefined,
+  cookie?: string,
+): Promise<MarbeteDetailResponse> {
+  return apiPostWithOtp<MarbeteDetailResponse>(
+    '/api/v1/matriculas/unassign',
+    req,
+    otpCode,
+    cookie,
+  );
+}
+
+/**
+ * Admin-only Canvas → students_cache sync (POST /api/v1/matriculas/sync).
+ *
+ * Not OTP-gated and not grant-eligible: a sync is a read-side cache
+ * refresh, not a destructive marbete write. The endpoint is wired
+ * through the standard `apiPost` so the request body always carries
+ * the typed empty payload; this also keeps `credentials: 'include'`
+ * consistent with every other admin call.
+ */
+export async function syncMatriculas(cookie?: string): Promise<SyncMatriculasResponse> {
+  return apiPost<SyncMatriculasResponse>('/api/v1/matriculas/sync', {}, cookie);
 }
 
 // ---- Audit (WU10) ----

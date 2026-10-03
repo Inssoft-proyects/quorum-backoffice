@@ -54,11 +54,26 @@ export interface ErrorEnvelope {
   traceId?: string;
 }
 
+/**
+ * Global Fastify error handler.
+ *
+ * IMPORTANT: this handler must NOT return the envelope. Fastify's
+ * `error-handler.js` (see node_modules/fastify/lib/error-handler.js)
+ * does `reply.send(result)` on whatever the handler returns. If we
+ * both call `reply.send(envelope)` AND return the envelope, Fastify
+ * tries to send twice. The second call is a no-op for the wire (the
+ * response is already on the socket) but logs
+ * `FST_ERR_REP_ALREADY_SENT: "Reply was already sent, did you
+ * forget to \"return reply\" in \"/api/v1/marbetes/bulk-xlsx\"
+ * (POST)?"` — which the operator sees as two errors for one
+ * request. Returning `void` breaks the chain and silences the
+ * warning.
+ */
 export function httpErrorHandler(
   err: FastifyError | AppError | ZodError | Error,
   req: FastifyRequest,
   reply: FastifyReply,
-): ErrorEnvelope {
+): void {
   const traceId = req.id;
 
   if (err instanceof AppError) {
@@ -66,7 +81,7 @@ export function httpErrorHandler(
     const envelope: ErrorEnvelope = { code: err.code, message: err.message, traceId };
     if (err.details !== undefined) envelope.details = err.details;
     reply.status(err.httpStatus).send(envelope);
-    return envelope;
+    return;
   }
 
   // Zod validation failures
@@ -80,7 +95,7 @@ export function httpErrorHandler(
     };
     req.log.warn({ traceId }, 'validation_error');
     reply.status(400).send(envelope);
-    return envelope;
+    return;
   }
 
   // Fastify validation errors
@@ -93,7 +108,7 @@ export function httpErrorHandler(
       traceId,
     };
     reply.status(fe.statusCode ?? 400).send(envelope);
-    return envelope;
+    return;
   }
 
   // Unknown
@@ -104,5 +119,4 @@ export function httpErrorHandler(
     traceId,
   };
   reply.status(500).send(envelope);
-  return envelope;
 }

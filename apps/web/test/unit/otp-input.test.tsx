@@ -178,6 +178,46 @@ describe('OtpInput — alphanumeric mode (BackOffice login)', () => {
   });
 });
 
+describe('OtpInput — display (D-2: every filled char renders in its box)', () => {
+  it('after sequential typing every filled box renders its char in numeric mode', async () => {
+    const user = userEvent.setup();
+    render(<ControlledOtp />);
+    const boxes = getBoxes();
+    await user.type(boxes[0]!, '1');
+    await user.type(boxes[1]!, '2');
+    // Box 0 and box 1 each render their char; the rest are empty.
+    expect(boxes.map((b) => b.value)).toEqual(['1', '2', '', '', '', '']);
+  });
+
+  it('after a 6-char paste every filled box renders its char in numeric mode', async () => {
+    const user = userEvent.setup();
+    render(<ControlledOtp />);
+    const [first] = getBoxes();
+    await user.click(first!);
+    await user.paste('123456');
+    // All 6 boxes render the pasted chars; none are trimmed-empty.
+    expect(getBoxes().map((b) => b.value)).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
+
+  it('after a 6-char paste every filled box renders its char in alphanumeric mode', async () => {
+    const user = userEvent.setup();
+    render(<ControlledOtp mode="alphanumeric" />);
+    const [first] = getBoxes();
+    await user.click(first!);
+    await user.paste('AB12CD');
+    expect(getBoxes().map((b) => b.value)).toEqual(['A', 'B', '1', '2', 'C', 'D']);
+  });
+
+  it('after partial typing every filled box renders its char in alphanumeric mode', async () => {
+    const user = userEvent.setup();
+    render(<ControlledOtp mode="alphanumeric" />);
+    const boxes = getBoxes();
+    await user.type(boxes[0]!, 'K');
+    await user.type(boxes[1]!, '3');
+    expect(boxes.map((b) => b.value)).toEqual(['K', '3', '', '', '', '']);
+  });
+});
+
 describe('OtpInput — id pass-through (label association)', () => {
   it('applies the `id` prop to the first box only when provided', () => {
     render(
