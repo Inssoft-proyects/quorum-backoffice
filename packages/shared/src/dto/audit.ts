@@ -17,6 +17,10 @@ export const AuditAction = z.enum([
   'dispositivo.create',
   'dispositivo.update',
   'dispositivo.revoke',
+  // B2a: device assignment emits granular bind/release events;
+  // the SQL labels must match the 0016 migration byte-for-byte.
+  'dispositivo.assign',
+  'dispositivo.unassign',
   'auth.login',
   'auth.logout',
   'auth.failed',

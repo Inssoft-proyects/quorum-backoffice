@@ -61,6 +61,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0010_audit_action_otp_login.sql',
       '0011_backoffice_username.sql',
       '0015_device_student_assignment.sql',
+      '0016_audit_action_device_assignment.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -81,7 +82,20 @@ describe('migrations runner (integration, real PG)', () => {
       '0010_audit_action_otp_login.sql',
       '0011_backoffice_username.sql',
       '0015_device_student_assignment.sql',
+      '0016_audit_action_device_assignment.sql',
     ]);
+  });
+
+  it('audit_action enum includes dispositivo.assign and dispositivo.unassign after 0016', async () => {
+    // B2a: the device-assignment endpoint emits these two events; the
+    // 0016 migration must extend the enum with both values, mirroring
+    // the byte-for-byte labels in packages/shared/src/dto/audit.ts.
+    const r = await pool.query<{ enum_label: string }>(
+      "SELECT unnest(enum_range(NULL::audit_action))::text AS enum_label",
+    );
+    const labels = r.rows.map((row) => row.enum_label);
+    expect(labels).toContain('dispositivo.assign');
+    expect(labels).toContain('dispositivo.unassign');
   });
 
   it('0011_backoffice_username adds a nullable unique users.username column without backfill', async () => {
