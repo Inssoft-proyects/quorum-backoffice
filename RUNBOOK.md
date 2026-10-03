@@ -220,6 +220,53 @@ Content-Type: application/json
   mailer logs the OTP at `warn` level. Look for
   `smtp_dev_mode_otp_logged` in the logs to recover it locally.
 
+### Assign a device to a Canvas student (admin + OTP)
+
+Admin-only, OTP-gated ownership of devices (B2). Both routes require an
+admin session and a single-use OTP in `X-OTP-Code`:
+
+```http
+POST /api/v1/dispositivos/:id/assign
+X-OTP-Code: K7QM3X
+Content-Type: application/json
+{ "canvasUserId": 9001 }
+
+→ 200 { ...device, "assignedStudentId": 4242 }
+
+POST /api/v1/dispositivos/:id/unassign
+X-OTP-Code: K7QM3X
+
+→ 200 { ...device, "assignedStudentId": null }
+```
+
+- OTP scopes are `dispositivo.assign` and `dispositivo.unassign`
+  (issued by the sibling `quorum-otp` service like every destructive
+  action). `assignedStudentId` is the internal `students_cache.id`,
+  not the Canvas user id.
+- Fail-closed rejections leave the owner unchanged and write **no**
+  audit row:
+  - `404 not_found` — unknown device.
+  - `409 conflict` — assigning to a revoked device (a revoked device
+    must never gain an owner).
+  - `422 student_not_found` / `422 student_not_active` — only an
+    existing ACTIVE `students_cache` row may own a device.
+  - `409 device_not_assigned` — no-op unassign (avoids burning an OTP
+    without a state change).
+- Unassign is allowed even on revoked devices: removing rights can
+  never grant access.
+- Reassignment replaces the owner and is audited with both states.
+  Audit actions `dispositivo.assign` / `dispositivo.unassign`
+  (migration `0016`) carry before/after snapshots including
+  `assignedStudentId` and the verifying `otp_id`.
+- An assignment grants **no** Canvas or Jitsi access by itself: the
+  access decision additionally requires an active device, an active
+  student and a matching Canvas SIS identity, fail-closed.
+- Dev test-runner note: app-booting Jest suites need `--forceExit` and
+  `NODE_OPTIONS=--experimental-vm-modules`, wrapped in `timeout`.
+  The `test:integration` script uses the Jest-30-removed
+  `--testPathPattern` flag; invoke jest directly with
+  `--testPathPatterns`.
+
 ### Rotate a session secret
 
 `SESSION_SECRET` is used to HMAC-sign cookies. Rotating invalidates
@@ -239,6 +286,10 @@ Then update:
 1. `packages/shared/src/dto/audit.ts` — `AuditAction` enum.
 2. `apps/api/src/services/<entity>-service.ts` — use the new action in
    `AuditService.write()` calls.
+3. Rebuild `packages/shared` (`npm run build`) so `dist` reflects the
+   enum; if the DTO is imported by subpath, add an `exports` entry in
+   `packages/shared/package.json` (a missing entry fails `tsc` while
+   Jest's `moduleNameMapper` keeps tests green — a silent drift).
 
 ### Inspect audit log
 
