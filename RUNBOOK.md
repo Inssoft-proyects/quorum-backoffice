@@ -267,6 +267,46 @@ X-OTP-Code: K7QM3X
   `--testPathPattern` flag; invoke jest directly with
   `--testPathPatterns`.
 
+### Access-decision API (machine-to-machine, B3)
+
+`POST /api/v1/access-decisions` is the authenticated policy-decision
+endpoint the Canvas/Jitsi access gate will call. It is implemented and
+tested but **not deployed**; no live caller exists yet.
+
+- **Transport auth**: `Authorization: HMAC <name> <ts> <hex>` (the same
+  wire format `quorum-otp` speaks; signature = HMAC-SHA256 over
+  `<ts>.<rawBody>`). Callers come from `BACKOFFICE_SERVICE_TOKENS`
+  (`name:secret,name:secret`); skew from
+  `BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS` (default 60). An empty
+  registry rejects every call (fail-closed). All transport auth
+  failures return 401 `deny.idp_untrusted`.
+- **Request** (`DecisionRequest`): `device_id` (serial string),
+  `otp_proof` (OTP code), `canvas_user_id` (interim identity until the
+  IdP mapping exists), optional `idp_subject` (reserved), `room_id`,
+  `media_policy`.
+- **Response** (`DecisionResponse`): HTTP 200 for every AUTHENTICATED
+  outcome — `{ decision: 'allow', student_id, room_id?, media_policy? }`
+  or `{ decision: 'deny', denial: '<deny.* code>' }`. The nine `deny.*
+  codes are the locked taxonomy (migration-independent, in
+  `packages/shared/src/dto/access-decision.ts`).
+- **Policy order** (first match wins): `deny.otp_missing` →
+  `deny.otp_invalid` / `deny.lockout` (OTP verify rejected / locked) →
+  `deny.dependency_fail` (OTP service down, timeout or 5xx — the
+  endpoint never crashes on an outage) → `deny.device_unknown` (the
+  fail-closed owner check returned no owner: unknown, revoked,
+  unassigned, wrong owner and inactive student are deliberately
+  INDISTINGUISHABLE) → `allow`.
+- **Privacy**: no `deny.*` response ever echoes the device serial or
+  any device detail (enforced by a parametric leak-guard test).
+- **OTP scope**: `access.decision` (`ACCESS_DECISION_OTP_SCOPE`); the
+  OTP subject is `String(canvas_user_id)`.
+- **Deferred**: audit rows for decision outcomes and the true Canvas
+  SIS lookup (`students_cache.matricula`, migration `0017`) are
+  contract-defined but not implemented — the SIS source endpoint is an
+  operator decision; until then the fail-closed default
+  (`deny.dependency_fail` wherever a matrícula would be required) is
+  the correct production behavior.
+
 ### Rotate a session secret
 
 `SESSION_SECRET` is used to HMAC-sign cookies. Rotating invalidates
