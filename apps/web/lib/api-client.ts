@@ -287,12 +287,7 @@ export async function deleteMarbete(
   otpCode: string,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
-  return apiDeleteWithOtp<MarbeteDetailResponse>(
-    `/api/v1/marbetes/${id}`,
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiDeleteWithOtp<MarbeteDetailResponse>(`/api/v1/marbetes/${id}`, req, otpCode, cookie);
 }
 
 // ---- Marbetes (WU8b2) ----
@@ -301,10 +296,7 @@ export async function getStudentByCanvasId(
   canvasUserId: number,
   cookie?: string,
 ): Promise<StudentDetailResponse> {
-  return apiGet<StudentDetailResponse>(
-    `/api/v1/students?canvasUserId=${canvasUserId}`,
-    cookie,
-  );
+  return apiGet<StudentDetailResponse>(`/api/v1/students?canvasUserId=${canvasUserId}`, cookie);
 }
 
 export async function createMarbete(
@@ -321,12 +313,7 @@ export async function updateMarbete(
   otpCode: string,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
-  return apiPatchWithOtp<MarbeteDetailResponse>(
-    `/api/v1/marbetes/${id}`,
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPatchWithOtp<MarbeteDetailResponse>(`/api/v1/marbetes/${id}`, req, otpCode, cookie);
 }
 
 export async function revealMarbete(
@@ -354,12 +341,7 @@ export async function bulkCreateMarbetes(
   otpCode: string,
   cookie?: string,
 ): Promise<BulkCreateMarbetesResponse> {
-  return apiPostWithOtp<BulkCreateMarbetesResponse>(
-    '/api/v1/marbetes/bulk',
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPostWithOtp<BulkCreateMarbetesResponse>('/api/v1/marbetes/bulk', req, otpCode, cookie);
 }
 
 // ---- Dispositivos (WU9) ----
@@ -389,12 +371,7 @@ export async function createDispositivo(
   otpCode: string,
   cookie?: string,
 ): Promise<DispositivoDetailResponse> {
-  return apiPostWithOtp<DispositivoDetailResponse>(
-    '/api/v1/dispositivos',
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPostWithOtp<DispositivoDetailResponse>('/api/v1/dispositivos', req, otpCode, cookie);
 }
 
 export async function updateDispositivo(

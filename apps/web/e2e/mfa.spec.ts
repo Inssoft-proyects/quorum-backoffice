@@ -94,7 +94,10 @@ async function provisionStudent(
     },
     data: { code: marbeteCode, canvasUserId: CANVAS_USER_ID },
   });
-  expect(marbeteRes.ok(), `create marbete failed: HTTP ${marbeteRes.status()} ${await marbeteRes.text()}`).toBeTruthy();
+  expect(
+    marbeteRes.ok(),
+    `create marbete failed: HTTP ${marbeteRes.status()} ${await marbeteRes.text()}`,
+  ).toBeTruthy();
 
   const createDeviceOtp = await issueOtp(EMAIL, 'dispositivo.create');
   const deviceRes = await request.post(`${API}/api/v1/dispositivos`, {
@@ -105,7 +108,10 @@ async function provisionStudent(
     },
     data: { serialNumber, brand: 'E2E', model: 'MfaFlow' },
   });
-  expect(deviceRes.ok(), `create device failed: HTTP ${deviceRes.status()} ${await deviceRes.text()}`).toBeTruthy();
+  expect(
+    deviceRes.ok(),
+    `create device failed: HTTP ${deviceRes.status()} ${await deviceRes.text()}`,
+  ).toBeTruthy();
   const deviceBody = (await deviceRes.json()) as { id: number };
 
   const assignDeviceOtp = await issueOtp(EMAIL, 'dispositivo.assign');
@@ -117,7 +123,10 @@ async function provisionStudent(
     },
     data: { canvasUserId: CANVAS_USER_ID },
   });
-  expect(assignRes.status(), `assign device failed: HTTP ${assignRes.status()} ${await assignRes.text()}`).toBe(200);
+  expect(
+    assignRes.status(),
+    `assign device failed: HTTP ${assignRes.status()} ${await assignRes.text()}`,
+  ).toBe(200);
 
   return { marbeteCode, serialNumber };
 }
@@ -142,10 +151,7 @@ async function fillMfaForm(
 
 test.describe('MFA page (E2E, M2)', () => {
   test.beforeEach(() => {
-    test.skip(
-      !otpEnvReady(),
-      'E2E_OTP_SERVICE_TOKEN is not set; skipping the MFA page suite.',
-    );
+    test.skip(!otpEnvReady(), 'E2E_OTP_SERVICE_TOKEN is not set; skipping the MFA page suite.');
   });
 
   test('student with valid marbete + device + OTP lands on the requested next URL', async ({

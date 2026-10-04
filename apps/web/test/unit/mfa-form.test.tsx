@@ -19,9 +19,7 @@ const stubRouter = {
 } as unknown as AppRouterInstance;
 
 function withRouter(children: ReactNode) {
-  return (
-    <AppRouterContext.Provider value={stubRouter}>{children}</AppRouterContext.Provider>
-  );
+  return <AppRouterContext.Provider value={stubRouter}>{children}</AppRouterContext.Provider>;
 }
 
 function renderForm(next?: string) {
@@ -33,9 +31,7 @@ function renderForm(next?: string) {
 
 function getOtpBoxes(): HTMLInputElement[] {
   const group = screen.getByTestId('mfa-otp');
-  return Array.from(
-    group.querySelectorAll<HTMLInputElement>('input'),
-  );
+  return Array.from(group.querySelectorAll<HTMLInputElement>('input'));
 }
 
 /**
@@ -170,10 +166,9 @@ describe('MfaForm — three-factor authentication (M2)', () => {
 
   it('shows the typed deny.marbete_unknown message on 401', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
-      new Response(
-        JSON.stringify({ code: 'deny.marbete_unknown', message: 'no' }),
-        { status: 401 },
-      )) as unknown as typeof fetch;
+      new Response(JSON.stringify({ code: 'deny.marbete_unknown', message: 'no' }), {
+        status: 401,
+      })) as unknown as typeof fetch;
 
     const user = userEvent.setup();
     renderForm('/dashboard');
@@ -191,10 +186,9 @@ describe('MfaForm — three-factor authentication (M2)', () => {
 
   it('shows the typed deny.otp_invalid message on 401', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
-      new Response(
-        JSON.stringify({ code: 'deny.otp_invalid', message: 'no' }),
-        { status: 401 },
-      )) as unknown as typeof fetch;
+      new Response(JSON.stringify({ code: 'deny.otp_invalid', message: 'no' }), {
+        status: 401,
+      })) as unknown as typeof fetch;
 
     const user = userEvent.setup();
     renderForm('/dashboard');
@@ -207,17 +201,14 @@ describe('MfaForm — three-factor authentication (M2)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('mfa-error')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('mfa-error').textContent).toMatch(
-      /Código dinámico incorrecto/i,
-    );
+    expect(screen.getByTestId('mfa-error').textContent).toMatch(/Código dinámico incorrecto/i);
   });
 
   it('shows the typed deny.dependency_fail message on 503', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
-      new Response(
-        JSON.stringify({ code: 'deny.dependency_fail', message: 'no' }),
-        { status: 503 },
-      )) as unknown as typeof fetch;
+      new Response(JSON.stringify({ code: 'deny.dependency_fail', message: 'no' }), {
+        status: 503,
+      })) as unknown as typeof fetch;
 
     const user = userEvent.setup();
     renderForm('/dashboard');
@@ -324,10 +315,9 @@ describe('MfaForm — three-factor authentication (M2)', () => {
 
   it('clears the error when the user resumes typing in any field', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
-      new Response(
-        JSON.stringify({ code: 'deny.otp_invalid', message: 'no' }),
-        { status: 401 },
-      )) as unknown as typeof fetch;
+      new Response(JSON.stringify({ code: 'deny.otp_invalid', message: 'no' }), {
+        status: 401,
+      })) as unknown as typeof fetch;
 
     const user = userEvent.setup();
     renderForm('/dashboard');

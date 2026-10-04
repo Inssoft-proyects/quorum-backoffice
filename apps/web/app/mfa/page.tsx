@@ -1,10 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icon } from '@/components/icons';
 import { MfaForm } from './mfa-form';
 
@@ -40,9 +34,7 @@ export default async function MfaPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const params = await searchParams;
-  const next = typeof params.next === 'string' && params.next.length > 0
-    ? params.next
-    : undefined;
+  const next = typeof params.next === 'string' && params.next.length > 0 ? params.next : undefined;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted px-4 py-12">

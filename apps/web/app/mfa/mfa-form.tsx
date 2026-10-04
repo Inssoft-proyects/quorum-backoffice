@@ -72,9 +72,7 @@ function explainMfaError(err: unknown): string {
     case 'deny.dependency_fail':
       return 'Servicio de verificación no disponible. Intenta más tarde.';
     case 'validation_error': {
-      const details = err.details as
-        | { issues?: Array<{ message?: string }> }
-        | undefined;
+      const details = err.details as { issues?: Array<{ message?: string }> } | undefined;
       const firstIssue = details?.issues?.[0]?.message;
       return firstIssue ?? err.message ?? 'Datos inválidos. Verifica el formulario.';
     }
@@ -115,15 +113,16 @@ export function MfaForm({ next }: MfaFormProps) {
   const [marbeteCode, setMarbeteCode] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [otp, setOtp] = useState('');
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>(
-    'idle',
-  );
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
   // The OtpInput already uppercases + alphabetises; keep a defensive
   // re-normalisation so a future refactor cannot regress the wire
   // contract (the M1 endpoint verifies uppercase A–Z0–9 only).
-  const otpUpper = otp.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  const otpUpper = otp
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
   // The marbete code and serial number have NO character restrictions
   // in the M1 DTO (only length 8..128 and 3..128). We force uppercase
   // for readability (and so a student typing it on a phone keypad
@@ -174,10 +173,7 @@ export function MfaForm({ next }: MfaFormProps) {
   return (
     <div className="flex flex-col items-stretch gap-5" data-testid="mfa-form">
       {status === 'success' ? (
-        <div
-          className="flex flex-col items-center gap-4"
-          data-testid="mfa-success"
-        >
+        <div className="flex flex-col items-center gap-4" data-testid="mfa-success">
           <Alert variant="success" role="status">
             <span className="text-sm font-medium">Acceso concedido</span>
           </Alert>
@@ -192,11 +188,7 @@ export function MfaForm({ next }: MfaFormProps) {
           </Button>
         </div>
       ) : (
-        <form
-          className="flex flex-col items-stretch gap-5"
-          onSubmit={handleSubmit}
-          noValidate
-        >
+        <form className="flex flex-col items-stretch gap-5" onSubmit={handleSubmit} noValidate>
           {error ? (
             <Alert variant="destructive" role="alert" data-testid="mfa-error">
               {error}
@@ -248,10 +240,7 @@ export function MfaForm({ next }: MfaFormProps) {
           </div>
 
           <div className="flex flex-col items-center gap-2">
-            <Label
-              htmlFor="mfa-otp-1"
-              className="self-center text-center text-primary-500"
-            >
+            <Label htmlFor="mfa-otp-1" className="self-center text-center text-primary-500">
               Código dinámico
             </Label>
             <OtpInput
@@ -260,7 +249,12 @@ export function MfaForm({ next }: MfaFormProps) {
               id="mfa-otp-1"
               value={otpUpper}
               onChange={(nextValue) => {
-                setOtp(nextValue.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
+                setOtp(
+                  nextValue
+                    .toUpperCase()
+                    .replace(/[^A-Z0-9]/g, '')
+                    .slice(0, 6),
+                );
                 clearError();
               }}
               disabled={loading}
@@ -268,10 +262,7 @@ export function MfaForm({ next }: MfaFormProps) {
               aria-label="Código dinámico de 6 caracteres"
               data-testid="mfa-otp"
             />
-            <p
-              id="mfa-otp-hint"
-              className="text-center text-xs text-text-muted"
-            >
+            <p id="mfa-otp-hint" className="text-center text-xs text-text-muted">
               Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).
             </p>
           </div>
