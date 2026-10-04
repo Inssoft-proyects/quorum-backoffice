@@ -29,16 +29,30 @@ import { z } from 'zod';
 // DenialCode (enum)
 // ---------------------------------------------------------------------------
 //
-// The nine deny.* labels are the ONLY codes the access-decision
-// endpoint emits. The list is locked by the B3.1 unit test
-// `access-decision-schema.test.ts` which asserts the option list
-// byte-for-byte against the design.md §6 taxonomy.
+// The deny.* labels are the ONLY codes the access-decision +
+// MFA-authentication endpoints emit. The list is locked by the
+// B3.1 unit test `access-decision-schema.test.ts` which asserts
+// the option list byte-for-byte against the design.md §6
+// taxonomy (extended with the M1 MFA-only labels).
+//
+// M1 additions: the MFA flow binds the marbete → device →
+// student chain in a single transaction, so the deny codes are
+// extended with two more granular labels so the operator can
+// distinguish "the marbete points to an inactive / missing
+// student" (deny.student_inactive) from "the device is bound to
+// a DIFFERENT student than the one the marbete points to"
+// (deny.device_not_bound_to_student). The existing
+// `deny.marbete_unknown` and `deny.device_unknown` codes are
+// kept for the lower-level "lookup failed" outcomes (unknown
+// id, deleted row, revoked device, …).
 //
 // Order matters: the option order is also the "documentation"
 // order, so put the most common denials near the top.
 export const DenialCode = z.enum([
   'deny.marbete_unknown',
+  'deny.student_inactive',
   'deny.device_unknown',
+  'deny.device_not_bound_to_student',
   'deny.otp_missing',
   'deny.otp_invalid',
   'deny.lockout',

@@ -7,3 +7,4 @@ export * from './dto/canvas';
 export * from './dto/otp';
 export * from './dto/auth';
 export * from './dto/access-decision';
+export * from './dto/mfa';

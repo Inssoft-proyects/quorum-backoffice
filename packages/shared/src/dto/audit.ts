@@ -28,6 +28,12 @@ export const AuditAction = z.enum([
   'auth.login.requested',
   'auth.login.otp_verified',
   'auth.login.failed',
+  // M1 / MFA authentication: every MFA attempt (allow OR deny)
+  // emits a single 'student.mfa_authenticate' row so the operator
+  // can reconcile the allow/deny distribution without joining on
+  // any other table. The allow/deny discriminator is folded into
+  // the after_jsonb `outcome` field (see mfa-authenticate-service).
+  'student.mfa_authenticate',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
