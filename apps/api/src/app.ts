@@ -36,6 +36,7 @@ import { registerAuthRoutes } from './routes/auth';
 import { registerStudentsRoutes } from './routes/students';
 import { registerAccessDecisionsRoutes } from './routes/access-decisions';
 import { registerMfaRoutes } from './routes/mfa';
+import { registerMfaTokenRoutes } from './routes/mfa-tokens';
 import authDepsPlugin from './plugins/auth-deps';
 
 declare module 'fastify' {
@@ -117,6 +118,16 @@ export async function buildApp(
   // `__Host-mfa_sid` cookie and the fail-closed MfaAuthenticateService
   // (denial taxonomy in `packages/shared/src/dto/access-decision.ts`).
   await registerMfaRoutes(app as unknown as FastifyInstance);
+  // M3 / MFA SSO redirect endpoints:
+  //   - POST /api/v1/mfa/redirect-token (student-session cookie)
+  //   - POST /api/v1/mfa/consume (HMAC service-auth, BACKOFFICE_SERVICE_TOKENS)
+  // The route module registers the captureRawBodyPlugin it needs
+  // internally and wires its own `requireServiceAuth` preHandler
+  // for the consume endpoint, failing closed when the registry
+  // is empty. The allowlist is MFA_ALLOWED_REDIRECT_ORIGINS; the
+  // service fails closed (every origin rejected) when the env
+  // is empty.
+  await registerMfaTokenRoutes(app as unknown as FastifyInstance);
 
   return app;
 }
