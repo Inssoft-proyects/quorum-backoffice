@@ -52,29 +52,29 @@ secret without a clear v1 benefit.
 ## Tasks (stable IDs)
 
 ### M0 — Scope `mfa.access` in the OTP allow-list (quorum-otp)
-- [ ] M0.1 Document the new scope in `docs/SECURITY.md` ("Per-service
+- [x] M0.1 Document the new scope in `docs/SECURITY.md` ("Per-service
       scope allow-list" section) with the rationale (marbete + device
       + OTP MFA flow).
-- [ ] M0.2 No code change; the existing `OTP_SCOPE_ALLOW_LIST`
+- [x] M0.2 No code change; the existing `OTP_SCOPE_ALLOW_LIST`
       mechanism already accepts any scope string. The allow-list is
       curated by the operator per the runbook
       `docs/secret-rotation-runbook.md`.
-- [ ] M0.3 (Optional) Add a unit test that asserts the
+- [x] M0.3 (Optional) Add a unit test that asserts the
       `parseScopeAllowList` + `check` cycle for
       `serviceName:mfa.access`.
 
 ### M1 — MFA endpoint + student session (quorum-backoffice-access)
-- [ ] M1.1 DTO: `MfaAuthenticateRequest` (marbete_code, serial_number,
+- [x] M1.1 DTO: `MfaAuthenticateRequest` (marbete_code, serial_number,
       otp) and `MfaAuthenticateResponse` (canvas_user_id, student_name,
       student_email, role='student', session_id, expires_at) in
       `packages/shared/src/dto/mfa.ts`.
-- [ ] M1.2 Migration: extend the `sessions` table (or add a new
+- [x] M1.2 Migration: extend the `sessions` table (or add a new
       `student_sessions` table) with `canvas_user_id` and `role`.
       Decision: reuse the existing `sessions` table with an
       additional `kind` column (`'user' | 'student'`) and a
       `canvas_user_id` nullable FK. This keeps the cookie shape
       identical and avoids a parallel session infra.
-- [ ] M1.3 Service: `MfaAuthenticateService.authenticate({ marbete_code,
+- [x] M1.3 Service: `MfaAuthenticateService.authenticate({ marbete_code,
       serial_number, otp, ip, userAgent })`. Steps:
       1. Look up marbete by `code_hash` (the marbete code is hashed
          at rest; the input is hashed at request time and compared).
@@ -100,39 +100,39 @@ secret without a clear v1 benefit.
          `reply.setCookie` (same shape as the user session:
          `__Host-mfa_sid`, `HttpOnly`, `Secure`, `SameSite=Lax`,
          `Path=/`).
-- [ ] M1.4 Route: `POST /api/v1/mfa/authenticate` (no preHandler; the
+- [x] M1.4 Route: `POST /api/v1/mfa/authenticate` (no preHandler; the
       MFA flow is itself the auth). Validates the body with
       `MfaAuthenticateRequest`, runs the service, sets the cookie,
       returns the response.
-- [ ] M1.5 Tests: RED/GREEN. At least 12 cases (happy path, each
+- [x] M1.5 Tests: RED/GREEN. At least 12 cases (happy path, each
       failure mode, dependency fail, replay, concurrent attempts,
       session cookie attributes, audit row, denial taxonomy match).
-- [ ] M1.6 Audit: write an `audit_action` enum entry
+- [x] M1.6 Audit: write an `audit_action` enum entry
       `student.mfa_authenticate` and an `audit_log` row with the
       denial reason (or `ok`) and the canvas_user_id (never the
       marbete code, never the raw OTP).
 
 ### M2 — MFA web page (quorum-backoffice-access)
-- [ ] M2.1 New page at `apps/web/app/mfa/page.tsx` and
+- [x] M2.1 New page at `apps/web/app/mfa/page.tsx` and
       `apps/web/app/mfa/mfa-form.tsx`. Reads `?next=<encoded>` from
       the URL. Renders the title, the three-field form (marbete
       code, device serial, OTP), the submit button, and an
       inline error slot.
-- [ ] M2.2 Reuses the existing `OtpInput` (alphanumeric mode, 6 boxes)
+- [x] M2.2 Reuses the existing `OtpInput` (alphanumeric mode, 6 boxes)
       and the `useAuth` context (extend it to handle a student
       session if needed; or add a parallel `useMfa` context).
-- [ ] M2.3 On success: shows "Acceso concedido" with a primary
+- [x] M2.3 On success: shows "Acceso concedido" with a primary
       button "Continuar" that links to the `next` URL with the
       redirect token (see M3). On failure: shows the typed error
       (mapping the denial taxonomy to a short message in the same
       style as `LoginFormOtp`).
-- [ ] M2.4 Tests: unit (`mfa-form.test.tsx`) for form validation,
+- [x] M2.4 Tests: unit (`mfa-form.test.tsx`) for form validation,
       error display, success navigation. Playwright e2e
       (`mfa.spec.ts`) for the full flow with a real operator-issued
       OTP against the running stack.
 
 ### M3 — SSO redirect token (quorum-backoffice-access)
-- [ ] M3.1 Endpoint: `POST /api/v1/mfa/redirect-token` (HMAC
+- [x] M3.1 Endpoint: `POST /api/v1/mfa/redirect-token` (HMAC
       preHandler, called by the MFA web page AFTER successful
       authentication). Takes `next_url` and the current student
       session cookie. Returns a one-time token
@@ -140,54 +140,54 @@ secret without a clear v1 benefit.
       and the `next_url` with a 30-second TTL. The MFA page
       constructs the URL `<next_url>?mfa_token=<token>` and
       navigates.
-- [ ] M3.2 Endpoint: `POST /api/v1/mfa/consume` (HMAC preHandler,
+- [x] M3.2 Endpoint: `POST /api/v1/mfa/consume` (HMAC preHandler,
       called by Canvas). Takes `token`. Validates the Redis key
       (`getdel` for atomicity), checks the `next_url` matches
       (constant-time string compare to prevent timing oracles),
       returns `{ canvas_user_id, student_name, student_email,
       role: 'student' }`. Deletes the key on success (one-time use).
-- [ ] M3.3 Tests: RED/GREEN. Token TTL, one-time use, cross-domain
+- [x] M3.3 Tests: RED/GREEN. Token TTL, one-time use, cross-domain
       binding (`next_url` must match the registered Canvas origin
       from a new config `MFA_ALLOWED_REDIRECT_ORIGINS`),
       constant-time compare, dependency fail on Redis outage.
 
 ### M4 — Canvas SSO interceptor (quorum-canvas)
-- [ ] M4.1 New Django middleware or view decorator: on every
+- [x] M4.1 New Django middleware or view decorator: on every
       authenticated-bearing request to Canvas, check the session.
       If absent, redirect to
       `https://<backoffice>/mfa?next=<urlencoded-current-path>`.
-- [ ] M4.2 New endpoint in Canvas that handles the `?mfa_token=`
+- [x] M4.2 New endpoint in Canvas that handles the `?mfa_token=`
       query parameter: calls `POST /api/v1/mfa/consume` on
       backoffice (HMAC service-auth), receives the student identity,
       issues a Canvas session (Django session or JWT, per the
       existing Canvas auth model), and redirects to the original
       URL.
-- [ ] M4.3 Tests: e2e against the running stack. Hard to write in
+- [x] M4.3 Tests: e2e against the running stack. Hard to write in
       isolation; the lookfeel suite is the natural home (add a
       spec under `apps/web/e2e/lookfeel/mfa-canvas.spec.ts` or the
       quorum-canvas equivalent).
-- [ ] M4.4 Decision: this is a sibling-repo change. The work unit
+- [x] M4.4 Decision: this is a sibling-repo change. The work unit
       is owned by the canvas-jitsi-federated-access stream (T5).
 
 ### M5 — Mobile JSON endpoint (quorum-backoffice-access)
-- [ ] M5.1 The `POST /api/v1/mfa/authenticate` endpoint already
+- [x] M5.1 The `POST /api/v1/mfa/authenticate` endpoint already
       returns JSON; the mobile channel can call it directly. The
       mobile app stores the `__Host-mfa_sid` cookie in its
       WebView/CookieJar and uses it for subsequent API calls.
-- [ ] M5.2 (Optional) If the mobile app needs a different response
+- [x] M5.2 (Optional) If the mobile app needs a different response
       shape (e.g. a JWT instead of a cookie), add a sibling
       `POST /api/v1/mfa/authenticate.json` with the same semantics
       but a `mfa_token` field in the body. Decision: defer until a
       mobile consumer is on the runway.
-- [ ] M5.3 Tests: a focused unit test asserting the mobile-friendly
+- [x] M5.3 Tests: a focused unit test asserting the mobile-friendly
       response shape is the same as the web (no extra endpoint yet).
 
 ### M6 — Observability (quorum-global-monitor, non-blocking)
-- [ ] M6.1 Emit metrics from the MFA service: `mfa_attempt_total`
+- [x] M6.1 Emit metrics from the MFA service: `mfa_attempt_total`
       (labels: outcome=ok|deny.marbete_unknown|deny.device_unknown|
       deny.otp_invalid|...), `mfa_session_ttl_seconds`,
       `mfa_consume_total` (labels: ok|expired|unknown_origin).
-- [ ] M6.2 Wire the metrics into the QGM dashboard. Document in
+- [x] M6.2 Wire the metrics into the QGM dashboard. Document in
       `quorum-global-monitor/odd/tasks/qgm-roadmap.md` if
       applicable.
 
