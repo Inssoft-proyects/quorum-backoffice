@@ -33,6 +33,8 @@ import {
   type MarbeteCountersResponse,
   type MarbeteDetailResponse,
   type MeResponse,
+  type MfaAuthenticateRequest,
+  type MfaAuthenticateResponse,
   type RevealMarbeteResponse,
   type UpdateDispositivoRequest,
 } from '@quorum-backoffice/shared';
@@ -58,6 +60,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly status: number,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -77,7 +80,12 @@ async function parseError(res: Response): Promise<ApiError> {
   } catch {
     /* non-JSON body */
   }
-  return new ApiError(body?.code ?? 'unknown', body?.message ?? res.statusText, res.status);
+  return new ApiError(
+    body?.code ?? 'unknown',
+    body?.message ?? res.statusText,
+    res.status,
+    body?.details,
+  );
 }
 
 function buildHeaders(cookie?: string, extra?: Record<string, string>): Record<string, string> {
@@ -195,6 +203,31 @@ async function apiPatchWithOtp<T>(
 export async function login(body: LoginRequest, cookie?: string): Promise<MeResponse> {
   const data = await apiPost<{ user: MeResponse }>('/api/v1/auth/login', body, cookie);
   return data.user;
+}
+
+// ---- MFA (M1 endpoint, M2 web client) ----
+
+/**
+ * Three-factor authentication (marbete code + device serial + dynamic
+ * OTP). The endpoint sets the `__Host-mfa_sid` student session
+ * cookie as a side effect; the JSON body returns the resolved
+ * student identity so the client can render the success screen
+ * without a follow-up `GET /api/v1/mfa/session` call.
+ *
+ * Throws `ApiError` on transport failures or 4xx/5xx. The error
+ * `code` carries the `deny.*` taxonomy (401) or `validation_error`
+ * (400) or `deny.dependency_fail` (503). The MFA web form maps
+ * each of these to a short Spanish message — see
+ * `apps/web/app/mfa/mfa-form.tsx`.
+ *
+ * `credentials: 'include'` is wired into `apiPost` so the browser
+ * will keep the Set-Cookie header the server returns.
+ */
+export async function mfaAuthenticate(
+  body: MfaAuthenticateRequest,
+  cookie?: string,
+): Promise<MfaAuthenticateResponse> {
+  return apiPost<MfaAuthenticateResponse>('/api/v1/mfa/authenticate', body, cookie);
 }
 
 export async function logout(cookie?: string): Promise<void> {
