@@ -40,9 +40,13 @@ function metaFromRequest(req: FastifyRequest): { ip: string | null; userAgent: s
 }
 
 export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void> {
+  // B7a (P5.1): see the dispositivos twin comment. The HMAC service
+  // identity on destructive marbetes operations must be the
+  // operator-configured OTP_SERVICE_NAME, not the OtpClient default.
   const otp = new OtpClient({
     baseUrl: app.config.OTP_SERVICE_URL,
     serviceToken: app.config.OTP_SERVICE_TOKEN,
+    serviceName: app.config.OTP_SERVICE_NAME,
   });
 
   const getService = (): MarbetesService =>
