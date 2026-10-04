@@ -13,10 +13,26 @@ declare module 'fastify' {
   interface FastifyInstance {
     redis: {
       get(key: string): Promise<string | null>;
+      /**
+       * Atomic read-and-delete (`GETDEL` in Redis 6.2+). Returns
+       * the value before deletion, or `null` if the key was
+       * missing. Used by the M3 `/api/v1/mfa/consume` endpoint
+       * to enforce single-use tokens without a separate
+       * read+del pair (which would race under concurrency).
+       */
+      getdel(key: string): Promise<string | null>;
       set(key: string, value: string, ttlSeconds?: number): Promise<'OK'>;
       del(key: string): Promise<number>;
       incr(key: string): Promise<number>;
       expire(key: string, ttlSeconds: number): Promise<number>;
+      /**
+       * Returns the remaining TTL in seconds for the given key
+       * (Redis `TTL` command). -1 if the key has no TTL,
+       * -2 if the key does not exist. Used by the M3
+       * integration test to assert the redirect-token key has
+       * a 30-second TTL immediately after issue.
+       */
+      ttl(key: string): Promise<number>;
       healthy(): Promise<boolean>;
     };
   }
@@ -46,6 +62,14 @@ async function plugin(app: FastifyInstance): Promise<void> {
   }
 
   const get = async (key: string): Promise<string | null> => client.get(key);
+  // GETDEL is atomic at the Redis level: ioredis forwards the
+  // command and the server performs the read + delete in a
+  // single round-trip. Two concurrent /consume calls for the
+  // same token will see exactly one winner (the value) and
+  // one loser (null). The `client` typing in ioredis exposes
+  // `getdel` directly so no cast is required here.
+  const getdel = async (key: string): Promise<string | null> =>
+    (client as unknown as { getdel(k: string): Promise<string | null> }).getdel(key);
   const set = async (key: string, value: string, ttl?: number): Promise<'OK'> => {
     if (ttl && ttl > 0) {
       return (await client.set(key, value, 'EX', ttl)) as 'OK';
@@ -56,6 +80,7 @@ async function plugin(app: FastifyInstance): Promise<void> {
   const incr = async (key: string): Promise<number> => client.incr(key);
   const expire = async (key: string, ttlSeconds: number): Promise<number> =>
     client.expire(key, ttlSeconds);
+  const ttl = async (key: string): Promise<number> => client.ttl(key);
   const healthy = async (): Promise<boolean> => {
     try {
       const r = await client.ping();
@@ -65,7 +90,7 @@ async function plugin(app: FastifyInstance): Promise<void> {
     }
   };
 
-  app.decorate('redis', { get, set, del, incr, expire, healthy });
+  app.decorate('redis', { get, getdel, set, del, incr, expire, ttl, healthy });
 
   app.addHook('onClose', async () => {
     await client.quit().catch((err) => app.log.error({ err: err.message }, 'redis_close_failed'));

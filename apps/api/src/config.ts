@@ -60,6 +60,19 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(60),
+
+  // M3 / MFA SSO redirect: comma-separated allowlist of Canvas
+  // origins (protocol + host + port) that the MFA web page may
+  // redirect the student to. The MFA web page calls
+  // POST /api/v1/mfa/redirect-token with the `next_url`; the
+  // route parses the URL, extracts the origin, and compares it
+  // against this allowlist using constant-time string compare.
+  // The SAME allowlist is consulted on the consume path so a
+  // token issued for an allowlisted origin cannot be replayed
+  // against a different origin. Empty / missing → every
+  // `next_url` is rejected with 403 mfa_redirect_origin_not_allowed
+  // (fail-closed).
+  MFA_ALLOWED_REDIRECT_ORIGINS: z.string().default(''),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
