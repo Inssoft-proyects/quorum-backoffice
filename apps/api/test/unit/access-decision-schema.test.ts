@@ -30,9 +30,15 @@ import {
 } from '@quorum-backoffice/shared';
 
 describe('DenialCode (shared Zod enum) — deny.* taxonomy', () => {
+  // The original 9 deny.* labels from design.md §6 plus the M1 MFA
+  // additions (`deny.student_inactive` and `deny.device_not_bound_to_student`)
+  // for the marbete → device → student binding chain. Adding a new
+  // value is a breaking change and must be a deliberate migration.
   const EXPECTED = [
     'deny.marbete_unknown',
+    'deny.student_inactive',
     'deny.device_unknown',
+    'deny.device_not_bound_to_student',
     'deny.otp_missing',
     'deny.otp_invalid',
     'deny.lockout',
@@ -42,7 +48,7 @@ describe('DenialCode (shared Zod enum) — deny.* taxonomy', () => {
     'deny.dependency_fail',
   ] as const;
 
-  it('contains exactly the nine doc-taxonomy values (no more, no less)', () => {
+  it('contains exactly the eleven doc-taxonomy values (no more, no less)', () => {
     expect(DenialCode.options).toEqual([...EXPECTED]);
   });
 
