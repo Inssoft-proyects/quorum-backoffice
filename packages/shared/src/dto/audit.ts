@@ -34,6 +34,15 @@ export const AuditAction = z.enum([
   // any other table. The allow/deny discriminator is folded into
   // the after_jsonb `outcome` field (see mfa-authenticate-service).
   'student.mfa_authenticate',
+  // M3 / MFA redirect-token consume: every successful S2S call
+  // from Canvas to /api/v1/mfa/consume emits a single
+  // 'student.mfa_consume' row so the operator can reconcile
+  // token usage by canvas_user_id without joining on any other
+  // table. The outcome (ok | mfa_token_invalid) is folded into
+  // the after_jsonb `outcome` field. Migrations 0018 (auth)
+  // and 0019 (consume) must be applied before the corresponding
+  // service starts writing rows.
+  'student.mfa_consume',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
