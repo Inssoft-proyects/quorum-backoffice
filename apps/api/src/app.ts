@@ -35,6 +35,7 @@ import { registerAuditRoutes } from './routes/audit';
 import { registerAuthRoutes } from './routes/auth';
 import { registerStudentsRoutes } from './routes/students';
 import { registerAccessDecisionsRoutes } from './routes/access-decisions';
+import { registerMfaRoutes } from './routes/mfa';
 import authDepsPlugin from './plugins/auth-deps';
 
 declare module 'fastify' {
@@ -110,6 +111,12 @@ export async function buildApp(
   // BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS, failing closed when the
   // registry is empty.
   await registerAccessDecisionsRoutes(app as unknown as FastifyInstance);
+  // M1 / MFA authentication endpoint. The MFA flow is itself
+  // the auth (marbete code + device serial + OTP), so the route
+  // has no preHandler; the route module wires the
+  // `__Host-mfa_sid` cookie and the fail-closed MfaAuthenticateService
+  // (denial taxonomy in `packages/shared/src/dto/access-decision.ts`).
+  await registerMfaRoutes(app as unknown as FastifyInstance);
 
   return app;
 }
