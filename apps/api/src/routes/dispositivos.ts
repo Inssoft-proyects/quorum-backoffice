@@ -84,21 +84,17 @@ export async function registerDispositivosRoutes(app: FastifyInstance): Promise<
     },
   );
 
-  app.post(
-    '/api/v1/dispositivos',
-    { preHandler: requireRole('admin') },
-    async (req, reply) => {
-      const body = CreateDispositivoRequest.parse(req.body);
-      const actor = actorFromRequest(req);
-      const otpCode = otpFromRequest(req);
-      const meta = metaFromRequest(req);
-      const svc = getService();
-      const created = await svc.create(actor, body, otpCode, meta);
-      reply.status(201);
-      reply.header('location', `/api/v1/dispositivos/${created.id}`);
-      return created;
-    },
-  );
+  app.post('/api/v1/dispositivos', { preHandler: requireRole('admin') }, async (req, reply) => {
+    const body = CreateDispositivoRequest.parse(req.body);
+    const actor = actorFromRequest(req);
+    const otpCode = otpFromRequest(req);
+    const meta = metaFromRequest(req);
+    const svc = getService();
+    const created = await svc.create(actor, body, otpCode, meta);
+    reply.status(201);
+    reply.header('location', `/api/v1/dispositivos/${created.id}`);
+    return created;
+  });
 
   app.patch<{ Params: { id: string } }>(
     '/api/v1/dispositivos/:id',

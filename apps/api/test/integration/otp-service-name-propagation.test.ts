@@ -123,15 +123,6 @@ async function seedDevice(pool: Pool, serial: string): Promise<number> {
   return r.rows[0]!.id;
 }
 
-async function seedMarbete(pool: Pool, code: string): Promise<number> {
-  const r = await pool.query<{ id: number }>(
-    `INSERT INTO marbetes (code, status, created_by)
-     VALUES ($1, 'active'::marbete_status, 'tester') RETURNING id`,
-    [code],
-  );
-  return r.rows[0]!.id;
-}
-
 async function seedStudent(pool: Pool, canvasId: number): Promise<void> {
   await pool.query(
     `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
