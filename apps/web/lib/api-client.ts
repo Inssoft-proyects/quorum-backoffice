@@ -230,6 +230,49 @@ export async function mfaAuthenticate(
   return apiPost<MfaAuthenticateResponse>('/api/v1/mfa/authenticate', body, cookie);
 }
 
+// ---- MFA (M3 redirect-token — SSO between BackOffice and Canvas) ----
+
+/**
+ * `POST /api/v1/mfa/redirect-token` (M3). The MFA web page calls
+ * this AFTER a successful `mfaAuthenticate` to mint a one-time
+ * token that Canvas exchanges for a Canvas-side session via
+ * `POST /api/v1/mfa/consume`.
+ *
+ * The call is authenticated by the `__Host-mfa_sid` student
+ * session cookie the M1 endpoint set — NOT by HMAC service-auth.
+ * The browser sends the cookie automatically via
+ * `credentials: 'include'`. The body is the validated `next_url`
+ * the MFA page will navigate to (with the token appended as a
+ * query string).
+ *
+ * Throws `ApiError` on transport failures or 4xx/5xx. The error
+ * `code` carries the documented M3 taxonomy:
+ *   - `validation_error`        (400) — body failed Zod validation
+ *   - `invalid_request`         (400) — next_url is not a parseable URL
+ *   - `unauthorized`            (401) — no active MFA session
+ *   - `mfa_session_kind_invalid` (401) — session is a backoffice operator session
+ *   - `mfa_redirect_origin_not_allowed` (403) — next_url origin not allowlisted
+ *
+ * On a 5xx (Redis down) the route returns 500 with code `internal`
+ * — the MFA form catches this and falls back to the direct
+ * navigation with a warn log.
+ */
+export interface MfaRedirectTokenRequest {
+  next_url: string;
+}
+
+export interface MfaRedirectTokenResponse {
+  token: string;
+  expires_in: number;
+}
+
+export async function mfaIssueRedirectToken(
+  body: MfaRedirectTokenRequest,
+  cookie?: string,
+): Promise<MfaRedirectTokenResponse> {
+  return apiPost<MfaRedirectTokenResponse>('/api/v1/mfa/redirect-token', body, cookie);
+}
+
 export async function logout(cookie?: string): Promise<void> {
   // No body sent; omit content-type so Fastify doesn't try to parse an
   // empty JSON document (which it would reject with 500). The route

@@ -334,4 +334,240 @@ describe('MfaForm — three-factor authentication (M2)', () => {
       expect(screen.queryByTestId('mfa-error')).toBeNull();
     });
   });
+
+  // -----------------------------------------------------------------
+  // M3 / SSO redirect-token flow
+  //
+  // The form's behavior for absolute-URL targets is
+  // `window.location.href = <url>`, which jsdom refuses to
+  // let us spy on (the `href` property is non-configurable
+  // AND `window.location` itself is non-configurable). The
+  // URL-construction logic is therefore asserted at two
+  // layers:
+  //
+  //   1. The `buildNextUrlWithToken` pure function (tested
+  //      in a separate describe block below) pins the joiner
+  //      (`?` vs `&`) and the encode step.
+  //   2. The form-level tests below verify the fetch to
+  //      /api/v1/mfa/redirect-token was made with the right
+  //      body AND that the form's success state was set
+  //      (which proves navigateNext was reached). The actual
+  //      `window.location.href` assignment is a one-liner
+  //      that calls the pure function; verifying the
+  //      side effect end-to-end is a Playwright e2e
+  //      concern, not a unit-test concern.
+  // -----------------------------------------------------------------
+
+  it('M3: on 201 with an absolute next URL, the form calls POST /api/v1/mfa/redirect-token with the next_url and uses credentials include', async () => {
+    const fetchCalls: Array<{ url: string; init?: RequestInit; body?: unknown }> = [];
+    const fetchMock = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      fetchCalls.push({ url, init, body });
+      if (url.endsWith('/api/v1/mfa/authenticate')) {
+        return new Response(
+          JSON.stringify({
+            canvas_user_id: 9001,
+            student_name: 'Smoke Student',
+            student_email: 'smoke@quorum.local',
+            role: 'student',
+            session_id: 'sess-m3-1',
+            expires_at: '2026-01-01T00:00:00.000Z',
+          }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/api/v1/mfa/redirect-token')) {
+        return new Response(
+          JSON.stringify({ token: 'a'.repeat(64), expires_in: 30 }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response('not used', { status: 404 });
+    }) as unknown as typeof fetch;
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const user = userEvent.setup();
+    renderForm('https://canvas.example.com/dashboard');
+    await user.type(screen.getByTestId('mfa-marbete'), 'ABCD1234EFGH');
+    await user.type(screen.getByTestId('mfa-serial'), 'SN12345');
+    const boxes = getOtpBoxes();
+    for (const box of boxes) await user.type(box, 'A');
+    await user.click(screen.getByTestId('mfa-submit'));
+
+    // The form should have made TWO fetches:
+    //  1) POST /api/v1/mfa/authenticate
+    //  2) POST /api/v1/mfa/redirect-token with the next_url
+    await waitFor(() => {
+      const redirectCall = fetchCalls.find(
+        (c) => c.url === 'http://127.0.0.1:3100/api/v1/mfa/redirect-token',
+      );
+      expect(redirectCall).toBeDefined();
+      expect(redirectCall?.body).toEqual({
+        next_url: 'https://canvas.example.com/dashboard',
+      });
+    });
+    // The redirect-token call must use `credentials: include`
+    // so the browser forwards the `__Host-mfa_sid` cookie.
+    const redirectCall = fetchCalls.find(
+      (c) => c.url === 'http://127.0.0.1:3100/api/v1/mfa/redirect-token',
+    );
+    expect(redirectCall?.init?.credentials).toBe('include');
+
+    // The form must reach the success state (which proves
+    // navigateNext was reached). The actual URL navigation
+    // is asserted at the pure-function layer below.
+    await waitFor(() => {
+      expect(screen.getByTestId('mfa-success')).toBeInTheDocument();
+    });
+  });
+
+  it('M3: when the redirect-token call fails, the form falls back to the direct navigation with a warn log (no error slot)', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fetchMock = (async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/api/v1/mfa/authenticate')) {
+        return new Response(
+          JSON.stringify({
+            canvas_user_id: 9001,
+            student_name: 'Smoke Student',
+            student_email: 'smoke@quorum.local',
+            role: 'student',
+            session_id: 'sess-m3-3',
+            expires_at: '2026-01-01T00:00:00.000Z',
+          }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/api/v1/mfa/redirect-token')) {
+        return new Response(
+          JSON.stringify({ code: 'mfa_redirect_origin_not_allowed', message: 'no' }),
+          { status: 403, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response('not used', { status: 404 });
+    }) as unknown as typeof fetch;
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+
+    try {
+      const user = userEvent.setup();
+      renderForm('https://canvas.example.com/dashboard');
+      await user.type(screen.getByTestId('mfa-marbete'), 'ABCD1234EFGH');
+      await user.type(screen.getByTestId('mfa-serial'), 'SN12345');
+      const boxes = getOtpBoxes();
+      for (const box of boxes) await user.type(box, 'A');
+      await user.click(screen.getByTestId('mfa-submit'));
+
+      // The form must reach the success state (which proves
+      // navigateNext was reached) and the warn log was
+      // emitted (which proves the redirect-token failure
+      // was logged at warn level rather than surfaced to
+      // the student as a hard error).
+      await waitFor(() => {
+        expect(screen.getByTestId('mfa-success')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('mfa-error')).toBeNull();
+
+      expect(warnSpy).toHaveBeenCalled();
+      const warnMessages = warnSpy.mock.calls.map((c) => c[0]);
+      expect(
+        warnMessages.some((m) =>
+          typeof m === 'string' && m.includes('mfa_redirect_token_issue_failed'),
+        ),
+      ).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('M3: same-origin next paths skip the redirect-token call (no extra fetch, router.push to the path)', async () => {
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/api/v1/mfa/authenticate')) {
+        return new Response(
+          JSON.stringify({
+            canvas_user_id: 9001,
+            student_name: 'Smoke Student',
+            student_email: 'smoke@quorum.local',
+            role: 'student',
+            session_id: 'sess-m3-4',
+            expires_at: '2026-01-01T00:00:00.000Z',
+          }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/api/v1/mfa/redirect-token')) {
+        return new Response('unexpected call', { status: 500 });
+      }
+      return new Response('not used', { status: 404 });
+    }) as unknown as typeof fetch;
+    (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const user = userEvent.setup();
+    renderForm('/dashboard');
+    await user.type(screen.getByTestId('mfa-marbete'), 'ABCD1234EFGH');
+    await user.type(screen.getByTestId('mfa-serial'), 'SN12345');
+    const boxes = getOtpBoxes();
+    for (const box of boxes) await user.type(box, 'A');
+    await user.click(screen.getByTestId('mfa-submit'));
+
+    await waitFor(() => {
+      expect(stubRouter.push).toHaveBeenCalledWith('/dashboard');
+    });
+    expect(stubRouter.push).toHaveBeenCalledTimes(1);
+    // The redirect-token endpoint must NOT be called for
+    // same-origin paths.
+    expect(
+      fetchCalls.find((c) => c.url === 'http://127.0.0.1:3100/api/v1/mfa/redirect-token'),
+    ).toBeUndefined();
+  });
+});
+
+// -----------------------------------------------------------------
+// M3 / buildNextUrlWithToken — pure function (covers the URL
+// construction that the form's navigateNext relies on).
+// -----------------------------------------------------------------
+
+import { buildNextUrlWithToken } from '@/app/mfa/mfa-form';
+
+describe('buildNextUrlWithToken — M3 URL construction', () => {
+  it('appends ?mfa_token=<token> when the target has no query string', () => {
+    expect(buildNextUrlWithToken('https://canvas.example.com/dashboard', 'abc123')).toBe(
+      'https://canvas.example.com/dashboard?mfa_token=abc123',
+    );
+  });
+
+  it('appends &mfa_token=<token> when the target already has a query string', () => {
+    expect(
+      buildNextUrlWithToken('https://canvas.example.com/courses?term=2026a', 'abc123'),
+    ).toBe('https://canvas.example.com/courses?term=2026a&mfa_token=abc123');
+  });
+
+  it('returns the target verbatim when the token is null', () => {
+    expect(buildNextUrlWithToken('https://canvas.example.com/dashboard', null)).toBe(
+      'https://canvas.example.com/dashboard',
+    );
+  });
+
+  it('URL-encodes the token when it contains characters that must be escaped', () => {
+    // Hex tokens are 64 chars of [0-9a-f], but encodeURIComponent
+    // is still applied defensively so a future refactor
+    // cannot regress the wire contract.
+    const token = '+&=';
+    expect(buildNextUrlWithToken('https://canvas.example.com/x', token)).toBe(
+      `https://canvas.example.com/x?mfa_token=${encodeURIComponent(token)}`,
+    );
+  });
+
+  it('end-to-end shape: the form would build the documented M3 URL for a Canvas dashboard', () => {
+    // The form's navigateNext(target, token) is a one-liner
+    // that delegates to buildNextUrlWithToken; this test
+    // pins the expected wire format at the boundary.
+    const token = 'a'.repeat(64);
+    expect(buildNextUrlWithToken('https://canvas.example.com/dashboard', token)).toBe(
+      `https://canvas.example.com/dashboard?mfa_token=${token}`,
+    );
+  });
 });
