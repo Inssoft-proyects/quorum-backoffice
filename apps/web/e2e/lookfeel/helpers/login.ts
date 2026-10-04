@@ -38,9 +38,7 @@ export const AUTHED_SCREENS: ReadonlyArray<string> = [
  * fabricate credentials. The tagged `ok` flag keeps TypeScript
  * narrowing explicit at the call site.
  */
-type RoleEnv =
-  | { ok: true; username: string; otp: string }
-  | { ok: false; reason: string };
+type RoleEnv = { ok: true; username: string; otp: string } | { ok: false; reason: string };
 
 function resolveRoleEnv(role: Role): RoleEnv {
   const tag = role.toUpperCase();
@@ -74,7 +72,13 @@ function resolveRoleEnv(role: Role): RoleEnv {
  * The form drives the real single-step login flow:
  *   1. Navigate to `/backoffice/login`.
  *   2. Type the username into `login-username`.
- *   3. Type the OTP into `login-otp` (forced uppercase A–Z0–9).
+ *   3. Type the OTP into the segmented boxes under `login-otp`
+ *      (the OtpInput is a 6-box auto-advance group, so we click
+ *      the first box and `pressSequentially` the code; `fill()` on
+ *      the group element does NOT fire per-box onChange and leaves
+ *      the form invalid — see the B7b entry in
+ *      odd/tasks/canvas-jitsi-device-binding.md and
+ *      e2e/access-flow.spec.ts loginUi for the working pattern).
  *   4. Click `login-submit` and wait for the redirect to `/dashboard`.
  */
 export async function loginAs(page: Page, role: Role): Promise<void> {
@@ -85,7 +89,15 @@ export async function loginAs(page: Page, role: Role): Promise<void> {
   }
   await page.goto('/backoffice/login');
   await page.getByTestId('login-username').fill(env.username);
-  await page.getByTestId('login-otp').fill(env.otp);
+  // The login OTP field is a segmented 6-box input
+  // (components/ui/otp-input.tsx in alphanumeric mode). We MUST type
+  // into the first box with pressSequentially so each box receives a
+  // real onChange + focus advance; `fill()` on the group testid does
+  // not propagate the value to the individual <input> elements and
+  // the form stays disabled.
+  const otpBoxes = page.getByTestId('login-otp').getByRole('textbox');
+  await otpBoxes.first().click();
+  await otpBoxes.first().pressSequentially(env.otp, { delay: 25 });
   await page.getByTestId('login-submit').click();
   await page.waitForURL(/\/dashboard/, { timeout: 15_000 });
 }
