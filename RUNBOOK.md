@@ -277,6 +277,156 @@ Content-Type: application/json
   mailer logs the OTP at `warn` level. Look for
   `smtp_dev_mode_otp_logged` in the logs to recover it locally.
 
+### Assign a device to a Canvas student (admin + OTP)
+
+Admin-only, OTP-gated ownership of devices (B2). Both routes require an
+admin session and a single-use OTP in `X-OTP-Code`:
+
+```http
+POST /api/v1/dispositivos/:id/assign
+X-OTP-Code: K7QM3X
+Content-Type: application/json
+{ "canvasUserId": 9001 }
+
+→ 200 { ...device, "assignedStudentId": 4242 }
+
+POST /api/v1/dispositivos/:id/unassign
+X-OTP-Code: K7QM3X
+
+→ 200 { ...device, "assignedStudentId": null }
+```
+
+- OTP scopes are `dispositivo.assign` and `dispositivo.unassign`
+  (issued by the sibling `quorum-otp` service like every destructive
+  action). `assignedStudentId` is the internal `students_cache.id`,
+  not the Canvas user id.
+- Fail-closed rejections leave the owner unchanged and write **no**
+  audit row:
+  - `404 not_found` — unknown device.
+  - `409 conflict` — assigning to a revoked device (a revoked device
+    must never gain an owner).
+  - `422 student_not_found` / `422 student_not_active` — only an
+    existing ACTIVE `students_cache` row may own a device.
+  - `409 device_not_assigned` — no-op unassign (avoids burning an OTP
+    without a state change).
+- Unassign is allowed even on revoked devices: removing rights can
+  never grant access.
+- Reassignment replaces the owner and is audited with both states.
+  Audit actions `dispositivo.assign` / `dispositivo.unassign`
+  (migration `0016`) carry before/after snapshots including
+  `assignedStudentId` and the verifying `otp_id`.
+- An assignment grants **no** Canvas or Jitsi access by itself: the
+  access decision additionally requires an active device, an active
+  student and a matching Canvas SIS identity, fail-closed.
+- Dev test-runner note: app-booting Jest suites need `--forceExit` and
+  `NODE_OPTIONS=--experimental-vm-modules`, wrapped in `timeout`.
+  The `test:integration` script uses the Jest-30-removed
+  `--testPathPattern` flag; invoke jest directly with
+  `--testPathPatterns`.
+
+### Access-decision API (machine-to-machine, B3)
+
+`POST /api/v1/access-decisions` is the authenticated policy-decision
+endpoint the Canvas/Jitsi access gate will call. It is implemented and
+tested but **not deployed**; no live caller exists yet.
+
+- **Transport auth**: `Authorization: HMAC <name> <ts> <hex>` (the same
+  wire format `quorum-otp` speaks; signature = HMAC-SHA256 over
+  `<ts>.<rawBody>`). Callers come from `BACKOFFICE_SERVICE_TOKENS`
+  (`name:secret,name:secret`); skew from
+  `BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS` (default 60). An empty
+  registry rejects every call (fail-closed). All transport auth
+  failures return 401 `deny.idp_untrusted`.
+- **Request** (`DecisionRequest`): `device_id` (serial string),
+  `otp_proof` (OTP code), `canvas_user_id` (interim identity until the
+  IdP mapping exists), optional `idp_subject` (reserved), `room_id`,
+  `media_policy`.
+- **Response** (`DecisionResponse`): HTTP 200 for every AUTHENTICATED
+  outcome — `{ decision: 'allow', student_id, room_id?, media_policy? }`
+  or `{ decision: 'deny', denial: '<deny.* code>' }`. The nine `deny.*
+  codes are the locked taxonomy (migration-independent, in
+  `packages/shared/src/dto/access-decision.ts`).
+- **Policy order** (first match wins): `deny.otp_missing` →
+  `deny.otp_invalid` / `deny.lockout` (OTP verify rejected / locked) →
+  `deny.dependency_fail` (OTP service down, timeout or 5xx — the
+  endpoint never crashes on an outage) → `deny.device_unknown` (the
+  fail-closed owner check returned no owner: unknown, revoked,
+  unassigned, wrong owner and inactive student are deliberately
+  INDISTINGUISHABLE) → `allow`.
+- **Privacy**: no `deny.*` response ever echoes the device serial or
+  any device detail (enforced by a parametric leak-guard test).
+- **OTP scope**: `access.decision` (`ACCESS_DECISION_OTP_SCOPE`); the
+  OTP subject is `String(canvas_user_id)`.
+- **Deferred**: audit rows for decision outcomes and the true Canvas
+  SIS lookup (`students_cache.matricula`, migration `0017`) are
+  contract-defined but not implemented — the SIS source endpoint is an
+  operator decision; until then the fail-closed default
+  (`deny.dependency_fail` wherever a matrícula would be required) is
+  the correct production behavior.
+
+### Manual smoke: device assignment + access decision (B2/B3)
+
+Local-only acceptance smoke for the two new surfaces. Nothing here
+touches production. Prereqs: local Postgres + Redis, `npm run migrate`
+and `npm run seed:e2e` from `apps/api`, and env `DATABASE_URL`,
+`REDIS_URL`, `OTP_SERVICE_URL`/`OTP_SERVICE_TOKEN` (a running
+`quorum-otp`, e.g. its local docker-compose),
+`CANVAS_PORTAL_API_URL`/`CANVAS_PORTAL_API_TOKEN` (unused by these
+flows — placeholder is fine), `SESSION_SECRET`, and
+`BACKOFFICE_SERVICE_TOKENS='demo-caller:demo-secret'`. API dev port:
+3100.
+
+Seed one student and one device:
+
+```sql
+INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
+VALUES (9001, 'Smoke Student', 'smoke@quorum.local', TRUE);
+```
+
+Every destructive call needs a single-use OTP issued by `quorum-otp`
+(`POST /v1/otps`, HMAC-signed) with the exact scope of the operation:
+`dispositivo.create`, `dispositivo.assign`, `dispositivo.unassign`,
+and `access.decision` (subject = `String(canvas_user_id)`). Send it as
+`X-OTP-Code` (admin routes) or as `otp_proof` (access decision).
+
+**Flow A — audited assignment (B2).** Log in (two-step OTP) →
+`POST /api/v1/dispositivos` (create) → `POST /api/v1/dispositivos/:id/assign`
+`{"canvasUserId": 9001}` → 200 with `assignedStudentId`. Reassign to a
+second student → 200 (audit holds both states). `POST .../unassign` →
+200 `assignedStudentId: null`; repeat → 409 `device_not_assigned`.
+Negatives: missing `X-OTP-Code` → 401 `otp_required`; wrong code → 401
+`otp_invalid`; operator/auditor role → 403. Finish with
+`GET /api/v1/audit`: expect `dispositivo.assign` / `dispositivo.unassign`
+rows carrying `otp_id` and before/after snapshots.
+
+**Flow B — machine access decision (B3).** Sign and send:
+
+```bash
+node -e '
+const c = require("crypto");
+const secret = "demo-secret", name = "demo-caller";
+const body = JSON.stringify({ device_id: "SN-SMOKE-1", otp_proof: "<token>", canvas_user_id: 9001 });
+const ts = Math.floor(Date.now() / 1000).toString();
+const sig = c.createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
+console.log(JSON.stringify({ auth: `HMAC ${name} ${ts} ${sig}`, body }));
+' > /tmp/req.json
+AUTH=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("/tmp/req.json")).auth)')
+BODY=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("/tmp/req.json")).body)')
+curl -s -X POST localhost:3100/api/v1/access-decisions \
+  -H "content-type: application/json" -H "authorization: $AUTH" -d "$BODY"
+```
+
+Expected: valid OTP + assigned active device →
+`{"decision":"allow","student_id":...}`; unassigned, revoked, wrong
+owner or inactive-student device → `deny.device_unknown` (identical by
+design); empty `otp_proof` → `deny.otp_missing`; rejected OTP →
+`deny.otp_invalid`; OTP service down → `deny.dependency_fail`; bad or
+missing signature → 401 `deny.idp_untrusted`. No `deny.*` body ever
+contains the serial.
+
+**Out of scope for this smoke**: real Canvas/Jitsi entry, Keycloak SSO
+and SIS lookups — those stay behind the operator gates.
+
 ### Rotate a session secret
 
 `SESSION_SECRET` is used to HMAC-sign cookies. Rotating invalidates
@@ -296,6 +446,10 @@ Then update:
 1. `packages/shared/src/dto/audit.ts` — `AuditAction` enum.
 2. `apps/api/src/services/<entity>-service.ts` — use the new action in
    `AuditService.write()` calls.
+3. Rebuild `packages/shared` (`npm run build`) so `dist` reflects the
+   enum; if the DTO is imported by subpath, add an `exports` entry in
+   `packages/shared/package.json` (a missing entry fails `tsc` while
+   Jest's `moduleNameMapper` keeps tests green — a silent drift).
 
 ### Inspect audit log
 
@@ -400,6 +554,21 @@ Then run from `apps/web`:
 ```bash
 npm run test:e2e
 ```
+
+For the access-flow suite (`e2e/access-flow.spec.ts`) run against a
+local stack (quorum-otp + API) with:
+
+```bash
+NEXT_PUBLIC_API_URL=http://127.0.0.1:4310 E2E_API_URL=http://127.0.0.1:4310 \
+E2E_OTP_URL=http://127.0.0.1:8085 E2E_OTP_SERVICE_NAME=e2e-service \
+E2E_OTP_SERVICE_TOKEN=<secret> npx playwright test e2e/access-flow.spec.ts
+```
+
+The suite issues its own OTPs out of band through quorum-otp's HMAC API
+(see `e2e/otp-issuer.ts`). Note that the per-route `OtpClient` in
+`dispositivos`/`marbetes` routes signs as `quorum-backoffice` regardless
+of `OTP_SERVICE_NAME`, so a local quorum-otp must register that name
+(see B7 in the ODD task file).
 
 The Playwright config starts `next build && next start` automatically
 via `webServer`. Pre-existing dev server on port 3002 is reused if

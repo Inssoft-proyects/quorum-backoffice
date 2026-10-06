@@ -28,6 +28,7 @@ import pgPlugin from './plugins/pg';
 import redisPlugin from './plugins/redis';
 import metricsPlugin from './plugins/metrics';
 import sessionPlugin from './plugins/session';
+import swaggerPlugin from './plugins/swagger';
 import { registerHealthRoutes } from './routes/health';
 import { registerMarbetesRoutes } from './routes/marbetes';
 import { registerDispositivosRoutes } from './routes/dispositivos';
@@ -35,6 +36,9 @@ import { registerAuditRoutes } from './routes/audit';
 import { registerAuthRoutes } from './routes/auth';
 import { registerStudentsRoutes } from './routes/students';
 import { registerMatriculasRoutes } from './routes/matriculas';
+import { registerAccessDecisionsRoutes } from './routes/access-decisions';
+import { registerMfaRoutes } from './routes/mfa';
+import { registerMfaTokenRoutes } from './routes/mfa-tokens';
 import authDepsPlugin from './plugins/auth-deps';
 
 declare module 'fastify' {
@@ -78,6 +82,15 @@ export async function buildApp(
 
   // Domain plugins
   await app.register(metricsPlugin);
+  // OpenAPI doc + Swagger UI. Must register BEFORE the route
+  // plugins so each route's `schema` is captured by the swagger
+  // registry at registration time. The plugin installs no-op
+  // validator / serializer compilers so the Zod instances in
+  // the route `schema` options are ignored by the request
+  // pipeline (the route handlers keep their imperative
+  // `ZodSchema.parse()` calls for the documented
+  // `validation_error` envelope).
+  await app.register(swaggerPlugin);
   await app.register(pgPlugin);
   await app.register(redisPlugin);
   await app.register(cookie, { secret: app.config.SESSION_SECRET });
@@ -104,6 +117,29 @@ export async function buildApp(
   await registerAuthRoutes(app as unknown as FastifyInstance);
   await registerStudentsRoutes(app as unknown as FastifyInstance);
   await registerMatriculasRoutes(app as unknown as FastifyInstance);
+  // B3.2 / Machine-to-machine access-decision endpoint. Registered
+  // alongside the other routes; the route module registers the
+  // captureRawBodyPlugin it needs internally and wires its own
+  // `requireServiceAuth` preHandler from BACKOFFICE_SERVICE_TOKENS +
+  // BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS, failing closed when the
+  // registry is empty.
+  await registerAccessDecisionsRoutes(app as unknown as FastifyInstance);
+  // M1 / MFA authentication endpoint. The MFA flow is itself
+  // the auth (marbete code + device serial + OTP), so the route
+  // has no preHandler; the route module wires the
+  // `__Host-mfa_sid` cookie and the fail-closed MfaAuthenticateService
+  // (denial taxonomy in `packages/shared/src/dto/access-decision.ts`).
+  await registerMfaRoutes(app as unknown as FastifyInstance);
+  // M3 / MFA SSO redirect endpoints:
+  //   - POST /api/v1/mfa/redirect-token (student-session cookie)
+  //   - POST /api/v1/mfa/consume (HMAC service-auth, BACKOFFICE_SERVICE_TOKENS)
+  // The route module registers the captureRawBodyPlugin it needs
+  // internally and wires its own `requireServiceAuth` preHandler
+  // for the consume endpoint, failing closed when the registry
+  // is empty. The allowlist is MFA_ALLOWED_REDIRECT_ORIGINS; the
+  // service fails closed (every origin rejected) when the env
+  // is empty.
+  await registerMfaTokenRoutes(app as unknown as FastifyInstance);
 
   return app;
 }
