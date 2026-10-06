@@ -45,6 +45,7 @@
  *     level and is NEVER echoed in deny responses.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
   parseServiceTokens,
@@ -59,6 +60,7 @@ import {
   MFA_REDIRECT_TTL_SECONDS,
   parseAllowedOrigins,
 } from '../services/mfa-token-service';
+import { DenyEnvelope, ErrorEnvelope } from '../plugins/swagger';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,6 +109,19 @@ const MfaRedirectTokenRequest = z.object({
 });
 
 /**
+ * `POST /api/v1/mfa/redirect-token` response. The TTL is
+ * pinned to `MFA_REDIRECT_TTL_SECONDS` (= 30) by the service
+ * (`packages/shared/src/dto/mfa.ts` re-exports the same
+ * constant for the M5 mobile contract). The Zod schema is
+ * derived from the wire shape the service returns (no
+ * hand-duplicated JSON Schema for the OpenAPI doc).
+ */
+const MfaRedirectTokenResponse = z.object({
+  token: z.string().min(1),
+  expires_in: z.number().int().positive(),
+});
+
+/**
  * `POST /api/v1/mfa/consume` body. The token shape is
  * constrained to the documented 64-char lowercase hex
  * (32 random bytes hex-encoded) so a malformed caller gets
@@ -117,11 +132,38 @@ const MfaConsumeRequest = z.object({
   token: z.string().regex(/^[0-9a-f]{64}$/, 'token must be 64 lowercase hex chars'),
 });
 
+/**
+ * `POST /api/v1/mfa/consume` response. The service returns
+ * `role: 'student'` for the M3 surface (the MFA session is
+ * always a student session, by construction — a BackOffice
+ * operator session cannot mint a redirect token). The hand-
+ * authored `mfa.openapi.yaml` lists Canvas role values
+ * (Learner / Instructor / Administrator / TA); the generated
+ * doc narrows this to `student` to match the actual service
+ * return type, surfacing the pre-existing drift as a typed
+ * property of the generated spec.
+ */
+const MfaConsumeResponse = z.object({
+  canvas_user_id: z.number().int().positive(),
+  student_name: z.string().min(1),
+  student_email: z.string().email(),
+  role: z.literal('student'),
+  next_url: z.string().min(1).max(2048),
+});
+
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
 
 export async function registerMfaTokenRoutes(app: FastifyInstance): Promise<void> {
+  // Type alias for routes that attach Zod schemas. The swagger
+  // plugin installs no-op validator / serializer compilers so the
+  // Zod instances in `schema` are only consumed by
+  // `@fastify/swagger`'s `jsonSchemaTransform` (the runtime
+  // validation is done by the imperative `MfaRedirectTokenRequest
+  // .parse` / `MfaConsumeRequest.parse` calls inside the handlers).
+  const zApp = app.withTypeProvider<ZodTypeProvider>();
+
   // The raw-body capture plugin is registered by
   // `registerAccessDecisionsRoutes` (see apps/api/src/routes/access-decisions.ts).
   // Because the plugin is wrapped in `fastify-plugin`, the
@@ -172,7 +214,21 @@ export async function registerMfaTokenRoutes(app: FastifyInstance): Promise<void
    *   - 403 Forbidden — `next_url` origin is not in
    *     `MFA_ALLOWED_REDIRECT_ORIGINS`.
    */
-  app.post('/api/v1/mfa/redirect-token', async (req, reply) => {
+  zApp.post(
+    '/api/v1/mfa/redirect-token',
+    {
+      schema: {
+        body: MfaRedirectTokenRequest,
+        response: {
+          200: MfaRedirectTokenResponse,
+          400: ErrorEnvelope,
+          401: DenyEnvelope,
+          403: DenyEnvelope,
+        },
+        tags: ['redirect'],
+      },
+    },
+    async (req, reply) => {
     const body = MfaRedirectTokenRequest.parse(req.body);
 
     // Resolve the student session. The cookie name is the
@@ -268,9 +324,21 @@ export async function registerMfaTokenRoutes(app: FastifyInstance): Promise<void
    *     denies and `deny.idp_untrusted` for the transport
    *     auth fails.
    */
-  app.post(
+  zApp.post(
     '/api/v1/mfa/consume',
-    { preHandler: consumePreHandler },
+    {
+      preHandler: consumePreHandler,
+      schema: {
+        body: MfaConsumeRequest,
+        response: {
+          200: MfaConsumeResponse,
+          400: ErrorEnvelope,
+          401: DenyEnvelope,
+          503: DenyEnvelope,
+        },
+        tags: ['redirect'],
+      },
+    },
     async (req, reply) => {
       const body = MfaConsumeRequest.parse(req.body);
       const svc = getService();
