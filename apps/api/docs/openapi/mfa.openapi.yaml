@@ -16,8 +16,8 @@ info:
     `deny.otp_missing`, `deny.dependency_fail`. Errores de forma del request devuelven
     `validation_error` (400).
 servers:
-  - url: https://backend.quorum.asistentepro.mx
-    description: API + documentación (vhost dedicado, wildcard cert)
+  - url: /
+    description: Relativo al host que sirve la documentación (backend.* o backoffice.*)
 tags:
   - name: mfa
     description: Autenticación multifactor de estudiantes (M1/M5)
