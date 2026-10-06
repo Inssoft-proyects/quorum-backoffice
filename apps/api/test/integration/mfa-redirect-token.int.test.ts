@@ -306,8 +306,8 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
     // Per-test isolation. Redis state from the previous test
     // (any leftover mfa_redirect:* keys) is cleared via
     // SCAN+UNLINK because app.redis does not expose flushdb.
-    const stream = (await import('ioredis')).default;
-    const c = new stream(
+    const { Redis: RedisClient } = await import('ioredis');
+    const c = new RedisClient(
       process.env['REDIS_URL'] ?? 'redis://127.0.0.1:6379',
     );
     try {

@@ -145,7 +145,7 @@ export const DenyEnvelope = z.object({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const noopValidator: any = () => async () => true;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const noopSerializer: any = () => async (data: unknown) =>
+const noopSerializer: any = () => (data: unknown) =>
   JSON.stringify(data);
 
 async function plugin(app: FastifyInstance): Promise<void> {
