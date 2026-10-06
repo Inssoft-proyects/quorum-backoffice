@@ -42,27 +42,46 @@
  *        - sis_id          (NOT NULL, UNIQUE partial)
  *        - full_name / email  = NULL  (PII-free by design)
  *        - is_active       = TRUE
- *      Idempotency: ON CONFLICT (canvas_user_id) DO UPDATE so a
- *      re-run re-asserts the canonical sis_id / NULL PII shape.
+ *      Safety contract: ON CONFLICT (canvas_user_id) DO NOTHING.
+ *      The script NEVER modifies a pre-existing students_cache
+ *      row — if a row with the same canvas_user_id already
+ *      exists (e.g. a real operator-created student, an E2E
+ *      fixture, or any other pre-existing data), the entry is
+ *      recorded as SKIPPED in the summary and the existing row
+ *      is left completely untouched (no sis_id / full_name /
+ *      email / is_active rewrite). The 7-row collision set
+ *      reported by the parent against the production DB
+ *      (canvas_user_id 1001, 1002, 1003, 9001, 90001, 90002,
+ *      90003) is handled this way. A 23505 on the OTHER unique
+ *      constraint (`uq_students_sis_id`) is also a skip with a
+ *      distinct reason so the operator can pick a different
+ *      seed if they want that entry to land.
  *
- *   2. Exactly 10 `marbetes`, one per the first 10 mapping entries
- *      in deterministic order, with `code` = the secrets
- *      VALIDO-2609982468..077 hashed via sha256 (the same hashing
- *      helper used by the marbetes service). The plaintext
- *      "publicMessage" / "secretMessage" values are NEVER stored
- *      in the database; only the sha256 hash lands in `code_hash`.
- *      The first code (`VALIDO-2609982468`) is echoed ONCE in the
- *      final summary so the operator can run the MFA smoke test
- *      without re-reading the source; the other 9 codes are
- *      NEVER logged, NEVER stored, and NEVER printed in any
- *      form. Status `active`, `assigned_student_id` = the
- *      matching student's `students_cache.id`, `assigned_at` =
- *      now, `created_by` = `synthetic-seed`. The partial unique
- *      index `uq_marbete_active_per_student` (one active marbete
- *      per student) is respected by upserting on `public_uid`;
- *      if a target student already has an active marbete under
- *      a different `public_uid`, the conflicting row is reported
- *      as a per-row failure and the script continues.
+ *   2. Exactly 10 `marbetes`, one per the first 10
+ *      SUCCESSFULLY-INSERTED students (i.e. skips are skipped
+ *      here too) in deterministic order, with `code` = the
+ *      secrets VALIDO-2609982468..077 hashed via sha256 (the
+ *      same hashing helper used by the marbetes service). The
+ *      plaintext "publicMessage" / "secretMessage" values are
+ *      NEVER stored in the database; only the sha256 hash lands
+ *      in `code_hash`. The first code (`VALIDO-2609982468`) is
+ *      echoed ONCE in the final summary so the operator can run
+ *      the MFA smoke test without re-reading the source; the
+ *      other 9 codes are NEVER logged, NEVER stored, and NEVER
+ *      printed in any form. Status `active`, `assigned_student_id`
+ *      = the matching student's `students_cache.id`,
+ *      `assigned_at` = now, `created_by` = `synthetic-seed`.
+ *      The partial unique index `uq_marbete_active_per_student`
+ *      (one active marbete per student) is respected by
+ *      upserting on `public_uid`; if a target student already
+ *      has an active marbete under a different `public_uid`,
+ *      the conflicting row is reported as a per-row failure and
+ *      the script continues. INVARIANT: every publicUid this
+ *      seeder writes is `m-<first 6 hex chars of sha256(code)>`
+ *      — a format disjoint from the operator UI's `CRD-####`
+ *      format — so the ON CONFLICT DO UPDATE can only ever
+ *      touch rows this seeder (or a prior run of it) created;
+ *      no foreign row can be clobbered.
  *
  *   3. SYNTHETIC_DEVICE_COUNT devices in `dispositivos` with
  *      `serial_number` = 16-char lowercase hex (deterministic
@@ -72,16 +91,19 @@
  *      MFA smoke test.
  *
  *   4. Device-student assignments per the 0015 schema: assign
- *      device i -> student i (1:1 across min(devices, students)).
- *      CRITICAL invariant: device `f401e1afcfd09b16` and marbete
- *      `VALIDO-2609982468` are both assigned to the same student
- *      — the first mapping entry — so the MFA triple
- *      (marbete+device+student) validates end-to-end. The
- *      assignment UPDATE is UNCONDITIONAL and will CLOBBER any
- *      pre-existing manual re-assignment of a synthetic device
- *      to a different student; this is the intended synthetic-
- *      fixture behavior (the device must point at the fixture
- *      student for the MFA triple to hold).
+ *      device i -> insertedStudent i (1:1 across
+ *      min(devices, insertedStudents)). CRITICAL invariant:
+ *      device `f401e1afcfd09b16` and marbete `VALIDO-2609982468`
+ *      are both paired with the i-th SUCCESSFULLY-inserted
+ *      student, so the MFA triple (marbete+device+student)
+ *      validates end-to-end even when student skips land at
+ *      the start of the mapping (e.g. the 1001-1003 collision
+ *      set). The assignment UPDATE is UNCONDITIONAL for the
+ *      paired rows and will CLOBBER any pre-existing manual
+ *      re-assignment of a synthetic device to a different
+ *      student; this is the intended synthetic-fixture
+ *      behavior (the device must point at the fixture student
+ *      for the MFA triple to hold).
  *
  * The script prints a final summary with counts and the MFA triple
  * (marbete code, serial, sis_id, canvas_user_id) so the operator
@@ -248,34 +270,117 @@ interface StudentRow {
   sisId: string;
 }
 
+interface StudentSkip {
+  /** Index of this entry in the original mapping.entries[]. */
+  index: number;
+  sisId: string;
+  canvasUserId: number;
+  /**
+   * Human-readable reason. Always starts with the literal
+   * "pre-existing" so an operator can grep the summary for
+   * every row this seeder did NOT own.
+   */
+  reason: string;
+}
+
+interface StudentUpsertResult {
+  /** Rows this run actually inserted (or re-asserted on a clean re-run). */
+  inserted: StudentRow[];
+  /** Rows the seeder refused to touch because a pre-existing row already owned the canvas_user_id. */
+  skipped: StudentSkip[];
+}
+
+/**
+ * Insert synthetic students_cache rows WITHOUT clobbering any
+ * pre-existing data.
+ *
+ * Critical safety contract: this function MUST NOT modify a row
+ * that already exists in `students_cache`. Pre-existing rows
+ * (e.g. operator-created fixtures, E2E test data, or rows from
+ * a prior run of this seeder that the operator wants to keep)
+ * carry real PII (name, email) and a real enrollment state; a
+ * DO UPDATE here would silently null out the PII and re-assert
+ * is_active=TRUE, which is data loss the operator cannot undo.
+ *
+ * Implementation: `ON CONFLICT (canvas_user_id) DO NOTHING`.
+ * If the INSERT returns no row, a row with that canvas_user_id
+ * already exists; we record the entry as SKIPPED and move on.
+ * A 23505 on the OTHER unique constraint (`uq_students_sis_id`
+ * — partial WHERE sis_id IS NOT NULL) is treated the same way
+ * (the seeder never clobbers a pre-existing row) but surfaces
+ * a distinct reason so the operator can investigate.
+ *
+ * Any other error (connection, syntax, permission) is fatal
+ * because the script cannot tell whether partial progress is
+ * safe to keep.
+ */
 async function upsertStudents(
   pool: Pool,
   entries: { sisId: string; canvasUserId: number }[],
-): Promise<StudentRow[]> {
-  const out: StudentRow[] = [];
-  for (const e of entries) {
-    const r = await pool.query<{ id: string; canvas_user_id: string; sis_id: string }>(
-      // ON CONFLICT (canvas_user_id) — re-assert NULL PII and the
-      // canonical sis_id on every run.
-      `INSERT INTO students_cache (canvas_user_id, sis_id, full_name, email, is_active)
-       VALUES ($1, $2, NULL, NULL, TRUE)
-       ON CONFLICT (canvas_user_id) DO UPDATE
-         SET sis_id = EXCLUDED.sis_id,
-             full_name = NULL,
-             email = NULL,
-             is_active = TRUE
-       RETURNING id, canvas_user_id, sis_id`,
-      [e.canvasUserId, e.sisId],
-    );
-    const row = r.rows[0];
-    if (!row) throw new Error('students_cache upsert returned no row');
-    out.push({
-      id: Number(row.id),
-      canvasUserId: Number(row.canvas_user_id),
-      sisId: row.sis_id,
-    });
+): Promise<StudentUpsertResult> {
+  const inserted: StudentRow[] = [];
+  const skipped: StudentSkip[] = [];
+  for (let i = 0; i < entries.length; i += 1) {
+    const e = entries[i] as { sisId: string; canvasUserId: number };
+    try {
+      const r = await pool.query<{ id: string; canvas_user_id: string; sis_id: string }>(
+        // ON CONFLICT (canvas_user_id) DO NOTHING: never modify
+        // a pre-existing students_cache row. The RETURNING clause
+        // only yields a row when the INSERT actually inserted
+        // (not when the DO NOTHING path was taken), so an empty
+        // result is the signal that a pre-existing row owns the
+        // canvas_user_id and we must skip this entry.
+        `INSERT INTO students_cache (canvas_user_id, sis_id, full_name, email, is_active)
+         VALUES ($1, $2, NULL, NULL, TRUE)
+         ON CONFLICT (canvas_user_id) DO NOTHING
+         RETURNING id, canvas_user_id, sis_id`,
+        [e.canvasUserId, e.sisId],
+      );
+      const row = r.rows[0];
+      if (row) {
+        inserted.push({
+          id: Number(row.id),
+          canvasUserId: Number(row.canvas_user_id),
+          sisId: row.sis_id,
+        });
+        continue;
+      }
+      // Empty result: ON CONFLICT (canvas_user_id) was taken,
+      // so a pre-existing row owns this canvas_user_id. We do
+      // NOT select it (the SELECT would be a no-op for the
+      // operator and we deliberately avoid reading PII we
+      // already know is there).
+      skipped.push({
+        index: i,
+        sisId: e.sisId,
+        canvasUserId: e.canvasUserId,
+        reason:
+          'pre-existing students_cache row with this canvas_user_id; not modified',
+      });
+    } catch (err) {
+      const pgErr = err as { code?: string; constraint?: string };
+      if (pgErr.code === '23505' && pgErr.constraint === 'uq_students_sis_id') {
+        // The synthetic sis_id for this entry collides with a
+        // pre-existing row's sis_id (different canvas_user_id).
+        // Per the safety contract we still refuse to clobber,
+        // and we report a distinct reason so the operator can
+        // pick a different seed if they want this row to land.
+        skipped.push({
+          index: i,
+          sisId: e.sisId,
+          canvasUserId: e.canvasUserId,
+          reason:
+            `pre-existing students_cache row owns sis_id=${e.sisId} (constraint=uq_students_sis_id); ` +
+            `not modified \u2014 pick a different SYNTHETIC_SEED to avoid the collision`,
+        });
+        continue;
+      }
+      // Unknown error: do not swallow. The operator must see
+      // the raw pg error so they can decide whether to retry.
+      throw err;
+    }
   }
-  return out;
+  return { inserted, skipped };
 }
 
 interface MarbeteRow {
@@ -327,8 +432,28 @@ async function upsertMarbetes(
     // which is more than enough to keep the 10 fixtures unique
     // even for unrelated code lists.
     const publicUid = `m-${codeHash.slice(0, 6)}`;
-    // Idempotent: ON CONFLICT (public_uid) DO UPDATE re-asserts
-    // the assignment. The partial unique index on
+    // INVARIANT — safety contract for the marbete table.
+    //
+    // Every publicUid this seeder writes is of the form
+    //   m-<first 6 hex chars of sha256(code)>
+    // (lowercase hex only, prefixed with the literal `m-`).
+    // Pre-existing marbetes in the production database (created
+    // by the operator UI or the bulk-create endpoint) use the
+    // `CRD-####` format. The two formats are disjoint, so
+    // `ON CONFLICT (public_uid) DO UPDATE` below can only ever
+    // touch rows this seeder (or a prior run of it) created —
+    // a foreign row can never be matched, and therefore can
+    // never be clobbered by the UPDATE branch.
+    //
+    // Re-runs of this same script against the same database DO
+    // re-write the same `m-...` rows (the UPDATE branch fires),
+    // but the values being written are byte-identical to what
+    // was already there: the deterministic sha256(code_hash)
+    // and the same assigned_student_id (because the student
+    // upsert is now DO NOTHING — see upsertStudents), so the
+    // re-write is observably a no-op.
+    //
+    // The partial unique index on
     // (assigned_student_id) WHERE status='active' AND deleted_at IS NULL
     // is respected when the same public_uid is re-applied to the
     // same student (we update the existing row in place). When a
@@ -433,20 +558,37 @@ async function upsertDevices(
   return out;
 }
 
+/**
+ * Pair device i with the i-th SUCCESSFULLY-inserted student
+ * across min(devices, insertedStudents). Devices beyond the
+ * inserted-student list are reported as assignment skips
+ * (NOT failures — the device is still created, it just has no
+ * synthetic owner to bind to).
+ *
+ * Pairing invariant: device[0] (the MFA fixture serial
+ * `f401e1afcfd09b16`) is paired with the first inserted
+ * student, and that same inserted student also receives
+ * marbete[0] (`VALIDO-2609982468`) from upsertMarbetes. The
+ * two loops index by the same `inserted` list, so the MFA
+ * triple holds regardless of where student skips land in the
+ * mapping (including the 1001-1003 collision set reported by
+ * the parent against the production DB).
+ */
+interface AssignmentResult {
+  count: number;
+  skips: { deviceSerial: string; reason: string }[];
+}
+
 async function assignDevicesToStudents(
   pool: Pool,
   devices: DispositivoRow[],
-  students: StudentRow[],
-): Promise<number> {
-  // 1:1 assignment device i -> student i across min(devices, students).
-  // CRITICAL: device[0] is the MFA fixture (f401e1afcfd09b16) and
-  // student[0] is also the marbete fixture (VALIDO-2609982468)
-  // because the marbete loop above also took students[0]. The MFA
-  // triple therefore holds automatically.
-  const pairs = Math.min(devices.length, students.length);
+  insertedStudents: StudentRow[],
+): Promise<AssignmentResult> {
+  const pairs = Math.min(devices.length, insertedStudents.length);
+  const skips: { deviceSerial: string; reason: string }[] = [];
   for (let i = 0; i < pairs; i += 1) {
     const device = devices[i] as DispositivoRow;
-    const student = students[i] as StudentRow;
+    const student = insertedStudents[i] as StudentRow;
     await pool.query(
       `UPDATE dispositivos
           SET assigned_student_id = $2
@@ -455,7 +597,21 @@ async function assignDevicesToStudents(
       [device.id, student.id],
     );
   }
-  return pairs;
+  // Devices beyond the inserted-student list are left
+  // unassigned (the column stays NULL) and surfaced as
+  // skip entries so the operator can decide whether to
+  // extend the synthetic student set or accept the shorter
+  // device list. We do NOT fail the run for them.
+  for (let i = pairs; i < devices.length; i += 1) {
+    const device = devices[i] as DispositivoRow;
+    skips.push({
+      deviceSerial: device.serialNumber,
+      reason:
+        `no synthetic student to pair with at index ${i} (only ${pairs} students were inserted, ` +
+        `the rest were skipped as pre-existing)`,
+    });
+  }
+  return { count: pairs, skips };
 }
 
 // ---------------------------------------------------------------------------
@@ -463,12 +619,35 @@ async function assignDevicesToStudents(
 // ---------------------------------------------------------------------------
 
 interface Summary {
+  /**
+   * Count of students_cache rows THIS RUN inserted. Pre-existing
+   * rows are never modified and never counted here; they live
+   * in `studentsSkipped` / `studentSkips` instead.
+   */
   students: number;
+  /**
+   * Count of mapping entries that collided with a pre-existing
+   * students_cache row. These rows were NOT modified.
+   */
+  studentsSkipped: number;
+  studentSkips: { index: number; sisId: string; canvasUserId: number; reason: string }[];
   marbetes: number;
   marbetesFailed: number;
   marbeteFailures: { index: number; studentId: number; publicUid: string; reason: string }[];
   devices: number;
+  /**
+   * Count of device<->student assignments this run actually
+   * wrote. Always <= min(devices.length, inserted.length) and
+   * always exactly matches the count of i where the i-th
+   * SUCCESSFULLY-inserted student existed.
+   */
   assignments: number;
+  /**
+   * Devices that could not be assigned because the mapping
+   * had fewer inserted students than devices. Reported, not
+   * failed.
+   */
+  assignmentSkips: { deviceSerial: string; reason: string }[];
   mfaTriple: {
     marbeteCode: string;
     marbetePublicUid: string | null;
@@ -501,10 +680,28 @@ async function run(): Promise<Summary> {
 
   const pool = new Pool({ connectionString: cfg.databaseUrl, max: 4 });
   try {
-    const students = await upsertStudents(pool, mapping.entries);
-    const marbeteResult = await upsertMarbetes(pool, students);
+    const studentResult = await upsertStudents(pool, mapping.entries);
+    // The marbete + device loops both index by `studentResult.inserted`
+    // (the i-th SUCCESSFULLY-inserted student). Skipped entries are
+    // never paired, so the MFA triple (marbete[0] + device[0] +
+    // inserted[0]) is robust to where the skips land in the mapping
+    // — including the 1001-1003 collision set the parent reported
+    // against the production DB.
+    const insertedStudents = studentResult.inserted;
+    const marbeteResult = await upsertMarbetes(pool, insertedStudents);
     const devices = await upsertDevices(pool, serials);
-    const assignmentCount = await assignDevicesToStudents(pool, devices, students);
+    const assignmentResult = await assignDevicesToStudents(pool, devices, insertedStudents);
+
+    if (studentResult.skipped.length > 0) {
+      // Per-entry skips are NEVER fatal: pre-existing rows are
+      // left untouched. The summary below surfaces them so the
+      // operator can audit which canvas_user_ids the seeder did
+      // not own.
+      logger.warn(
+        { skips: studentResult.skipped },
+        'synthetic_backoffice_student_skips',
+      );
+    }
 
     if (marbeteResult.failures.length > 0) {
       // Per-row failures are NEVER fatal; the rest of the script
@@ -517,31 +714,42 @@ async function run(): Promise<Summary> {
       );
     }
 
-    // The MFA triple is only meaningful when the first marbete
-    // (the one the smoke test exercises) actually landed. When it
-    // was rejected, we return `mfaTriple: null` so the operator
-    // sees the failure rather than a fake triple that would not
+    if (assignmentResult.skips.length > 0) {
+      logger.warn(
+        { skips: assignmentResult.skips },
+        'synthetic_backoffice_assignment_skips',
+      );
+    }
+
+    // The MFA triple is only meaningful when BOTH the first
+    // marbete and the first inserted student exist. When either
+    // is missing, we return `mfaTriple: null` so the operator
+    // sees a null rather than a fake triple that would not
     // validate at the verifier.
-    const mfaStudent = students[0] as StudentRow;
+    const mfaStudent = insertedStudents[0] ?? null;
     const mfaMarbete = marbeteResult.rows[0] ?? null;
     const mfaDevice = devices[0] as DispositivoRow;
-    const mfaTriple: Summary['mfaTriple'] = mfaMarbete
-      ? {
-          marbeteCode: MARBETE_PUBLIC_MESSAGES[0] as string,
-          marbetePublicUid: mfaMarbete.publicUid,
-          serial: mfaDevice.serialNumber,
-          sisId: mfaStudent.sisId,
-          canvasUserId: mfaStudent.canvasUserId,
-        }
-      : null;
+    const mfaTriple: Summary['mfaTriple'] =
+      mfaStudent && mfaMarbete
+        ? {
+            marbeteCode: MARBETE_PUBLIC_MESSAGES[0] as string,
+            marbetePublicUid: mfaMarbete.publicUid,
+            serial: mfaDevice.serialNumber,
+            sisId: mfaStudent.sisId,
+            canvasUserId: mfaStudent.canvasUserId,
+          }
+        : null;
 
     const summary: Summary = {
-      students: students.length,
+      students: insertedStudents.length,
+      studentsSkipped: studentResult.skipped.length,
+      studentSkips: studentResult.skipped,
       marbetes: marbeteResult.rows.length,
       marbetesFailed: marbeteResult.failures.length,
       marbeteFailures: marbeteResult.failures,
       devices: devices.length,
-      assignments: assignmentCount,
+      assignments: assignmentResult.count,
+      assignmentSkips: assignmentResult.skips,
       mfaTriple,
     };
 

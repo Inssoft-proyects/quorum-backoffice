@@ -65,18 +65,29 @@ mapping JSON from Script A and inserts:
 
 1. One `students_cache` row per mapping entry (`canvas_user_id`,
    `sis_id`, `full_name = NULL`, `email = NULL`, `is_active = TRUE`).
-2. Exactly 10 `marbetes`, one per the first 10 mapping entries in
-   deterministic order. Codes are the 10 secrets `VALIDO-2609982468`
-   through `VALIDO-2609982477` hashed with sha256. The plain
-   `publicMessage` / `secretMessage` values are **never** written
-   to the database.
+   If a row with the same `canvas_user_id` already exists
+   (e.g. a real operator-created student or an E2E fixture),
+   the entry is SKIPPED — the seeder never modifies a
+   pre-existing row. Skips are reported in the summary under
+   `studentsSkipped` + `studentSkips[]`.
+2. Exactly 10 `marbetes`, one per the first 10
+   **SUCCESSFULLY-inserted** students (skips are skipped here
+   too) in deterministic order. Codes are the 10 secrets
+   `VALIDO-2609982468` through `VALIDO-2609982477` hashed with
+   sha256. The plain `publicMessage` / `secretMessage` values
+   are **never** written to the database.
 3. `SYNTHETIC_DEVICE_COUNT` devices in `dispositivos` (16-char
    lowercase hex serials). The **first** serial is the constant
    `f401e1afcfd09b16` (MFA smoke fixture).
-4. Device-student assignments, 1:1 across `min(devices, students)`.
-   Device `f401e1afcfd09b16` and marbete `VALIDO-2609982468` are
-   both assigned to the **first** student in the mapping, so the
-   MFA triple validates end-to-end.
+4. Device-student assignments, 1:1 across
+   `min(devices, insertedStudents)`. Device `f401e1afcfd09b16`
+   and marbete `VALIDO-2609982468` are both paired with the
+   **first SUCCESSFULLY-inserted** student (not the first
+   mapping entry), so the MFA triple validates end-to-end
+   even when student skips land at the start of the mapping
+   (e.g. the 1001-1003 collision set against the production
+   DB). Devices beyond the inserted-student count are reported
+   under `assignmentSkips[]` and left unassigned.
 
 ```bash
 cd apps/api
@@ -105,18 +116,37 @@ Both scripts are safe to re-run:
   400/409 for existing users, and the script looks them up and
   reuses their canvas id.
 - Script B:
-  - `students_cache`: `ON CONFLICT (canvas_user_id) DO UPDATE`
-    re-asserts `sis_id` and the NULL PII shape.
+  - `students_cache`: `ON CONFLICT (canvas_user_id) DO NOTHING`.
+    The seeder NEVER modifies a pre-existing row. If a row
+    with the same `canvas_user_id` already exists (operator-
+    created students, E2E fixtures, or any other data the
+    operator wants to keep), the entry is recorded as
+    SKIPPED in the summary and the existing row is left
+    completely untouched (no `sis_id` / `full_name` / `email`
+    / `is_active` rewrite). The 7-row collision set reported
+    by the parent against the production DB
+    (`canvas_user_id` 1001, 1002, 1003, 9001, 90001, 90002,
+    90003) is handled this way. A 23505 on the OTHER unique
+    constraint (`uq_students_sis_id`) is also a skip with a
+    distinct reason so the operator can pick a different
+    seed if they want that entry to land.
   - `marbetes`: `ON CONFLICT (public_uid) DO UPDATE` re-asserts
     `code_hash`, the assignment, `assigned_at`, and clears
-    `deleted_at`. If a target student already has an active
-    marbete under a different `public_uid` (which would
-    violate the partial unique index
+    `deleted_at`. SAFETY INVARIANT: every `publicUid` this
+    seeder writes is `m-<first 6 hex chars of sha256(code)>`
+    — a format disjoint from the operator UI's `CRD-####`
+    format — so the `ON CONFLICT` branch can only ever touch
+    rows this seeder (or a prior run of it) created; no
+    foreign row can be clobbered. If a target student already
+    has an active marbete under a different `public_uid`
+    (which would violate the partial unique index
     `uq_marbete_active_per_student`), Postgres raises 23505
     and the script traps it as a per-row failure (logged via
     pino at warn level and returned in the `marbeteFailures`
     array of the summary). The rest of the batch and the rest
     of the script continue; the failure is never fatal.
+    Marbetes are paired with the i-th SUCCESSFULLY-inserted
+    student, so student skips do not shift the pairing.
   - `dispositivos`: `ON CONFLICT (serial_number) DO NOTHING` keeps
     the original row; the assignment UPDATE then runs
     UNCONDITIONALLY and CLOBBERS any pre-existing manual
