@@ -173,15 +173,15 @@ test.describe('MFA page (E2E, M2)', () => {
     // After success the form swaps to the success card and navigates
     // to `/dashboard` → under basePath `/backoffice` the resolved
     // URL is `/backoffice/dashboard`. The (authed) layout requires
-    // an operator session, NOT the student MFA session, so a hard
-    // redirect to `/login` is the expected fallback for the
-    // student-only cookie. We assert the navigation succeeded away
-    // from `/mfa` and matched the `next` URL pattern, which is
-    // the contract the MFA page owns.
+    // an operator session, NOT the student MFA session, so the
+    // documented fallback is a hard redirect to `/backoffice/login`
+    // (R3-e2e-assertion). We assert the navigation succeeded away
+    // from `/mfa` and landed on that fallback, which is the
+    // deterministic end state of the contract this page owns.
     await page.waitForURL((url) => !url.pathname.startsWith('/backoffice/mfa'), {
       timeout: 15_000,
     });
-    expect(page.url()).toMatch(/\/backoffice\/dashboard$/);
+    expect(page.url()).toMatch(/\/backoffice\/login/);
   });
 
   test('invalid OTP keeps the user on /mfa and shows the typed deny.otp_invalid error', async ({

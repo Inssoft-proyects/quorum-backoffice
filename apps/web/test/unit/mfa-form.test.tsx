@@ -475,6 +475,9 @@ describe('MfaForm — three-factor authentication (M2)', () => {
           typeof m === 'string' && m.includes('mfa_redirect_token_issue_failed'),
         ),
       ).toBe(true);
+      // R3-open-redirect: with no backend-minted token the form must stay
+      // in-app instead of following the unvalidated external `next`.
+      expect(stubRouter.push).toHaveBeenCalledWith('/dashboard');
     } finally {
       warnSpy.mockRestore();
     }

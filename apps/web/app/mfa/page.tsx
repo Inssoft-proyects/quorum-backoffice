@@ -34,7 +34,11 @@ export default async function MfaPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const params = await searchParams;
-  const next = typeof params.next === 'string' && params.next.length > 0 ? params.next : undefined;
+  // Defence in depth (R3-open-redirect): only forward `next` values that
+  // are in-app paths (`/x`, never `//x`) or http(s) URLs; the MFA form
+  // additionally enforces the redirect-origin allowlist.
+  const rawNext = typeof params.next === 'string' && params.next.length > 0 ? params.next : undefined;
+  const next = rawNext !== undefined && /^(\/(?!\/)|https?:\/\/)/i.test(rawNext) ? rawNext : undefined;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted px-4 py-12">

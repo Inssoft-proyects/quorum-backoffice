@@ -118,7 +118,13 @@ function isAbsoluteUrl(value: string): boolean {
 
 function resolveNext(next: string | undefined): string {
   if (!next || next.length === 0) return MFA_DEFAULT_NEXT;
-  return next;
+  // Defence in depth (R3-open-redirect): only in-app paths (`/x`, never
+  // the protocol-relative `//x`) or http(s) URLs survive. The external
+  // hop itself is token-gated in `navigateNext`, so a crafted
+  // `/mfa?next=https://attacker.example` can never leave the app.
+  if (next.startsWith('/') && !next.startsWith('//')) return next;
+  if (isAbsoluteUrl(next)) return next;
+  return MFA_DEFAULT_NEXT;
 }
 
 interface MfaFormProps {
@@ -183,6 +189,16 @@ export function MfaForm({ next }: MfaFormProps) {
   function navigateNext(target: string, queryToken: string | null): void {
     const finalTarget = buildNextUrlWithToken(target, queryToken);
     if (isAbsoluteUrl(finalTarget)) {
+      // Open-redirect guard (R3-open-redirect): a cross-origin hop is
+      // honoured only when the backend minted a redirect token for it,
+      // which proves the origin passed MFA_ALLOWED_REDIRECT_ORIGINS at
+      // `/api/v1/mfa/redirect-token`. Without a token (denied origin,
+      // Redis down, endpoint error) the student stays in-app instead of
+      // following an attacker-supplied `next`.
+      if (queryToken === null) {
+        router.push(MFA_DEFAULT_NEXT);
+        return;
+      }
       window.location.href = finalTarget;
       return;
     }
