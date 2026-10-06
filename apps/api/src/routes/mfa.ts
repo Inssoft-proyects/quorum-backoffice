@@ -178,14 +178,14 @@ export async function registerMfaRoutes(
     });
     reply.status(201);
 
-    const response: MfaAuthenticateResponse = {
+    const response = MfaAuthenticateResponse.parse({
       canvas_user_id: result.canvasUserId,
       student_name: result.studentName,
       student_email: result.studentEmail,
       role: 'student',
       session_id: result.sessionId,
       expires_at: result.expiresAt.toISOString(),
-    };
+    });
     return response;
   });
 
