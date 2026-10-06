@@ -62,12 +62,19 @@ export interface MfaMarbeteRow {
  * The student row the MFA service hydrates from
  * `marbetes.assigned_student_id`. The MFA service rejects the
  * request with `deny.student_inactive` when `is_active = false`.
+ *
+ * Since migration 0020_students_sis_id.sql: `full_name` and
+ * `email` are nullable (synthetic high-privacy rows carry no
+ * PII). The MFA service threads the nulls through to the
+ * audit/response payloads without coercing to '' or undefined.
+ * `sis_id` is NOT selected here — the MFA chain does not
+ * use the matrícula and there is no benefit to selecting it.
  */
 export interface MfaStudentRow {
   id: number;
   canvas_user_id: number;
-  full_name: string;
-  email: string;
+  full_name: string | null;
+  email: string | null;
   is_active: boolean;
 }
 
@@ -147,6 +154,10 @@ export class PgMfaRepo {
    * enumerate which ids are "valid but inactive" vs "missing".
    */
   async findStudentById(id: number): Promise<MfaStudentRow | null> {
+    // The SELECT list is unchanged structurally; the column types
+    // are now nullable on the row interface (see MfaStudentRow).
+    // No `sis_id` here — the MFA chain does not consult the
+    // matrícula and the row is internal-only.
     const r = await this.client.query<MfaStudentRow>(
       `SELECT id, canvas_user_id, full_name, email, is_active
          FROM students_cache

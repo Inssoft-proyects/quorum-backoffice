@@ -65,6 +65,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0017_mfa_sessions_kind.sql',
       '0018_audit_action_mfa_authenticate.sql',
       '0019_audit_action_mfa_consume.sql',
+      '0020_students_sis_id.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -89,6 +90,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0017_mfa_sessions_kind.sql',
       '0018_audit_action_mfa_authenticate.sql',
       '0019_audit_action_mfa_consume.sql',
+      '0020_students_sis_id.sql',
     ]);
   });
 
