@@ -31,6 +31,7 @@
  *     reuse the operator session TTL for symmetry.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import {
   MfaAuthenticateRequest,
   MfaAuthenticateResponse,
@@ -38,6 +39,7 @@ import {
   MFA_SESSION_COOKIE_NAME,
 } from '@quorum-backoffice/shared';
 import { AppError } from '../lib/errors';
+import { DenyEnvelope, ErrorEnvelope } from '../plugins/swagger';
 import { isValidSessionToken } from '../lib/session-token';
 import {
   MfaAuthenticateService,
@@ -69,6 +71,15 @@ export async function registerMfaRoutes(
   app: FastifyInstance,
   deps?: { service?: MfaAuthenticateService },
 ): Promise<void> {
+  // Type alias for routes that attach Zod schemas. The swagger
+  // plugin installs no-op validator / serializer compilers so the
+  // Zod instances in `schema` are only consumed by
+  // `@fastify/swagger`'s `jsonSchemaTransform` (the runtime
+  // validation is done by the imperative `MfaAuthenticateRequest.parse`
+  // call inside the handler — see the no-op compilers comment in
+  // `apps/api/src/plugins/swagger.ts`).
+  const zApp = app.withTypeProvider<ZodTypeProvider>();
+
   const getService = (): MfaAuthenticateService =>
     deps?.service ??
     new MfaAuthenticateService({
@@ -94,7 +105,30 @@ export async function registerMfaRoutes(
    *   - 503 Service Unavailable — `deny.dependency_fail` (the OTP
    *     service is down / unreachable, or the DB lookup failed).
    */
-  app.post('/api/v1/mfa/authenticate', async (req, reply: FastifyReply) => {
+  zApp.post(
+    '/api/v1/mfa/authenticate',
+    {
+      schema: {
+        // Body shape: derived from the shared Zod DTO (no
+        // hand-duplicated JSON Schema).
+        body: MfaAuthenticateRequest,
+        // Response shapes: 201 from `MfaAuthenticateResponse`,
+        // 400 from the centralized `ErrorEnvelope`, 401/503 from
+        // the `DenyEnvelope` (every `deny.*` code collapses to
+        // this envelope). The envelopes are inlined here as Zod
+        // schemas; the swagger plugin's `transformObject` extracts
+        // them into `components.schemas` and rewrites the route
+        // responses to `$ref` them.
+        response: {
+          201: MfaAuthenticateResponse,
+          400: ErrorEnvelope,
+          401: DenyEnvelope,
+          503: DenyEnvelope,
+        },
+        tags: ['mfa'],
+      },
+    },
+    async (req, reply: FastifyReply) => {
     // Zod validation. An empty / missing field surfaces as a
     // standard `validation_error` 400 envelope (the centralized
     // error handler maps the Zod throw to the response shape).
@@ -144,14 +178,14 @@ export async function registerMfaRoutes(
     });
     reply.status(201);
 
-    const response: MfaAuthenticateResponse = {
+    const response = MfaAuthenticateResponse.parse({
       canvas_user_id: result.canvasUserId,
       student_name: result.studentName,
       student_email: result.studentEmail,
       role: 'student',
       session_id: result.sessionId,
       expires_at: result.expiresAt.toISOString(),
-    };
+    });
     return response;
   });
 
@@ -164,7 +198,18 @@ export async function registerMfaRoutes(
    * fields). A logged-out client receives a 401; a logged-in
    * client receives the resolved student identity.
    */
-  app.get('/api/v1/mfa/session', async (req) => {
+  zApp.get(
+    '/api/v1/mfa/session',
+    {
+      schema: {
+        response: {
+          200: MfaSessionResponse,
+          401: DenyEnvelope,
+        },
+        tags: ['mfa'],
+      },
+    },
+    async (req) => {
     const token = cookieFromRequest(req, MFA_SESSION_COOKIE_NAME);
     if (!token || !isValidSessionToken(token)) {
       throw new AppError('unauthorized', 'no active MFA session', 401);

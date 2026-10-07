@@ -112,11 +112,18 @@ export interface MfaAuthenticateMeta {
  * `sessionToken` is the opaque token stored in the cookie and
  * returned in the response body; the JSON channel (M5) can use
  * the body value directly without a cookie store.
+ *
+ * Since migration 0020_students_sis_id.sql: `studentName` and
+ * `studentEmail` are nullable. A synthetic high-privacy students
+ * row (sis_id + canvas_user_id only) cannot satisfy the MFA
+ * flow today (the route layer rejects missing students before
+ * the policy runs), but the DTO surface is now loose enough
+ * to host a future "SIS-only" flow without a breaking change.
  */
 export interface MfaAuthenticateResult {
   canvasUserId: number;
-  studentName: string;
-  studentEmail: string;
+  studentName: string | null;
+  studentEmail: string | null;
   sessionId: string;
   sessionToken: string;
   expiresAt: Date;
@@ -246,7 +253,7 @@ export class MfaAuthenticateService {
       // either a live marbete or one whose status is not 'active'.
       const marbete = await repo.findMarbeteByCodeHash(codeHash);
       if (!marbete) {
-        return this.deny(
+        return await this.deny(
           { code: 'deny.marbete_unknown', message: 'marbete is unknown or revoked' },
           null,
           null,
@@ -257,7 +264,7 @@ export class MfaAuthenticateService {
         // Revoked / inactive marbete — collapse to the same deny code
         // as the unknown case so an attacker cannot enumerate which
         // codes are "valid but revoked" vs "missing".
-        return this.deny(
+        return await this.deny(
           { code: 'deny.marbete_unknown', message: 'marbete is unknown or revoked' },
           null,
           null,
@@ -271,7 +278,7 @@ export class MfaAuthenticateService {
       // it cannot satisfy any MFA flow. `is_active = false` is the
       // standard "withdrawn / graduated" case.
       if (marbete.assigned_student_id === null) {
-        return this.deny(
+        return await this.deny(
           { code: 'deny.student_inactive', message: 'marbete is not bound to an active student' },
           null,
           marbete,
@@ -280,7 +287,7 @@ export class MfaAuthenticateService {
       }
       const student = await repo.findStudentById(marbete.assigned_student_id);
       if (!student || !student.is_active) {
-        return this.deny(
+        return await this.deny(
           { code: 'deny.student_inactive', message: 'marbete is not bound to an active student' },
           null,
           marbete,
@@ -299,7 +306,7 @@ export class MfaAuthenticateService {
         device.revoked_at !== null ||
         device.assigned_student_id === null
       ) {
-        return this.deny(
+        return await this.deny(
           { code: 'deny.device_unknown', message: 'device is unknown, revoked, or unbound' },
           student,
           marbete,
@@ -307,7 +314,7 @@ export class MfaAuthenticateService {
         );
       }
       if (device.assigned_student_id !== student.id) {
-        return this.deny(
+        return await this.deny(
           {
             code: 'deny.device_not_bound_to_student',
             message: 'device is bound to a different student than the marbete',
@@ -332,7 +339,7 @@ export class MfaAuthenticateService {
         // AppError or bare Error from the OTP client → dependency
         // failure. Map uniformly so a transient transport error
         // cannot leak through the deny envelope.
-        return this.deny(
+        return await this.deny(
           { code: 'deny.dependency_fail', message: 'OTP service unavailable' },
           student,
           marbete,
@@ -346,7 +353,7 @@ export class MfaAuthenticateService {
         // dependency_fail so a future OtpClient reason cannot
         // accidentally leak through the wire envelope.
         if (otpResult.reason === 'invalid') {
-          return this.deny(
+          return await this.deny(
             { code: 'deny.otp_invalid', message: 'OTP is invalid or already consumed' },
             student,
             marbete,
@@ -354,14 +361,14 @@ export class MfaAuthenticateService {
           );
         }
         if (otpResult.reason === 'locked') {
-          return this.deny(
+          return await this.deny(
             { code: 'deny.dependency_fail', message: 'OTP subject is rate-limited' },
             student,
             marbete,
             meta,
           );
         }
-        return this.deny(
+        return await this.deny(
           { code: 'deny.dependency_fail', message: 'OTP service rejected the code' },
           student,
           marbete,
@@ -388,22 +395,39 @@ export class MfaAuthenticateService {
       // canvas_user_id (the same wire identifier the OTP was
       // bound to) so an operator can reconcile the event with
       // Canvas without joining on any other table.
+      //
+      // BEST-EFFORT: the session row was already issued in step
+      // (6) and the student has been authenticated. An audit-
+      // table outage must NOT delete the session, must NOT
+      // fail the request, and must NOT leak through the outer
+      // try/catch (which would map a 201 success into a 503
+      // dependency_fail). The failure is logged at error level
+      // so an operator can correlate a session without an audit
+      // row to the outage; the row can be reconstructed from the
+      // session record on recovery.
       const audit = new AuditService(this.pool);
-      await audit.write({
-        actorId: MFA_AUDIT_ACTOR,
-        action: 'student.mfa_authenticate',
-        entityType: 'student',
-        entityId: String(student.canvas_user_id),
-        metadata: {
-          outcome: 'ok',
-          session_id: sessionToken.slice(0, 8),
-          student_name: student.full_name,
-          student_email: student.email,
-        },
-        otpId: otpResult.otpId,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
+      try {
+        await audit.write({
+          actorId: MFA_AUDIT_ACTOR,
+          action: 'student.mfa_authenticate',
+          entityType: 'student',
+          entityId: String(student.canvas_user_id),
+          metadata: {
+            outcome: 'ok',
+            session_id: sessionToken.slice(0, 8),
+            student_name: student.full_name,
+            student_email: student.email,
+          },
+          otpId: otpResult.otpId,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+      } catch (auditErr) {
+        this.log.error(
+          { err: (auditErr as Error).message, canvas_user_id: student.canvas_user_id },
+          'mfa_authenticate_audit_write_failed',
+        );
+      }
 
       return {
         canvasUserId: student.canvas_user_id,

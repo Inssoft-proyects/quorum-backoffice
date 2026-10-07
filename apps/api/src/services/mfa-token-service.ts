@@ -183,11 +183,18 @@ export function generateMfaRedirectToken(): string {
  * with the consume endpoint — the route layer passes it back
  * to Canvas unchanged (minus any internal-only fields). The
  * `role` is always `'student'` for an MFA session.
+ *
+ * Since migration 0020_students_sis_id.sql: `student_name` and
+ * `student_email` are nullable. A synthetic high-privacy student
+ * (sis_id + canvas_user_id only) has NULL PII and the redirect
+ * payload surfaces `null` for those fields. The MFA chain still
+ * requires an active student record at the issuing endpoint, so
+ * the loosen here is purely a wire-level forward-compat change.
  */
 export interface MfaRedirectPayload {
   canvas_user_id: number;
-  student_name: string;
-  student_email: string;
+  student_name: string | null;
+  student_email: string | null;
   role: 'student';
   next_url: string;
   issued_at: string;
@@ -200,8 +207,8 @@ export interface MfaRedirectPayload {
  */
 export interface MfaRedirectInput {
   canvasUserId: number;
-  studentName: string;
-  studentEmail: string;
+  studentName: string | null;
+  studentEmail: string | null;
   role: 'student';
   nextUrl: string;
   issuedAt: Date;
@@ -250,8 +257,8 @@ export interface MfaTokenServiceDeps {
 
 export interface MfaIssueInput {
   canvasUserId: number;
-  studentName: string;
-  studentEmail: string;
+  studentName: string | null;
+  studentEmail: string | null;
   nextUrl: string;
 }
 
@@ -262,8 +269,8 @@ export interface MfaIssueResult {
 
 export interface MfaConsumeResult {
   canvasUserId: number;
-  studentName: string;
-  studentEmail: string;
+  studentName: string | null;
+  studentEmail: string | null;
   role: 'student';
   nextUrl: string;
 }
