@@ -7,7 +7,7 @@
 # "does the business logic work?" — for that, run the Playwright e2e +
 # parity harness instead.
 #
-# Probes (default base = https://backoffice.quorum.asistentepro.mx):
+# Probes (default base = https://backoffice.inecuni.com):
 #   GET /login
 #     → 302 to /backoffice/login       (basePath redirect at the edge)
 #   GET /backoffice/login
@@ -53,7 +53,7 @@ fi
 
 # ---- Config -------------------------------------------------------------
 
-SMOKE_BASE_URL="${SMOKE_BASE_URL:-https://backoffice.quorum.asistentepro.mx}"
+SMOKE_BASE_URL="${SMOKE_BASE_URL:-https://backoffice.inecuni.com}"
 SMOKE_API_LOCAL="${SMOKE_API_LOCAL:-}"  # empty → local probes skipped
 
 if [[ -t 1 ]]; then
