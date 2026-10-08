@@ -48,8 +48,31 @@ export interface MarbeteSummary {
 export interface MatriculaListItem {
   /** External Canvas user identifier (students_cache.canvas_user_id). */
   canvasUserId: number;
-  fullName: string;
-  email: string;
+  /**
+   * Student full name as published by Canvas (`students_cache.full_name`).
+   * Nullable on the wire: a Canvas-side enrolled student can be missing
+   * `full_name` (the portal returns `null` for 997/999 rows in the live
+   * production data), and this contract reflects that. Consumers MUST
+   * handle `null` — never call `.toLowerCase()` or `.trim()` on it
+   * without a guard. When null, fall back to `sisId` as the
+   * human-readable label (see `apps/web` `asociar` screen).
+   */
+  fullName: string | null;
+  /**
+   * Student email as published by Canvas (`students_cache.email`).
+   * Nullable on the wire for the same reason as `fullName`. The portal
+   * may additionally suppress `email` (PII minimisation) and the
+   * service layer stores the empty string in that case; this `null`
+   * branch is the legacy/Canvas-missing-name case.
+   */
+  email: string | null;
+  /**
+   * SIS matrícula (students_cache.sis_id). Populated by the SIS sync
+   * for students who exist in SIS but not yet in Canvas — it is the
+   * only stable human identifier for those rows. Nullable on the wire
+   * because the Canvas-only rows do not have a SIS counterpart.
+   */
+  sisId: string | null;
   isActive: boolean;
   /**
    * Best available "since when was this student known to the cache"

@@ -40,6 +40,7 @@ function makeMatricula(
     canvasUserId,
     fullName: `Matrícula ${canvasUserId}`,
     email: `mat${canvasUserId}@example.com`,
+    sisId: null,
     isActive: true,
     registeredAt: '2024-09-12T10:00:00Z',
     marbete: null,
@@ -569,5 +570,181 @@ describe('AsociarPageClient', () => {
     await user.click(screen.getByTestId('app-alert-close'));
     expect(screen.getByTestId('app-alert-success')).toHaveAttribute('hidden');
     void counts; // ensure refetch counters are present in the mock
+  });
+
+  /**
+   * SIS-matrícula visibility contract: the production cache has 997
+   * of 999 rows with `fullName: null` and a populated `sisId` (a
+   * 6-character code like `TOPGR4`). The screen must (a) not throw
+   * on the null name/email and (b) render the SIS matrícula as the
+   * primary label so the operator can tell rows apart.
+   *
+   * Before the fix, the search filter called `m.fullName.toLowerCase()`
+   * which throws a TypeError on null, and the row cell interpolated
+   * the null name into the DOM. After the fix, the primary label
+   * is the SIS matrícula and a secondary line shows the email
+   * (or the SIS underneath when the Canvas name is present).
+   */
+  it('SIS remediation: renders rows with fullName: null + sisId without throwing', () => {
+    installFetchMock();
+    const sisOnlyRows: MatriculaListItem[] = [
+      {
+        canvasUserId: 901,
+        fullName: null,
+        email: null,
+        sisId: 'TOPGR4',
+        isActive: true,
+        registeredAt: '2024-09-12T10:00:00Z',
+        marbete: null,
+      },
+      {
+        canvasUserId: 902,
+        fullName: null,
+        email: 'other@example.com',
+        sisId: '1S39YA',
+        isActive: true,
+        registeredAt: '2024-09-12T10:00:00Z',
+        marbete: null,
+      },
+    ];
+
+    // The render MUST NOT throw. React 19 + jsdom will surface any
+    // uncaught error during render as a test failure; the cell
+    // also must contain the SIS code as text (the operator
+    // otherwise cannot identify the row).
+    expect(() => {
+      render(
+        <AsociarPageClient
+          initialMatriculas={sisOnlyRows}
+          initialCounters={{
+            total: 2,
+            assigned: 0,
+            unassigned: 2,
+            availableMarbetes: 8,
+          }}
+          initialAvailableMarbetes={defaultAvailable()}
+          initialStatus="unassigned"
+          initialSearch=""
+          userRole="admin"
+        />,
+      );
+    }).not.toThrow();
+
+    // The SIS matrícula MUST be visible in the row cell.
+    const row1 = screen.getByTestId('unassigned-matricula-901');
+    expect(row1).toHaveTextContent('TOPGR4');
+    const row2 = screen.getByTestId('unassigned-matricula-902');
+    expect(row2).toHaveTextContent('1S39YA');
+
+    // The aria-label on the row's selection checkbox must not read
+    // "Seleccionar matrícula null" — the helper picks the SIS code
+    // as the label.
+    expect(
+      screen.getByTestId('unassigned-check-901'),
+    ).toHaveAttribute('aria-label', 'Seleccionar matrícula TOPGR4');
+  });
+
+  /**
+   * The Canvas name + SIS combination must show BOTH identifiers
+   * in the row (the brief: "where the name exists, show both").
+   */
+  it('SIS remediation: rows with fullName + sisId show both identifiers', () => {
+    installFetchMock();
+    const namedRows: MatriculaListItem[] = [
+      {
+        canvasUserId: 1001,
+        fullName: 'Ana López',
+        email: 'ana@example.com',
+        sisId: 'ANLSS2',
+        isActive: true,
+        registeredAt: '2024-09-12T10:00:00Z',
+        marbete: null,
+      },
+    ];
+
+    expect(() => {
+      render(
+        <AsociarPageClient
+          initialMatriculas={namedRows}
+          initialCounters={{
+            total: 1,
+            assigned: 0,
+            unassigned: 1,
+            availableMarbetes: 4,
+          }}
+          initialAvailableMarbetes={defaultAvailable()}
+          initialStatus="unassigned"
+          initialSearch=""
+          userRole="admin"
+        />,
+      );
+    }).not.toThrow();
+
+    const cell = screen.getByTestId('unassigned-matricula-1001');
+    expect(cell).toHaveTextContent('Ana López');
+    // The SIS rides underneath as a secondary line.
+    expect(cell).toHaveTextContent('Matrícula ANLSS2');
+  });
+
+  /**
+   * The client-side search filter must be null-safe: typing a
+   * search term must NOT throw a TypeError when rows have
+   * `fullName: null` and `email: null`. The matching logic must
+   * also pick up the SIS matrícula so the operator can search by
+   * a matrícula fragment.
+   */
+  it('SIS remediation: search filter is null-safe and matches sisId', () => {
+    installFetchMock();
+    const sisOnlyRows: MatriculaListItem[] = [
+      {
+        canvasUserId: 901,
+        fullName: null,
+        email: null,
+        sisId: 'TOPGR4',
+        isActive: true,
+        registeredAt: '2024-09-12T10:00:00Z',
+        marbete: null,
+      },
+      {
+        canvasUserId: 902,
+        fullName: null,
+        email: null,
+        sisId: '1S39YA',
+        isActive: true,
+        registeredAt: '2024-09-12T10:00:00Z',
+        marbete: null,
+      },
+    ];
+
+    render(
+      <AsociarPageClient
+        initialMatriculas={sisOnlyRows}
+        initialCounters={{
+          total: 2,
+          assigned: 0,
+          unassigned: 2,
+          availableMarbetes: 8,
+        }}
+        initialAvailableMarbetes={defaultAvailable()}
+        initialStatus="unassigned"
+        initialSearch=""
+        userRole="admin"
+      />,
+    );
+
+    // Search by matrícula fragment — must not throw on null
+    // fullName/email and must match the SIS.
+    const search = screen.getByTestId('unassigned-search');
+    expect(() => {
+      fireEvent.change(search, { target: { value: 'TOP' } });
+    }).not.toThrow();
+    // SIS fragment matches exactly one row.
+    expect(screen.getByTestId('unassigned-matricula-901')).toHaveTextContent(
+      'TOPGR4',
+    );
+    // The other row is filtered out.
+    expect(
+      screen.queryByTestId('unassigned-matricula-902'),
+    ).not.toBeInTheDocument();
   });
 });

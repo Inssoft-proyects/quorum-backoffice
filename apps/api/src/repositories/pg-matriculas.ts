@@ -64,8 +64,16 @@ export interface UpsertCounts {
  * The `is_active` flag on students_cache mirrors Canvas enrollment
  * status (migration 0006_students_active.sql); the LEFT JOIN on
  * marbetes filters to `status='active' AND deleted_at IS NULL`.
+ *
+ * `sis_id` is the SIS matrícula (6-character code such as `TOPGR4`)
+ * that the SIS sync writes into students_cache for students who are
+ * enrolled in SIS but not (yet) in Canvas. For 997/999 of the live
+ * cache rows it is the ONLY human identifier available because
+ * `full_name` and `email` are NULL on the Canvas side. Surfaced here
+ * so the DTO and the screen can label the row.
  */
 export interface ListMatriculasRow extends StudentRow {
+  sis_id: string | null;
   marbete_id: number | null;
   marbete_public_uid: string | null;
   marbete_status: MarbeteStatus | null;
@@ -108,12 +116,14 @@ export interface FilterSql {
  *   - 'unassigned' → `m.id IS NULL`
  *   - 'any' (default) → no status predicate
  *
- * Search filter: matches full_name ILIKE, email ILIKE, or an exact
- * canvas_user_id text match (so an operator can paste a numeric id
- * directly into the search box). The exact-id match uses a fresh
- * param slot so the SQL is self-documenting and matches the index
- * paths we expect (ILIKE on full_name/email, equality on
- * canvas_user_id).
+ * Search filter: matches full_name ILIKE, email ILIKE, sis_id ILIKE,
+ * or an exact canvas_user_id text match (so an operator can paste a
+ * numeric id directly into the search box). The exact-id match uses
+ * a fresh param slot so the SQL is self-documenting and matches the
+ * index paths we expect (ILIKE on full_name/email/sis_id, equality
+ * on canvas_user_id). The sis_id arm uses the same `%q%` pattern
+ * as the name/email arms because operators may search by a
+ * matrícula fragment, not only a full 6-character code.
  *
  * isActive filter:
  *   - 'true' (default) → only active students
@@ -133,7 +143,7 @@ export function buildListMatriculasWhere(
   }
   if (filter.search) {
     where.push(
-      `(s.full_name ILIKE $${p} OR s.email ILIKE $${p} OR s.canvas_user_id::text = $${p + 1})`,
+      `(s.full_name ILIKE $${p} OR s.email ILIKE $${p} OR s.sis_id ILIKE $${p} OR s.canvas_user_id::text = $${p + 1})`,
     );
     params.push(`%${filter.search}%`);
     params.push(filter.search);
@@ -184,7 +194,7 @@ export class PgMatriculasRepo {
     // Stable ordering by canvas_user_id so the UI sees a
     // deterministic page-to-page order even when names collide.
     const listSql = `
-      SELECT s.id, s.canvas_user_id, s.full_name, s.email,
+      SELECT s.id, s.canvas_user_id, s.full_name, s.email, s.sis_id,
              s.last_synced_at, s.is_active,
              m.id              AS marbete_id,
              m.public_uid      AS marbete_public_uid,

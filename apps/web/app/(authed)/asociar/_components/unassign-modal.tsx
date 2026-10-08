@@ -20,10 +20,12 @@ import { useOtpGrant } from '@/components/inventory/use-otp-grant';
 export interface UnassignModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The matricula + marbete context being unassigned. `null` when closed. */
+  /** The matricula + marbete context being unassigned. `null` when closed.
+   * `fullName` is nullable to match the MatriculaListItem wire
+   * contract; the modal renders `—` when the name is missing. */
   context: {
     canvasUserId: number;
-    fullName: string;
+    fullName: string | null;
     marbeteId: number;
     marbeteMaskedCode: string;
     assignedAt: string | null;

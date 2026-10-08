@@ -75,6 +75,29 @@ function formatShortDate(iso: string | null): string {
 }
 
 /**
+ * Best-effort human label for a matrícula row. The cache now carries
+ * three nullable identifiers: `fullName` (Canvas), `email` (Canvas),
+ * and `sisId` (SIS). The fall-through order matches the
+ * operability priority:
+ *
+ *   1. Canvas full name (the canonical label for 7/999 rows).
+ *   2. SIS matrícula (the only stable human identifier for the
+ *      997/999 rows where Canvas published no name).
+ *   3. Canvas numeric id as `Matrícula <id>` (last-resort label
+ *      so a row is never rendered as "null" or empty).
+ *
+ * The helper NEVER fabricates a name — when both `fullName` and
+ * `sisId` are missing it falls back to the numeric id, which is
+ * always populated. Used for row labels, aria-labels, and the
+ * assign confirmation banner.
+ */
+function matriculaLabel(item: MatriculaListItem): string {
+  if (item.fullName && item.fullName.length > 0) return item.fullName;
+  if (item.sisId && item.sisId.length > 0) return item.sisId;
+  return `Matrícula ${item.canvasUserId}`;
+}
+
+/**
  * "Asignación de marbetes" page client.
  *
  * Composes the four metric cards (Total / Marbetes disponibles /
@@ -136,9 +159,16 @@ export function AsociarPageClient({
   const [selection, setSelection] = useState<Set<number>>(new Set());
 
   // ---- Modal + banner state ----
+  // The `enrollments` shape widens `fullName` and `sisId` to
+  // `string | null` to match the live MatriculaListItem contract:
+  // 997/999 of the cache rows have `fullName: null` (the Canvas
+  // side has no name; the SIS matrícula is the only stable human
+  // identifier). The downstream AssignReviewModal accepts the same
+  // nullable shape and renders a fallback label (`Matrícula <id>` or
+  // the SIS matrícula) when the name is missing.
   const [assignModal, setAssignModal] = useState<{
     open: boolean;
-    enrollments: { canvasUserId: number; fullName: string; marbeteId: number | null }[];
+    enrollments: { canvasUserId: number; fullName: string | null; sisId: string | null; marbeteId: number | null }[];
   }>({ open: false, enrollments: [] });
   const [unassignCtx, setUnassignCtx] = useState<Props['initialMatriculas'][number] | null>(null);
   const [revealMarbeteId, setRevealMarbeteId] = useState<number | null>(null);
@@ -213,15 +243,28 @@ export function AsociarPageClient({
   }
 
   // ---- Filtered view per tab ----
+  // Null-safe matcher: `fullName`, `email`, and `sisId` are nullable
+  // on the wire (see MatriculaListItem doc) and a bare `.toLowerCase()`
+  // would throw on null. The helper treats null as an empty string
+  // for the search predicate only — it is never rendered, so no
+  // fake-name coercion is involved.
+  const matchesSearch = (
+    m: MatriculaListItem,
+    q: string,
+  ): boolean => {
+    const haystack = [
+      String(m.canvasUserId),
+      m.fullName ?? '',
+      m.email ?? '',
+      m.sisId ?? '',
+    ];
+    return haystack.some((s) => s.toLowerCase().includes(q));
+  };
+
   const filteredUnassigned = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return unassignedItems;
-    return unassignedItems.filter(
-      (m) =>
-        String(m.canvasUserId).toLowerCase().includes(q) ||
-        m.fullName.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q),
-    );
+    return unassignedItems.filter((m) => matchesSearch(m, q));
   }, [unassignedItems, search]);
 
   const filteredAssigned = useMemo(() => {
@@ -234,9 +277,7 @@ export function AsociarPageClient({
     // maskedCode stays searchable as before.
     return assignedItems.filter(
       (m) =>
-        String(m.canvasUserId).toLowerCase().includes(q) ||
-        m.fullName.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q) ||
+        matchesSearch(m, q) ||
         (m.marbete?.maskedCode.toLowerCase().includes(q) ?? false),
     );
   }, [assignedItems, search]);
@@ -286,6 +327,10 @@ export function AsociarPageClient({
     selection.size >= selectionLimit && selectionLimit > 0;
 
   // ---- Bulk assign modal open ----
+  // `fullName` and `sisId` are forwarded as `string | null` — the
+  // assign review modal renders a fallback (matrícula or
+  // `Matrícula <id>`) so the operator can still tell the rows apart
+  // when the Canvas name is missing.
   function openBulkAssign(): void {
     if (selection.size === 0) return;
     const enrollments = Array.from(selection)
@@ -297,6 +342,7 @@ export function AsociarPageClient({
         return {
           canvasUserId: item.canvasUserId,
           fullName: item.fullName,
+          sisId: item.sisId,
           marbeteId: null,
         };
       })
@@ -310,7 +356,12 @@ export function AsociarPageClient({
     setAssignModal({
       open: true,
       enrollments: [
-        { canvasUserId: item.canvasUserId, fullName: item.fullName, marbeteId: null },
+        {
+          canvasUserId: item.canvasUserId,
+          fullName: item.fullName,
+          sisId: item.sisId,
+          marbeteId: null,
+        },
       ],
     });
   }
@@ -329,10 +380,17 @@ export function AsociarPageClient({
       const item = unassignedItems.find(
         (m) => m.canvasUserId === single?.canvasUserId,
       );
+      // Null-safe label: prefer the Canvas full name; fall back to
+      // the SIS matrícula; fall back to the canvasUserId so the
+      // banner never reads "null ahora tiene el marbete asignado."
+      const label =
+        item?.fullName ??
+        item?.sisId ??
+        (item ? `Matrícula ${item.canvasUserId}` : 'La matrícula');
       showInfoBanner({
         title: 'Marbete asignado correctamente.',
         detail: item
-          ? `${item.fullName} ahora tiene el marbete asignado.`
+          ? `${label} ahora tiene el marbete asignado.`
           : 'La matrícula ahora tiene el marbete asignado.',
       });
     } else {
@@ -757,6 +815,26 @@ export function AsociarPageClient({
                     const checked = selection.has(item.canvasUserId);
                     const atLimit =
                       !checked && selection.size >= availableMarbetesTotal;
+                    // Primary label follows the canon (Canvas full
+                    // name when available, else the SIS matrícula, else
+                    // the numeric id) so the operator can always tell
+                    // rows apart — even on the 997/999 rows where
+                    // `fullName` and `email` are both null.
+                    const primaryLabel = matriculaLabel(item);
+                    // Secondary line shows the SIS matrícula when
+                    // the Canvas name is already the primary
+                    // (so the row stays identifiable via the
+                    // matr\u00edcula), or the email otherwise.
+                    // The line is omitted entirely when neither is
+                    // available.
+                    const secondaryLabel =
+                      item.fullName && item.sisId
+                        ? `Matrícula ${item.sisId}`
+                        : !item.fullName && item.email
+                          ? item.email
+                          : item.fullName
+                            ? item.email
+                            : null;
                     return (
                       <tr
                         key={item.canvasUserId}
@@ -766,18 +844,27 @@ export function AsociarPageClient({
                           <input
                             className="assignment-checkbox"
                             type="checkbox"
-                            aria-label={`Seleccionar matrícula ${item.fullName}`}
+                            aria-label={`Seleccionar matrícula ${primaryLabel}`}
                             data-testid={`unassigned-check-${item.canvasUserId}`}
                             checked={checked}
                             disabled={atLimit || availableMarbetesTotal === 0}
                             onChange={() => toggleSelection(item.canvasUserId)}
                           />
                         </td>
-                        <td className="data-table__id" data-label="Matrícula">
-                          {item.fullName}
-                          <span className="block text-xs font-normal text-text-muted">
-                            {item.email}
-                          </span>
+                        <td
+                          className="data-table__id"
+                          data-label="Matrícula"
+                          data-testid={`unassigned-matricula-${item.canvasUserId}`}
+                        >
+                          {primaryLabel}
+                          {secondaryLabel ? (
+                            <span
+                              className="block text-xs font-normal text-text-muted"
+                              data-testid={`unassigned-secondary-${item.canvasUserId}`}
+                            >
+                              {secondaryLabel}
+                            </span>
+                          ) : null}
                         </td>
                         <td data-label="Estado">
                           <StatusChip variant="warning" data-testid={`unassigned-status-${item.canvasUserId}`}>
@@ -912,16 +999,40 @@ export function AsociarPageClient({
                   </tr>
                 </thead>
                 <tbody data-testid="assigned-body">
-                  {assignedRows.map((item) => (
+                  {assignedRows.map((item) => {
+                    // Same primary/secondary label rule as the
+                    // unassigned row: the SIS matrícula becomes the
+                    // primary label when the Canvas full name is
+                    // missing, and rides underneath when the name
+                    // is present.
+                    const primaryLabel = matriculaLabel(item);
+                    const secondaryLabel =
+                      item.fullName && item.sisId
+                        ? `Matrícula ${item.sisId}`
+                        : !item.fullName && item.email
+                          ? item.email
+                          : item.fullName
+                            ? item.email
+                            : null;
+                    return (
                     <tr
                       key={item.canvasUserId}
                       data-testid={`assigned-row-${item.canvasUserId}`}
                     >
-                      <td className="data-table__id" data-label="Matrícula">
-                        {item.fullName}
-                        <span className="block text-xs font-normal text-text-muted">
-                          {item.email}
-                        </span>
+                      <td
+                        className="data-table__id"
+                        data-label="Matrícula"
+                        data-testid={`assigned-matricula-${item.canvasUserId}`}
+                      >
+                        {primaryLabel}
+                        {secondaryLabel ? (
+                          <span
+                            className="block text-xs font-normal text-text-muted"
+                            data-testid={`assigned-secondary-${item.canvasUserId}`}
+                          >
+                            {secondaryLabel}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="data-table__credential" data-label="Marbete">
                         {item.marbete ? (
@@ -949,11 +1060,11 @@ export function AsociarPageClient({
                         {item.marbete?.assignedBy ?? '—'}
                       </td>
                       <td className="assignment-row__action" data-label="Acción">
-                        <div className="admin-actions" aria-label={`Acciones para ${item.fullName}`}>
+                        <div className="admin-actions" aria-label={`Acciones para ${primaryLabel}`}>
                           <button
                             className="admin-action admin-action--reveal"
                             type="button"
-                            aria-label={`Revelar número completo de ${item.fullName}`}
+                            aria-label={`Revelar número completo de ${primaryLabel}`}
                             data-testid={`assigned-reveal-${item.canvasUserId}`}
                             disabled={!canWrite || !item.marbete}
                             onClick={() => openReveal(item)}
@@ -964,7 +1075,7 @@ export function AsociarPageClient({
                           <button
                             className="admin-action admin-action--danger"
                             type="button"
-                            aria-label={`Desasignar marbete de ${item.fullName}`}
+                            aria-label={`Desasignar marbete de ${primaryLabel}`}
                             data-testid={`assigned-unassign-${item.canvasUserId}`}
                             disabled={!canWrite || !item.marbete}
                             onClick={() => openUnassign(item)}
@@ -975,7 +1086,8 @@ export function AsociarPageClient({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

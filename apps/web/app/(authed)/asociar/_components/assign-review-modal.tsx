@@ -22,11 +22,15 @@ export interface AssignReviewModalProps {
   /**
    * The matrículas to assign, in display order. The modal builds its
    * review Map from `canvasUserId` so the same data drives the
-   * confirmation payload.
+   * confirmation payload. `fullName` and `sisId` are nullable to match
+   * the MatriculaListItem wire contract (the 997/999 SIS-only rows
+   * have `fullName: null`); the modal renders a matrícula / numeric-id
+   * fallback when both are missing.
    */
   enrollments: ReadonlyArray<{
     canvasUserId: number;
-    fullName: string;
+    fullName: string | null;
+    sisId: string | null;
     marbeteId: number | null;
   }>;
   /** Available marbetes to assign (id + maskedCode). */
@@ -92,6 +96,20 @@ export function AssignReviewModal({
     // grant.refresh is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, enrollments]);
+
+  /**
+   * Human label for the review row. Mirrors the page-level
+   * `matriculaLabel` helper (Canvas name → SIS matrícula → numeric
+   * id) so the operator sees the same identifier in the review list
+   * as in the table. Inline copy because the modal is the only
+   * consumer that needs the per-row `sisId`.
+   */
+  function enrollmentLabel(canvasUserId: number): string {
+    const e = enrollments.find((x) => x.canvasUserId === canvasUserId);
+    if (e?.fullName && e.fullName.length > 0) return e.fullName;
+    if (e?.sisId && e.sisId.length > 0) return e.sisId;
+    return `Matrícula ${canvasUserId}`;
+  }
 
   const grantActive = grant.status?.active === true;
 
@@ -230,10 +248,7 @@ export function AssignReviewModal({
               <span>Marbete propuesto</span>
             </div>
             {Array.from(review.entries()).map(([canvasUserId, marbeteId]) => {
-              const enrollment = enrollments.find(
-                (e) => e.canvasUserId === canvasUserId,
-              );
-              const fullName = enrollment?.fullName ?? `Matrícula ${canvasUserId}`;
+              const fullName = enrollmentLabel(canvasUserId);
               const label =
                 typeof marbeteId === 'number'
                   ? (labelById.get(marbeteId) ?? 'Sin disponibilidad')
