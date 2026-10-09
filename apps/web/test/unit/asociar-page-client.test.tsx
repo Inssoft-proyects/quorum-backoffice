@@ -121,6 +121,7 @@ function installFetchMock(handlers: FetchHandlers = {}): {
   syncRequests: number;
   listRequests: number;
   countersRequests: number;
+  observedListStatuses: string[];
 } {
   const counts = {
     grantRequests: 0,
@@ -129,6 +130,7 @@ function installFetchMock(handlers: FetchHandlers = {}): {
     syncRequests: 0,
     listRequests: 0,
     countersRequests: 0,
+    observedListStatuses: [] as string[],
   };
   (globalThis as { fetch: typeof fetch }).fetch = (async (
     input: RequestInfo | URL,
@@ -210,6 +212,7 @@ function installFetchMock(handlers: FetchHandlers = {}): {
       counts.listRequests += 1;
       const params = new URL(url).searchParams;
       const status = (params.get('status') ?? 'any') as ListMatriculasStatus;
+      counts.observedListStatuses.push(status);
       const items =
         status === 'assigned'
           ? (handlers.assigned ?? defaultAssigned())
@@ -570,6 +573,103 @@ describe('AsociarPageClient', () => {
     await user.click(screen.getByTestId('app-alert-close'));
     expect(screen.getByTestId('app-alert-success')).toHaveAttribute('hidden');
     void counts; // ensure refetch counters are present in the mock
+  });
+
+  /**
+   * Regression (commit de30f4d): `setActiveTabSync` used to only
+   * flip the active-tab state and never fetch the tab's data. The
+   * server component pre-fetches only the initial status, so
+   * clicking the "Asignados" tab rendered the empty state
+   * ("No hay matrículas asignadas") even when the API returned
+   * rows. The fix calls `loadTabItems(tab)` from the tab switch,
+   * which issues `listMatriculas({ status: tab, isActive: 'true',
+   * limit: 200, offset: 0 })` and stores the result.
+   *
+   * This test pins the contract end-to-end:
+   *   1. Render with `initialStatus="unassigned"` and NO assigned
+   *      rows preloaded (the relevant pre-state for the bug).
+   *   2. Click the "Asignados" tab.
+   *   3. The fetch mock MUST observe a `status=assigned` request.
+   *   4. The returned assigned row is rendered in the panel
+   *      (the row cell carries the row's `sisId`).
+   *   5. The "No hay matrículas asignadas" empty state is NOT
+   *      shown — the bug rendered it because the tab was never
+   *      fed.
+   */
+  it('regression: clicking the "Asignados" tab loads the assigned rows (P1 fix verification)', async () => {
+    const assignedFixture: MatriculaListItem[] = [
+      makeMatricula(7001, {
+        fullName: 'Lucia Pérez',
+        email: 'lucia@example.com',
+        sisId: 'LCPRZ1',
+        marbete: {
+          id: 99,
+          publicUid: 'm-LCPRZ1',
+          maskedCode: '1***LC',
+          status: 'active',
+          assignedAt: '2024-09-12T10:00:00Z',
+          assignedBy: 'admin@quorum.local',
+        },
+      }),
+      makeMatricula(7002, {
+        fullName: 'Mario Soto',
+        email: 'mario@example.com',
+        sisId: 'MRSOT2',
+        marbete: {
+          id: 100,
+          publicUid: 'm-MRSOT2',
+          maskedCode: '1***MR',
+          status: 'active',
+          assignedAt: '2024-09-13T11:00:00Z',
+          assignedBy: 'operator@quorum.local',
+        },
+      }),
+    ];
+    const counts = installFetchMock({ assigned: assignedFixture });
+    const user = userEvent.setup();
+    render(
+      <AsociarPageClient
+        initialMatriculas={defaultUnassigned()}
+        initialCounters={baseCounters}
+        initialAvailableMarbetes={defaultAvailable()}
+        initialStatus="unassigned"
+        initialSearch=""
+        userRole="admin"
+      />,
+    );
+
+    // Pre-state guard: the assigned tab is not yet active and no
+    // assigned list request has been issued.
+    expect(screen.getByTestId('tab-assigned')).toHaveAttribute('aria-selected', 'false');
+    expect(counts.observedListStatuses).not.toContain('assigned');
+
+    // Action under test: click the "Asignados" tab.
+    await user.click(screen.getByTestId('tab-assigned'));
+
+    // (3) The fetch mock must observe a status=assigned request.
+    await waitFor(() => {
+      expect(counts.observedListStatuses).toContain('assigned');
+    });
+
+    // (4) The returned assigned rows are rendered in the panel —
+    // at least one cell with `assigned-matricula-<canvasUserId>`
+    // showing the row's `sisId`. The cell shows the SIS as a
+    // secondary line ("Matrícula LCPRZ1") when the Canvas name is
+    // present, so the assertion is the substring "LCPRZ1".
+    const rowCell = await screen.findByTestId('assigned-matricula-7001');
+    expect(rowCell).toHaveTextContent('LCPRZ1');
+    expect(
+      screen.getByTestId('assigned-matricula-7002'),
+    ).toHaveTextContent('MRSOT2');
+
+    // (5) The "No hay matrículas asignadas" empty state must NOT
+    // be shown — the bug rendered it because the tab was never
+    // fed. We assert via the canonical testid and the exact copy
+    // to keep the regression intent obvious to a reader.
+    expect(screen.queryByTestId('assigned-empty')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/No hay matrículas asignadas/),
+    ).not.toBeInTheDocument();
   });
 
   /**
