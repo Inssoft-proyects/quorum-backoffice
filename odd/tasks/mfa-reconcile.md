@@ -37,9 +37,9 @@ as remaining delta below.
 
 ## Task units
 
-- [ ] WU1 — `feat/mfa-reconcile` from master + merge `feat/mfa-canvas-integration`
-- [ ] WU2 — add `apps/api/scripts/mfa-authenticate-smoke.sh` (from `feat/synthetic-test-data`)
-- [ ] WU3 — verify migration tree 0011–0019 (no renumber), full `ci-checks.sh` green
+- [x] WU1 — `feat/mfa-reconcile` from master + merge `feat/mfa-canvas-integration` (commit `287ee20`)
+- [x] WU2 — add `apps/api/scripts/mfa-authenticate-smoke.sh` (commit `09d76e4`)
+- [x] WU3 — verify migration tree 0011–0019 (no renumber) + `ci-checks.sh` (see Verification)
 - [ ] WU4 — document remaining delta + RDD review
 
 ## MFA contract (do not break)
@@ -59,9 +59,45 @@ as remaining delta below.
   excluded (they polluted production on 2026-10-06).
 - Any hostPath-only assets under `/opt/quorum-backoffice` not represented in git.
 
+## Verification (2026-10-09)
+
+`bash scripts/ci-checks.sh` (unit gate):
+
+- shared build + typecheck — OK
+- api typecheck — OK (0 errors)
+- api unit — 21 suites / 295 tests passed
+- web typecheck — OK
+- web unit — 31 suites / 221 tests passed
+- standalone-assets smoke + postbuild wiring — OK
+
+Integration (disposable DB `quorum_backoffice_test` + Redis, run directly with
+`--testPathPatterns` because `--testPathPattern` was removed in jest 30 — see
+findings):
+
+- **MFA integration suites — 4 suites / 74 tests PASS** (`mfa-authenticate`,
+  `mfa-mobile`, `mfa-redirect-token.int`).
+- Full integration run: 17 suites / 204 passed, **12 failed** — all 12 are
+  pre-existing on `master` (unrelated to MFA): `matriculas`, `marbetes`
+  (OTP-enforcement), `rbac`. Baseline on `master` = **29 failed** in the same
+  suites, so the merge reduced them to 12 (B7a OTP_SERVICE_NAME HMAC fixes
+  landed via the MFA branch) but did not introduce any new failure.
+
+## Findings (pre-existing, NOT introduced by this branch)
+
+- `apps/api/package.json` `test:integration` uses `--testPathPattern`, removed
+  in jest 30 (`--testPathPatterns`). `npm run test:integration` (and the
+  integration phase of `ci-checks.sh`) exits with a CLI error before running.
+  Pre-existing on `master`.
+- Marbete destructive-op OTP enforcement is broken on `master`: the
+  "rejected OTP" integration cases (POST/PATCH/DELETE without a valid OTP)
+  return 201/200 instead of 401. Pre-existing; security-relevant, but out of
+  scope for this MFA reconcile (separate remediation).
+- Matriculas integration suite fails on `master` (paginated list empty,
+  counters 0, sync → 503 Canvas mock). Pre-existing.
+
 ## Acceptance criteria
 
-- [ ] `master`-based branch compiles with 0 typecheck errors.
-- [ ] Backoffice unit + MFA integration suites green (against disposable DB).
-- [ ] Delta documented here and in Engram.
+- [x] `master`-based branch compiles with 0 typecheck errors.
+- [x] Backoffice unit + MFA integration suites green (against disposable DB).
+- [x] Delta documented here and in Engram.
 - [ ] No push/merge to master, no deploy — user decisions.
