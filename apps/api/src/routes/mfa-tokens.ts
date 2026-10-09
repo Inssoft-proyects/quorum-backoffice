@@ -142,11 +142,19 @@ const MfaConsumeRequest = z.object({
  * doc narrows this to `student` to match the actual service
  * return type, surfacing the pre-existing drift as a typed
  * property of the generated spec.
+ *
+ * `student_name` and `student_email` are nullable since
+ * migration 0020_students_sis_id.sql: a synthetic high-privacy
+ * students row carries no PII, so the redirect-token payload
+ * surfaces `null` for those fields. The MFA chain still
+ * requires an active student record (the route returns 401
+ * when the row is missing), so the loosen here is purely a
+ * wire-level forward-compat change.
  */
 const MfaConsumeResponse = z.object({
   canvas_user_id: z.number().int().positive(),
-  student_name: z.string().min(1),
-  student_email: z.string().email(),
+  student_name: z.string().nullable(),
+  student_email: z.string().email().nullable(),
   role: z.literal('student'),
   next_url: z.string().min(1).max(2048),
 });
@@ -275,9 +283,18 @@ export async function registerMfaTokenRoutes(app: FastifyInstance): Promise<void
     // via a small query (no shared helper yet — the M1
     // service keeps this denormalized on the session row
     // by inserting the canvas_user_id directly).
+    //
+    // Since migration 0020_students_sis_id.sql, full_name and
+    // email are nullable (synthetic high-privacy rows have no
+    // PII). The studentRow return type is widened accordingly;
+    // the redirect-token payload carries `null` for those fields
+    // when the row is a synthetic one. The M1 service still
+    // rejects the MFA flow when the student is missing entirely,
+    // so the existing "student record is missing" 401 path
+    // stays unchanged.
     const studentRow = await (
       app.pg as unknown as import('pg').Pool
-    ).query<{ full_name: string; email: string }>(
+    ).query<{ full_name: string | null; email: string | null }>(
       `SELECT full_name, email
          FROM students_cache
         WHERE canvas_user_id = $1`,
