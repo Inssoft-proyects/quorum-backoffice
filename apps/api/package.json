@@ -16,7 +16,7 @@
     "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.{ts,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,json}\" \"test/**/*.{ts,json}\"",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathIgnorePatterns=integration",
-    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathPattern=integration",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --runInBand --testPathPatterns=integration",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --coverage --runInBand",
     "migrate": "tsx scripts/migrate.ts",
     "seed:e2e": "tsx scripts/seed-e2e-users.ts",
