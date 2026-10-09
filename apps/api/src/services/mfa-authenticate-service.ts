@@ -112,11 +112,18 @@ export interface MfaAuthenticateMeta {
  * `sessionToken` is the opaque token stored in the cookie and
  * returned in the response body; the JSON channel (M5) can use
  * the body value directly without a cookie store.
+ *
+ * Since migration 0020_students_sis_id.sql: `studentName` and
+ * `studentEmail` are nullable. A synthetic high-privacy students
+ * row (sis_id + canvas_user_id only) cannot satisfy the MFA
+ * flow today (the route layer rejects missing students before
+ * the policy runs), but the DTO surface is now loose enough
+ * to host a future "SIS-only" flow without a breaking change.
  */
 export interface MfaAuthenticateResult {
   canvasUserId: number;
-  studentName: string;
-  studentEmail: string;
+  studentName: string | null;
+  studentEmail: string | null;
   sessionId: string;
   sessionToken: string;
   expiresAt: Date;
