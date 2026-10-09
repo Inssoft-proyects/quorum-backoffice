@@ -100,6 +100,7 @@ describe('marbetes routes with mocked OTP happy path (integration, real PG)', ()
       DROP TYPE IF EXISTS audit_action CASCADE;
       DROP TYPE IF EXISTS dispositivo_status CASCADE;
       DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS otp_grants CASCADE;
       DROP TABLE IF EXISTS _migrations CASCADE;
     `);
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
@@ -243,6 +244,7 @@ describe('assignment by canvas_user_id (WU8b1)', () => {
       DROP TYPE IF EXISTS audit_action CASCADE;
       DROP TYPE IF EXISTS dispositivo_status CASCADE;
       DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS otp_grants CASCADE;
       DROP TABLE IF EXISTS _migrations CASCADE;
     `);
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
@@ -422,6 +424,7 @@ describe('marbetes routes with rejected OTP (integration)', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
+    await pool.query('DELETE FROM otp_grants');
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
     app = await buildApp({ config: TEST_ENV });
     const fetchMock = makeOtpFetch(() => ({ status: 401, body: { error: 'invalid' } }));
@@ -504,6 +507,7 @@ describe('reveal endpoint (WU #1)', () => {
       DROP TYPE IF EXISTS audit_action CASCADE;
       DROP TYPE IF EXISTS dispositivo_status CASCADE;
       DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS otp_grants CASCADE;
       DROP TABLE IF EXISTS _migrations CASCADE;
     `);
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
@@ -711,6 +715,7 @@ describe('bulk create (WU #3)', () => {
       DROP TYPE IF EXISTS audit_action CASCADE;
       DROP TYPE IF EXISTS dispositivo_status CASCADE;
       DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS otp_grants CASCADE;
       DROP TABLE IF EXISTS _migrations CASCADE;
     `);
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
@@ -855,7 +860,7 @@ describe('bulk create (WU #3)', () => {
     expect(body.created).toBe(1);
     expect(body.failed).toBe(1);
     expect(body.auditId).toBeNull();
-    expect(body.successes[0]?.publicUid).toMatch(/^m-/);
+    expect(body.successes[0]?.publicUid).toBe('BULK-DUPE-001');
     expect(body.failures[0]?.reason).toBe('duplicate in batch');
     expect(body.failures[0]?.code).toBe('BULK-DUPE-001');
 
@@ -921,6 +926,7 @@ describe('bulk create (WU #3)', () => {
   });
 
   it('T5: POST /bulk returns 401 for invalid OTP and persists nothing', async () => {
+    await pool.query('DELETE FROM otp_grants');
     const before = await pool.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM marbetes`,
     );

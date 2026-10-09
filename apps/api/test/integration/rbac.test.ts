@@ -149,6 +149,7 @@ describe('RBAC (integration, real PG + Redis)', () => {
       DROP TYPE IF EXISTS audit_action CASCADE;
       DROP TYPE IF EXISTS dispositivo_status CASCADE;
       DROP TYPE IF EXISTS marbete_status CASCADE;
+      DROP TABLE IF EXISTS otp_grants CASCADE;
       DROP TABLE IF EXISTS _migrations CASCADE;
     `);
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
@@ -304,6 +305,7 @@ describe('RBAC (integration, real PG + Redis)', () => {
     });
 
     it('POST /api/v1/marbetes without OTP returns 401 (OTP still required)', async () => {
+      await pool.query('DELETE FROM otp_grants');
       const r = await app.inject({
         method: 'POST',
         url: '/api/v1/marbetes',
