@@ -53,6 +53,23 @@ describe('MarbetesTable', () => {
     expect(screen.getByTestId('marbete-row-1')).toBeInTheDocument();
   });
 
+  it('shows the revealed full code when a row has been revealed', () => {
+    render(
+      <MarbetesTable
+        items={sample}
+        userRole="admin"
+        revealedCodes={{ 1: 'VALIDO-2609982468' }}
+        onDelete={() => {}}
+        onEdit={() => {}}
+      />,
+    );
+    // Row 1's masked code is replaced by the revealed full code.
+    expect(screen.getByText('VALIDO-2609982468')).toBeInTheDocument();
+    expect(screen.queryByText('1***23')).toBeNull();
+    // Row 2 remains masked.
+    expect(screen.getByText('9***76')).toBeInTheDocument();
+  });
+
   it('shows delete button for admin', () => {
     render(<MarbetesTable items={sample} userRole="admin" onDelete={() => {}} onEdit={() => {}} />);
     expect(screen.getByTestId('delete-1')).toBeInTheDocument();

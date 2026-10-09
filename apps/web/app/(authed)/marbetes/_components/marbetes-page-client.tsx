@@ -169,6 +169,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   }
 
   const [lastRevealedCode, setLastRevealedCode] = useState<string | null>(null);
+  const [revealedCodes, setRevealedCodes] = useState<Record<number, string>>({});
   const [infoBanner, setInfoBanner] = useState<InfoBanner | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -200,6 +201,9 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   }, []);
 
   const handleRevealed = (fullCode: string) => {
+    if (revealing) {
+      setRevealedCodes((prev) => ({ ...prev, [revealing.id]: fullCode }));
+    }
     setLastRevealedCode(fullCode);
     refresh();
   };
@@ -326,6 +330,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
           items={pagedItems}
           userRole={userRole}
           now={now}
+          revealedCodes={revealedCodes}
           onDelete={(m) => setRevoking(m)}
           onEdit={(m) => setRevealing(m)}
         />

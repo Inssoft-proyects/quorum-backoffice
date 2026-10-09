@@ -12,6 +12,8 @@ interface Props {
   onDelete: (item: MarbeteDetailResponse) => void;
   onEdit: (item: MarbeteDetailResponse) => void;
   isPending?: boolean;
+  /** marbeteId → full code for rows the operator has just revealed. */
+  revealedCodes?: Record<number, string>;
   /** Forces the validity chip rule independent of the current date (used in tests). */
   now?: Date;
 }
@@ -69,7 +71,7 @@ function statusChip(status: MarbeteDetailResponse['status'], assignedStudentId: 
  * sortable columns (No. Marbete, Fecha de carga, Vigencia). Cycles
  * through none → asc → desc as in the maquette.
  */
-export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, now }: Props) {
+export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, revealedCodes, now }: Props) {
   const canManage = hasAtLeastRole(userRole, 'admin');
   const effectiveNow = now ?? new Date();
   const [sort, setSort] = useState<SortState | null>(null);
@@ -164,7 +166,7 @@ export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, no
               return (
                 <tr key={m.id} data-testid={`marbete-row-${m.id}`}>
                   <td data-label="No. Marbete" className="data-table__credential">
-                    <MaskedNumber value={m.maskedCode} />
+                    <MaskedNumber value={m.maskedCode} revealed={revealedCodes?.[m.id]} />
                   </td>
                   <td data-label="Estado">
                     <StatusChip variant={chip.variant}>{chip.label}</StatusChip>
