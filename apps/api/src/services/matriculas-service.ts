@@ -674,8 +674,14 @@ export class MatriculasService {
       : null;
     return {
       canvasUserId: row.canvas_user_id,
+      // The wire contract is nullable on `fullName` and `email` (the
+      // SIS-only rows have `null` on the Canvas side). We forward the
+      // DB values verbatim — no `?? ''` coercion — so the UI can
+      // distinguish "Canvas published an empty string" (rare) from
+      // "Canvas did not publish a name at all" (the 997/999 case).
       fullName: row.full_name,
       email: row.email,
+      sisId: row.sis_id,
       isActive: row.is_active,
       registeredAt: row.last_synced_at.toISOString(),
       marbete,

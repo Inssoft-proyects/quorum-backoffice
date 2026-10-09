@@ -118,9 +118,9 @@ Backoffice service.
 6. Smoke check:
    ```bash
    curl -sk -o /dev/null -w 'login HTTP %{http_code}\n' \
-     https://backoffice.quorum.asistentepro.mx/login
+     https://backoffice.inecuni.com/login
    curl -sk -o /dev/null -w 'marbetes HTTP %{http_code}\n' \
-     https://backoffice.quorum.asistentepro.mx/backoffice/marbetes
+     https://backoffice.inecuni.com/backoffice/marbetes
    ```
 
    Para CI / runbooks, prefer `scripts/smoke-post-deploy.sh` (F6) — wraps
@@ -133,7 +133,7 @@ Backoffice service.
      bash scripts/smoke-post-deploy.sh
    ```
 
-   Default target is `https://backoffice.quorum.asistentepro.mx`; override
+   Default target is `https://backoffice.inecuni.com`; override
    with `SMOKE_BASE_URL=…` for staging. The script exits non-zero on any
    mismatch and prints a `FAIL — …` summary line.
 
@@ -194,12 +194,12 @@ pixel a pixel de las 4 pantallas authed contra el canon HTML en
 ```bash
 cd apps/web
 E2E_ADMIN_USERNAME=admin \
-PARITY_PRODUCTION_SID=$(curl -sk -i -X POST https://backoffice.quorum.asistentepro.mx/api/v1/auth/login \
+PARITY_PRODUCTION_SID=$(curl -sk -i -X POST https://backoffice.inecuni.com/api/v1/auth/login \
   -H 'content-type: application/json' \
   -d "{\"username\":\"admin\",\"otp\":\"$(./scripts/get-admin-otp.sh)\"}" \
   | grep -i 'set-cookie:' | head -1 | sed 's/.*__Host-sid=\([^;]*\).*/\1/') \
-PARITY_PRODUCTION_DOMAIN=backoffice.quorum.asistentepro.mx \
-PARITY_BASE_URL=https://backoffice.quorum.asistentepro.mx \
+PARITY_PRODUCTION_DOMAIN=backoffice.inecuni.com \
+PARITY_BASE_URL=https://backoffice.inecuni.com \
 PARITY_THRESHOLD=95 \
 npx playwright test --config=e2e/lookfeel/playwright.config.ts \
   e2e/lookfeel/12-maquette-parity.spec.ts --reporter=line
@@ -384,7 +384,19 @@ cd apps/api && npm run seed:e2e
 This upserts the three default users — `admin@quorum.local`,
 `operator@quorum.local`, `auditor@quorum.local` — with passwords
 `admin1234`, `operator1234`, `auditor1234` (matching the defaults in
-`apps/web/e2e/auth.spec.ts`). Each user is created if missing or
+`apps/web/e2e/auth.spec.ts`).
+
+> **E2E-only fixture values.** `admin1234` / `operator1234` /
+> `auditor1234` are test fixture values hard-coded in
+> `apps/api/scripts/seed-e2e-users.ts` and only exist in the E2E /
+> dev database. They are **not** used to seed production: the
+> production bootstrap is a separate SQL insert with a freshly
+> generated bcrypt hash (see §"Bootstrap admin user (production)"
+> above), and the login flow is OTP-only
+> (`POST /api/v1/auth/login` with `{ username, otp }` — it never
+> reads `users.password_hash`).
+
+Each user is created if missing or
 refreshed with a fresh bcrypt hash if already present.
 
 This script is idempotent — running it multiple times upserts users
@@ -453,6 +465,35 @@ For VPS deployment with auto-TLS via Let's Encrypt, use the vhost in
 
 1. Install nginx + certbot (`apt install nginx certbot python3-certbot-nginx`).
 2. Build the app (`npm install && npm run build --workspaces --if-present`).
+
+   > **Standalone assets (build gap).** `apps/web` uses Next.js
+   > `output: 'standalone'`. `next build` writes the client chunks to the
+   > top-level `.next/static/` and the public assets to `public/`, but
+   > these are NOT copied into the standalone server directory on their
+   > own — so every rebuild would serve SSR HTML that 404s its chunks
+   > and breaks login. The `postbuild` hook in `apps/web/package.json`
+   > runs `scripts/copy-web-standalone-assets.sh` automatically after
+   > every build, which copies them into the standalone tree at:
+   >
+   > ```text
+   > apps/web/.next/static/...   ->   apps/web/.next/standalone/apps/web/.next/static/...
+   > apps/web/public/...         ->   apps/web/.next/standalone/apps/web/public/...
+   > ```
+   >
+   > Note that the `static` tree is mirrored under a nested `.next/`
+   > inside the standalone output (Next.js looks for it at that path at
+   > runtime), while `public/` sits directly under `standalone/apps/web/`.
+   > A manual equivalent (GNU coreutils; `cp -rT` keeps re-runs
+   > idempotent — plain `cp -r` would nest into `static/static`):
+   >
+   > ```bash
+   > cd apps/web
+   > cp -rT .next/static .next/standalone/apps/web/.next/static
+   > cp -rT public        .next/standalone/apps/web/public
+   > ```
+   >
+   > If you build outside `npm` (raw `next build`), run
+   > `bash scripts/copy-web-standalone-assets.sh` afterwards.
 3. Drop env files into `/etc/quorum-backoffice/` (api.env + web.env).
 4. Enable the systemd units (templates in `infra/nginx/README.md` §5).
 5. Symlink `infra/nginx/quorum.asistentepro.mx.conf` into `/etc/nginx/sites-enabled/`.

@@ -14,17 +14,17 @@ and the audit trail of every privileged action.
 
 | Sistema | Workspace / repo | URL pública | Acceso (rol / método) | Descripción |
 |---|---|---|---|---|
-| **Quorum Backoffice** (este repo) | `/planQuorum/dev/quorum-backoffice/` | `https://backoffice.quorum.asistentepro.mx/login` | Username (`admin` / `auditor` / `operator`) + OTP pre-issued vía HMAC contra `quorum-otp` (ver [§ Acceso seed](#acceso-seed-backoffice)) | Backoffice administrativo. Marbetes QR, dispositivos autorizados, audit log. **Polish WU v4** agregó bulk upload (`POST /api/v1/marbetes/bulk`); **Polish WU v5** rediseñó `/audit` per maqueta InecConecta; **`feature/backoffice-maquette-parity`** (merged `c85bb41`) alineó las 4 pantallas authed a la maqueta Inec con paridad 97.11% hybrid. |
-| Quorum Backoffice API | (mismo workspace) | `https://backoffice.quorum.asistentepro.mx/api/v1/...` | Cookie `__Host-sid` (admin / auditor / operator) + header `X-OTP-Code` en operaciones destructivas | API REST Fastify 5 + TS. Health: `GET /healthz`, ready: `GET /readyz`. Login es `POST /api/v1/auth/login` con `{username, otp}` (HMAC contra `quorum-otp`). |
-| Quorum Meet (Jitsi) | `/planQuorum/dev/quorum-jitsi/` | `https://quorum.asistentepro.mx/` | Libre (autoregistro) | Videoconferencia WebRTC. Jicofo + JVB + Prosody XMPP + Jibri recording. |
-| Quorum LMS (Canvas) | `/planQuorum/dev/quorum-canvas/` | `https://canvas.asistentepro.mx/` (planeado; namespace k3s `quorum-lms` vacío) | LTI 1.3 launch desde Jitsi | LMS aislado de portal-api. LMS-side scripts (reconcile roster, one-shot import, force-sync) corren operator-side. |
+| **Quorum Backoffice** (este repo) | `/planQuorum/dev/quorum-backoffice/` | `https://backoffice.inecuni.com/login` | Username (`admin` / `auditor` / `operator`) + OTP pre-issued vía HMAC contra `quorum-otp` (ver [§ Acceso seed](#acceso-seed-backoffice)) | Backoffice administrativo. Marbetes QR, dispositivos autorizados, audit log. **Polish WU v4** agregó bulk upload (`POST /api/v1/marbetes/bulk`); **Polish WU v5** rediseñó `/audit` per maqueta InecConecta; **`feature/backoffice-maquette-parity`** (merged `c85bb41`) alineó las 4 pantallas authed a la maqueta Inec con paridad 97.11% hybrid. |
+| Quorum Backoffice API | (mismo workspace) | `https://backoffice.inecuni.com/api/v1/...` | Cookie `__Host-sid` (admin / auditor / operator) + header `X-OTP-Code` en operaciones destructivas | API REST Fastify 5 + TS. Health: `GET /healthz`, ready: `GET /readyz`. Login es `POST /api/v1/auth/login` con `{username, otp}` (HMAC contra `quorum-otp`). |
+| Quorum Meet (Jitsi) | `/planQuorum/dev/quorum-jitsi/` | `https://quorum.inecuni.com/` | Libre (autoregistro) | Videoconferencia WebRTC. Jicofo + JVB + Prosody XMPP + Jibri recording. |
+| Quorum LMS (Canvas) | `/planQuorum/dev/quorum-canvas/` | `https://lms.inecuni.com/` | LTI 1.3 launch desde Jitsi | LMS aislado de portal-api. LMS-side scripts (reconcile roster, one-shot import, force-sync) corren operator-side. |
 | Quorum OTP | `/planQuorum/dev/quorum-otp/` | `http://127.0.0.1:8080/ui/` (dev) / `OTP_SERVICE_URL` (prod, ver configMap) | `E2E_OTP_*` env vars en deployment | Servicio OTP para operaciones destructivas. **En staging actual está en `http://placeholder.invalid/v1`** (modo bypass — destructive ops devuelven 401 `otp_required` con el flag `AUTH_OTP_REQUIRED` activo). |
 | Quorum Portal (portal-api) | `/planQuorum/dev/quorum/` | (interno, jitsi-side via LTI) | LTI 1.3 OIDC `id_token` de Canvas | Fastify + `ltijs` valida el OIDC; anti-replay vía `portal-redis`. |
-| Quorum OpenBao | (en `quorum/`) | `https://openbao.quorum.asistentepro.mx/` | Token root + AppRole | Secrets management. Reemplaza a Vault en la nueva arquitectura. |
-| Quorum Prometheus | (en `quorum/`) | `https://prometheus.quorum.asistentepro.mx/` | basic-auth (admin / admin) | Observabilidad (métricas). Scrapea `/metrics` del backoffice + jitsi + portal-api. |
+| Quorum OpenBao | (en `quorum/`) | `https://secret.inecuni.com/` | Token root + AppRole | Secrets management. Reemplaza a Vault en la nueva arquitectura. |
+| Quorum Prometheus | (en `quorum/`) | `https://observability.inecuni.com/` | basic-auth (usuario `promadmin`; credencial gestionada fuera del repo) | Observabilidad (métricas). Scrapea `/metrics` del backoffice + jitsi + portal-api. |
 | Quorum Storage (MinIO) | (en `quorum/`) | interno (S3-compatible) | service-account IAM | Almacenamiento de objetos (recordings, exports). |
 | Quorum DR | (en `quorum/`) | interno (scripts operator-side) | SSH bastion + backups cifrados | Disaster recovery scripts. Fuera del runtime path. |
-| Infra común | — | `quorum.asistentepro.mx` | TLS via Let's Encrypt + certbot; nginx reverse proxy → k3s pods via `hostNetwork=true` | Reverse proxy unificado; el cluster k3s single-node `quorum` corre los pods en `216.225.193.226`. |
+| Infra común | — | nginx del host `quorum` (216.225.193.226) | TLS via Let's Encrypt + certbot; nginx reverse proxy → k3s pods via `hostNetwork=true` | Reverse proxy unificado; el cluster k3s single-node `quorum` corre los pods en `216.225.193.226`. |
 
 > **Nota**: cada workspace es un repo separado con su propio `package.json`
 > + workspaces npm. Deploy per-namespace k3s (`quorum-backoffice`,
@@ -33,15 +33,27 @@ and the audit trail of every privileged action.
 
 ## Acceso seed (Backoffice)
 
-Usuarios seeded en la DB `quorum_backoffice` (production) vía
-`apps/api/scripts/seed-e2e-users.ts`. La password se override por env vars
-(`E2E_{ADMIN,AUDITOR,OPERATOR}_{EMAIL,PASSWORD}`).
+El script `apps/api/scripts/seed-e2e-users.ts` es un **fixture de E2E**
+únicamente: se invoca manualmente con `npm run seed:e2e` (desde
+`apps/api`) y **no** corre como parte del deploy ni del seed de
+producción. La DB `quorum_backoffice` de producción se inicializa vía
+migraciones + el procedimiento "Bootstrap admin user (production)" del
+`RUNBOOK.md`. Cada campo del fixture es override-able por env vars
+(`E2E_{ADMIN,AUDITOR,OPERATOR}_{EMAIL,USERNAME,PASSWORD}`).
 
-| Rol | Email | Password (production seed) | Rutas accesibles |
+| Rol | Email (default) | Username (default) | Rutas accesibles |
 |---|---|---|---|
-| `admin` | `admin@quorum.local` | `admin1234` | dashboard, marbetes, dispositivos, audit |
-| `auditor` | `auditor@quorum.local` | `auditor1234` | dashboard, marbetes, dispositivos, audit (read-only) |
-| `operator` | `operator@quorum.local` | `operator1234` | dashboard, marbetes, dispositivos (sin audit) |
+| `admin` | `admin@quorum.local` | `admin` | dashboard, marbetes, dispositivos, audit |
+| `auditor` | `auditor@quorum.local` | `auditor` | dashboard, marbetes, dispositivos, audit (read-only) |
+| `operator` | `operator@quorum.local` | `operator` | dashboard, marbetes, dispositivos (sin audit) |
+
+**Login contract (OTP-only)**: `POST /api/v1/auth/login` acepta
+`{ username, otp }` y **nunca** lee `users.password_hash`. El OTP se
+pre-emite vía HMAC contra el servicio sibling `quorum-otp`. La columna
+`password_hash` se conserva en disco por compatibilidad legacy pero
+no participa en el flujo de login — el `admin1234` y demás valores
+del fixture E2E son credenciales de prueba que solo existen en la DB
+de desarrollo/E2E, no en producción.
 
 **OTP**: en staging actual el servicio OTP apunta a `placeholder.invalid`,
 así que las operaciones destructivas (create/update/delete/reveal/bulk)
@@ -54,9 +66,9 @@ local con `AUTH_OTP_REQUIRED=false` (env var) o apuntar a un OTP real
 
 | Recurso | URL / endpoint | Estado |
 |---|---|---|
-| Backoffice Web | `https://quorum.asistentepro.mx/backoffice/login` | ✅ live |
-| Backoffice API healthz | `https://quorum.asistentepro.mx/healthz` | 200 |
-| Backoffice API readyz | `https://quorum.asistentepro.mx/readyz` | 200 |
+| Backoffice Web | `https://backoffice.inecuni.com/backoffice/login` | ✅ live |
+| Backoffice API healthz | `https://backoffice.inecuni.com/healthz` | 200 |
+| Backoffice API readyz | `https://backoffice.inecuni.com/readyz` | 200 |
 | Bulk endpoint | `POST /backoffice/api/v1/marbetes/bulk` | 401 sin auth, 401 `otp_required` sin OTP |
 | Audit endpoint | `GET /backoffice/api/v1/audit?action=...&entityType=...` | auditor+ gated |
 
@@ -67,7 +79,7 @@ Pods (namespace `quorum-backoffice`):
 ```bash
 # Status rápido
 kubectl -n quorum-backoffice get pods
-curl -sS https://quorum.asistentepro.mx/readyz
+curl -sS https://backoffice.inecuni.com/readyz
 ```
 
 ## Deploy
@@ -91,8 +103,8 @@ Release real (single-node k3s cluster `quorum`, namespace `quorum-backoffice`):
    ```
 5. Smoke check:
    ```bash
-   curl -sk -o /dev/null -w 'login HTTP %{http_code}\n' https://backoffice.quorum.asistentepro.mx/login
-   curl -sk -o /dev/null -w 'marbetes HTTP %{http_code}\n' https://backoffice.quorum.asistentepro.mx/backoffice/marbetes
+   curl -sk -o /dev/null -w 'login HTTP %{http_code}\n' https://backoffice.inecuni.com/login
+   curl -sk -o /dev/null -w 'marbetes HTTP %{http_code}\n' https://backoffice.inecuni.com/backoffice/marbetes
    ```
 
 Estado actual del cluster (verificado 2026-09-26):

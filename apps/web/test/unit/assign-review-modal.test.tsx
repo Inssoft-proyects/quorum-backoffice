@@ -46,7 +46,7 @@ describe('AssignReviewModal', () => {
         open
         onOpenChange={jest.fn()}
         enrollments={[
-          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
+          { canvasUserId: 1, fullName: 'Ana', sisId: null, marbeteId: null },
         ]}
         available={[{ id: 10, maskedCode: '3***10' }]}
         availableMarbetesTotal={1}
@@ -65,8 +65,8 @@ describe('AssignReviewModal', () => {
         open
         onOpenChange={jest.fn()}
         enrollments={[
-          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
-          { canvasUserId: 2, fullName: 'Beto', marbeteId: null },
+          { canvasUserId: 1, fullName: 'Ana', sisId: null, marbeteId: null },
+          { canvasUserId: 2, fullName: 'Beto', sisId: null, marbeteId: null },
         ]}
         available={[
           { id: 10, maskedCode: '3***10' },
@@ -89,8 +89,8 @@ describe('AssignReviewModal', () => {
         open
         onOpenChange={jest.fn()}
         enrollments={[
-          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
-          { canvasUserId: 2, fullName: 'Beto', marbeteId: null },
+          { canvasUserId: 1, fullName: 'Ana', sisId: null, marbeteId: null },
+          { canvasUserId: 2, fullName: 'Beto', sisId: null, marbeteId: null },
         ]}
         available={[
           { id: 10, maskedCode: '3***10' },
@@ -118,8 +118,8 @@ describe('AssignReviewModal', () => {
         open
         onOpenChange={jest.fn()}
         enrollments={[
-          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
-          { canvasUserId: 2, fullName: 'Beto', marbeteId: null },
+          { canvasUserId: 1, fullName: 'Ana', sisId: null, marbeteId: null },
+          { canvasUserId: 2, fullName: 'Beto', sisId: null, marbeteId: null },
         ]}
         available={[
           { id: 10, maskedCode: '3***10' },
@@ -147,7 +147,7 @@ describe('AssignReviewModal', () => {
         open
         onOpenChange={jest.fn()}
         enrollments={[
-          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
+          { canvasUserId: 1, fullName: 'Ana', sisId: null, marbeteId: null },
         ]}
         available={[{ id: 10, maskedCode: '3***10' }]}
         availableMarbetesTotal={1}
@@ -168,7 +168,7 @@ describe('AssignReviewModal', () => {
         open
         onOpenChange={jest.fn()}
         enrollments={[
-          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
+          { canvasUserId: 1, fullName: 'Ana', sisId: null, marbeteId: null },
         ]}
         available={[{ id: 10, maskedCode: '3***10' }]}
         availableMarbetesTotal={1}
@@ -209,7 +209,7 @@ describe('AssignReviewModal', () => {
         open
         onOpenChange={jest.fn()}
         enrollments={[
-          { canvasUserId: 1, fullName: 'Ana', marbeteId: null },
+          { canvasUserId: 1, fullName: 'Ana', sisId: null, marbeteId: null },
         ]}
         available={[{ id: 10, maskedCode: '3***10' }]}
         availableMarbetesTotal={1}

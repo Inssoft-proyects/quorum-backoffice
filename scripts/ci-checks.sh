@@ -6,8 +6,13 @@
 #   2. apps/api        — typecheck + unit tests (integration phase is gated
 #                        on a disposable DATABASE_URL_TEST — see below)
 #   3. apps/web        — typecheck + unit tests
-#   5. Optional parity harness pin: export MAQUETTE_DIR before any lookfeel
-#                        work so CI uses the design canon explicitly.
+#   4. web standalone-assets smoke + postbuild wiring assertion
+#                        (guarantees scripts/copy-web-standalone-assets.sh
+#                        is covered by its self-test AND that
+#                        apps/web/package.json wires it as the postbuild
+#                        hook — see scripts/test-copy-web-standalone-assets.sh)
+#   6. Optional lookfeel parity harness pin: export MAQUETTE_DIR before any
+#                        lookfeel work so CI uses the design canon explicitly.
 #
 # Optional phases (off by default — gate them explicitly):
 #   * DATABASE_URL_TEST exported   → adds apps/api/test:integration
@@ -126,7 +131,32 @@ run_step "apps/api" "api unit tests" "npm test"         || exit 1
 run_step "apps/web" "web typecheck" "npm run typecheck" || exit 1
 run_step "apps/web" "web unit tests" "npm test"         || exit 1
 
-# ---- Phase 4 (optional): apps/api integration -------------------------
+# ---- Phase 4: web standalone-assets smoke + postbuild wiring ---------
+
+step_count=$((step_count + 1))
+hdr "[${step_count}] standalone-assets smoke (scripts/test-copy-web-standalone-assets.sh)"
+if bash "${REPO_ROOT}/scripts/test-copy-web-standalone-assets.sh" >/dev/null 2>&1; then
+  record_pass "standalone-assets smoke"
+else
+  record_fail "standalone-assets smoke (scripts/test-copy-web-standalone-assets.sh exited non-zero)"
+  exit 1
+fi
+
+step_count=$((step_count + 1))
+hdr "[${step_count}] postbuild wiring (apps/web/package.json)"
+# Apps/web/package.json must wire its `postbuild` script to
+# scripts/copy-web-standalone-assets.sh so every `next build` ships the
+# static + public assets into the standalone output. A regression here
+# breaks the deployed login (SSR HTML 404s its chunks).
+if grep -Eq '"postbuild"[[:space:]]*:[[:space:]]*"[^"]*copy-web-standalone-assets\.sh' \
+    "${REPO_ROOT}/apps/web/package.json"; then
+  record_pass "postbuild wiring in apps/web/package.json"
+else
+  record_fail "postbuild wiring missing in apps/web/package.json (expected postbuild to invoke copy-web-standalone-assets.sh)"
+  exit 1
+fi
+
+# ---- Phase 5 (optional): apps/api integration -------------------------
 
 if [[ -n "${DATABASE_URL_TEST:-}" ]]; then
   hdr "[+] api integration tests (DATABASE_URL_TEST set)"
@@ -139,7 +169,7 @@ if [[ -n "${DATABASE_URL_TEST:-}" ]]; then
   fi
 fi
 
-# ---- Phase 5 (optional): lookfeel parity harness -----------------------
+# ---- Phase 6 (optional): lookfeel parity harness -----------------------
 
 if [[ "${RUN_PARITY:-0}" == "1" ]]; then
   hdr "[+] lookfeel parity harness (RUN_PARITY=1)"
