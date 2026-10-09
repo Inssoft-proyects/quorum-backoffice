@@ -90,19 +90,19 @@ describe('MarbetesTable', () => {
     expect(container.querySelector('symbol#icon-deactivate')).toBeTruthy();
   });
 
-  it('renders the four sortable canon headers with aria-sort + data-sort-key', () => {
+  it('renders the three sortable canon headers with aria-sort + data-sort-key', () => {
     const { container } = render(
       <MarbetesTable items={sample} userRole="admin" onDelete={() => {}} onEdit={() => {}} />,
     );
     const sortHeaders = container.querySelectorAll('th.sortable-header');
-    expect(sortHeaders.length).toBe(4);
+    expect(sortHeaders.length).toBe(3);
     sortHeaders.forEach((th) => {
       expect(th.getAttribute('aria-sort')).toBe('none');
       expect(th.getAttribute('data-sort-key')).toBeTruthy();
     });
     // Each header should expose a sort-button with the matching
     // data-sort-key and a stable data-testid hook.
-    ['id', 'credential', 'loadDate', 'validity'].forEach((key) => {
+    ['credential', 'loadDate', 'validity'].forEach((key) => {
       expect(screen.getByTestId(`sort-${key}`)).toBeInTheDocument();
     });
   });
@@ -112,18 +112,18 @@ describe('MarbetesTable', () => {
     const { container } = render(
       <MarbetesTable items={sample} userRole="admin" onDelete={() => {}} onEdit={() => {}} />,
     );
-    const idHeader = container.querySelector('th[data-sort-key="id"]') as HTMLElement;
-    const idButton = screen.getByTestId('sort-id');
-    expect(idHeader.getAttribute('aria-sort')).toBe('none');
-    await user.click(idButton);
-    expect(idHeader.getAttribute('aria-sort')).toBe('ascending');
-    await user.click(idButton);
-    expect(idHeader.getAttribute('aria-sort')).toBe('descending');
-    await user.click(idButton);
-    expect(idHeader.getAttribute('aria-sort')).toBe('none');
+    const credHeader = container.querySelector('th[data-sort-key="credential"]') as HTMLElement;
+    const credButton = screen.getByTestId('sort-credential');
+    expect(credHeader.getAttribute('aria-sort')).toBe('none');
+    await user.click(credButton);
+    expect(credHeader.getAttribute('aria-sort')).toBe('ascending');
+    await user.click(credButton);
+    expect(credHeader.getAttribute('aria-sort')).toBe('descending');
+    await user.click(credButton);
+    expect(credHeader.getAttribute('aria-sort')).toBe('none');
   });
 
-  it('sorts rows ascending then descending by ID when the ID header is clicked', async () => {
+  it('sorts rows ascending then descending by No. Marbete when its header is clicked', async () => {
     const user = userEvent.setup();
     const { container } = render(
       <MarbetesTable items={sample} userRole="admin" onDelete={() => {}} onEdit={() => {}} />,
@@ -132,12 +132,10 @@ describe('MarbetesTable', () => {
     const ids = () => rows().map((r) => r.getAttribute('data-testid'));
     // Default order (no sort applied) preserves the input order.
     expect(ids()).toEqual(['marbete-row-1', 'marbete-row-2']);
-    await user.click(screen.getByTestId('sort-id'));
-    // Ascending: m-ABC123 (id=1) before m-XYZ789 (id=2) — already in
-    // order; but the order is computed by publicUid which matches the
-    // same ascending direction here.
+    await user.click(screen.getByTestId('sort-credential'));
+    // Ascending by maskedCode: '1***23' (row 1) before '9***76' (row 2).
     expect(ids()).toEqual(['marbete-row-1', 'marbete-row-2']);
-    await user.click(screen.getByTestId('sort-id'));
+    await user.click(screen.getByTestId('sort-credential'));
     // Descending reverses the order.
     expect(ids()).toEqual(['marbete-row-2', 'marbete-row-1']);
   });
