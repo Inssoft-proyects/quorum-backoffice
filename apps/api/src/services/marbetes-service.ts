@@ -55,28 +55,11 @@ interface ServiceDeps {
   grant?: OtpGrantService;
 }
 
-const DESTRUCTIVE_ACTIONS = new Set([
-  'marbete.create',
-  'marbete.update',
-  'marbete.delete',
-  'marbete.reveal',
-  'marbete.bulk_create',
-]);
+/** Single OTP scope for every destructive marbete operation. The scope
+ *  catalog is intentionally small: `login`, `marbete`, `bitacoras`. */
+const OTP_SCOPE = 'marbete';
 
-/**
- * Actions that grant an actor a TTL window after a successful OTP
- * verify. `marbete.reveal` is intentionally NOT a member: reveal always
- * requires a fresh per-op OTP and never produces a grant.
- */
-const GRANT_ELIGIBLE_ACTIONS = new Set([
-  'marbete.create',
-  'marbete.update',
-  'marbete.delete',
-  'marbete.bulk_create',
-]);
-
-/** Scope family for the grant cache. Single today; future scope
- *  families (e.g. dispositivos) would add their own column value. */
+/** Scope family for the grant cache (same value as OTP_SCOPE). */
 const GRANT_SCOPE = 'marbete';
 
 /**
@@ -139,14 +122,11 @@ export class MarbetesService {
   /**
    * Verify the actor is authorized to perform a destructive marbete op.
    *
-   * Behaviour matrix (delegated to `verifyOtpWithGrant` in
-   * `lib/otp-grant-verify.ts` — this method is a thin wrapper that
-   * decides whether the action is destructive at all and whether it
-   * is grant-eligible, then forwards everything else):
+   * Every destructive op shares the single OTP scope `marbete`; the caller
+   * only chooses whether the op is grant-eligible. Behaviour (delegated to
+   * `verifyOtpWithGrant` in `lib/otp-grant-verify.ts`):
    *
-   *  - Non-destructive action (list / counters / detail):
-   *      no-op. Returns `{ otpId: 'noop' }`.
-   *  - `marbete.reveal`:
+   *  - `grantEligible = false` (reveal):
    *      ALWAYS per-op OTP. The grant cache is bypassed entirely; the
    *      provider is consulted on every call. This is a deliberate
    *      security guarantee — reveal returns the unmasked publicUid,
@@ -173,17 +153,16 @@ export class MarbetesService {
    */
   private async verifyOtp(
     actor: string,
-    action: string,
     otpCode: string | undefined,
+    grantEligible: boolean,
   ): Promise<{ otpId: string }> {
-    if (!DESTRUCTIVE_ACTIONS.has(action)) return { otpId: 'noop' };
     return verifyOtpWithGrant(
       { otp: this.otp, grant: this.grant, log: this.log },
       {
         actor,
-        action,
+        action: OTP_SCOPE,
         otpCode,
-        grantEligible: GRANT_ELIGIBLE_ACTIONS.has(action),
+        grantEligible,
         grantScope: GRANT_SCOPE,
       },
     );
@@ -211,7 +190,7 @@ export class MarbetesService {
     otpCode: string | undefined,
     meta: RequestMeta = {},
   ): Promise<MarbeteDetailResponse> {
-    const otpResult = await this.verifyOtp(actor, 'marbete.create', otpCode);
+    const otpResult = await this.verifyOtp(actor, otpCode, true);
 
     let assignedInternalId: number | null = null;
     if (req.canvasUserId !== undefined) {
@@ -261,7 +240,7 @@ export class MarbetesService {
     otpCode: string | undefined,
     meta: RequestMeta = {},
   ): Promise<MarbeteDetailResponse> {
-    const otpResult = await this.verifyOtp(actor, 'marbete.update', otpCode);
+    const otpResult = await this.verifyOtp(actor, otpCode, true);
 
     const existing = await this.repo.findById(id);
     if (!existing) throw AppError.notFound(`marbete ${id} not found`);
@@ -314,7 +293,7 @@ export class MarbetesService {
     otpCode: string | undefined,
     meta: RequestMeta = {},
   ): Promise<MarbeteDetailResponse> {
-    const otpResult = await this.verifyOtp(actor, 'marbete.delete', otpCode);
+    const otpResult = await this.verifyOtp(actor, otpCode, true);
 
     const existing = await this.repo.findById(id);
     if (!existing) throw AppError.notFound(`marbete ${id} not found`);
@@ -341,8 +320,7 @@ export class MarbetesService {
 
   /**
    * WU #3 / Polish WU v4: bulk create up to 200 marbetes in one atomic
-   * transaction. The full insert is gated by an OTP for `marbete.bulk_create`
-   * (added to DESTRUCTIVE_ACTIONS). Duplicates — both intra-batch and
+   * transaction. The full insert is gated by an OTP for scope `marbete`. Duplicates — both intra-batch and
    * against existing rows — are reported as per-row failures without
    * aborting the rest of the batch; a single audit_log row is written
    * in the same transaction so a rollback also rolls back the audit.
@@ -359,7 +337,7 @@ export class MarbetesService {
     otpCode: string | undefined,
     meta: RequestMeta = {},
   ): Promise<BulkCreateMarbetesResponse> {
-    const otpResult = await this.verifyOtp(actor, 'marbete.bulk_create', otpCode);
+    const otpResult = await this.verifyOtp(actor, otpCode, true);
 
     const failures: BulkCreateMarbeteFailure[] = [];
     const successes: BulkCreateMarbeteSuccess[] = [];
@@ -554,7 +532,7 @@ export class MarbetesService {
     otpCode: string | undefined,
     meta: RequestMeta = {},
   ): Promise<RevealMarbeteResponse> {
-    const otpResult = await this.verifyOtp(actor, 'marbete.reveal', otpCode);
+    const otpResult = await this.verifyOtp(actor, otpCode, false);
 
     const row = await this.repo.findById(id);
     if (!row) throw AppError.notFound(`marbete ${id} not found`);
