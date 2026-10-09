@@ -40,7 +40,7 @@ as remaining delta below.
 - [x] WU1 — `feat/mfa-reconcile` from master + merge `feat/mfa-canvas-integration` (commit `287ee20`)
 - [x] WU2 — add `apps/api/scripts/mfa-authenticate-smoke.sh` (commit `09d76e4`)
 - [x] WU3 — verify migration tree 0011–0019 (no renumber) + `ci-checks.sh` (see Verification)
-- [ ] WU4 — document remaining delta + RDD review
+- [x] WU4 — document remaining delta + attempt RDD review (see RDD review outcome)
 
 ## MFA contract (do not break)
 
@@ -94,6 +94,23 @@ findings):
   scope for this MFA reconcile (separate remediation).
 - Matriculas integration suite fails on `master` (paginated list empty,
   counters 0, sync → 503 Canvas mock). Pre-existing.
+
+## RDD review outcome (2026-10-09)
+
+RDD switch = ON (global). `inspect` resolved (after `gentle-ai sync` and excluding
+untracked build artifacts). START is **blocked terminal** with
+`lens_context_budget_exceeded`: this repo has no prior review lineage, so the
+controller scoped the first candidate as the **entire repository**
+(base = initial empty commit `2799de57` → HEAD, ~500 paths), which exceeds the
+reviewer lens context budget. No review authority was created; nothing to
+abandon/repair.
+
+Resolution options (user decision):
+- Split the MFA surface into a chained sequence of smaller reviewable commits
+  (M1 / M2 / M3 / B2 / access-decisions), each under budget, and review each.
+- Skip re-review: the MFA code was already reviewed when it landed as
+  `feat/mfa-canvas-integration` (PR #11) with approved RDD lineages for
+  M1/M2/Canvas per Engram.
 
 ## Acceptance criteria
 
