@@ -151,18 +151,14 @@ export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void
   // WU #3 / Polish WU v4: bulk create up to 200 marbetes in one transactional
   // call. Admin-only + OTP-required (scope `marbete.bulk_create`). Per-row
   // outcomes are returned in the response body.
-  app.post(
-    '/api/v1/marbetes/bulk',
-    { preHandler: requireRole('admin') },
-    async (req) => {
-      const body = BulkCreateMarbetesRequest.parse(req.body);
-      const actor = actorFromRequest(req);
-      const otp = otpFromRequest(req);
-      const meta = metaFromRequest(req);
-      const svc = getService();
-      return svc.bulkCreate(actor, body, 'json', null, otp, meta);
-    },
-  );
+  app.post('/api/v1/marbetes/bulk', { preHandler: requireRole('admin') }, async (req) => {
+    const body = BulkCreateMarbetesRequest.parse(req.body);
+    const actor = actorFromRequest(req);
+    const otp = otpFromRequest(req);
+    const meta = metaFromRequest(req);
+    const svc = getService();
+    return svc.bulkCreate(actor, body, 'json', null, otp, meta);
+  });
 
   // CSV variant: parses the upload server-side so the frontend dialog can
   // stay dumb (it sends `text` + `fileName`). Same OTP / role gate.

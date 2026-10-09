@@ -72,12 +72,14 @@ function makeOtpFetch(behaviour: (body: unknown) => { status: number; body: unkn
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/v1/otps/verify')) {
       const raw = init?.body ? String(init.body) : '{}';
-      const parsed = JSON.parse(raw) as { code?: string };
-      // Reject if code is the explicitly invalid one.
-      if (parsed.code === '999999') {
-        return new Response(JSON.stringify({ error: 'invalid' }), { status: 401 });
+      const parsed = JSON.parse(raw) as { code?: string; token?: string };
+      // The wire field is `token` (quorum-otp contract); accept legacy `code`.
+      const normalized = { code: parsed.token ?? parsed.code };
+      // Reject if code is the explicitly invalid one (canonical 409).
+      if (normalized.code === '999999') {
+        return new Response(JSON.stringify({ error: 'verify_rejected' }), { status: 409 });
       }
-      const r = behaviour(JSON.parse(raw));
+      const r = behaviour(normalized);
       return new Response(JSON.stringify(r.body), { status: r.status });
     }
     return new Response('not found', { status: 404 });
@@ -104,8 +106,8 @@ describe('marbetes routes with mocked OTP happy path (integration, real PG)', ()
 
     const fetchMock = makeOtpFetch((body) => {
       const code = (body as { code?: string }).code;
-      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
-      return { status: 401, body: { error: 'invalid' } };
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID, valid: true } };
+      return { status: 409, body: { error: 'verify_rejected' } };
     });
     app = await buildApp({
       config: TEST_ENV,
@@ -247,8 +249,8 @@ describe('assignment by canvas_user_id (WU8b1)', () => {
     app = await buildApp({ config: TEST_ENV });
     const fetchMock = makeOtpFetch((body) => {
       const code = (body as { code?: string }).code;
-      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
-      return { status: 401, body: { error: 'invalid' } };
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID, valid: true } };
+      return { status: 409, body: { error: 'verify_rejected' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
   });
@@ -520,8 +522,8 @@ describe('reveal endpoint (WU #1)', () => {
     app = await buildApp({ config: TEST_ENV });
     const fetchMock = makeOtpFetch((body) => {
       const code = (body as { code?: string }).code;
-      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
-      return { status: 401, body: { error: 'invalid' } };
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID, valid: true } };
+      return { status: 409, body: { error: 'verify_rejected' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
     // Single-step username + pre-issued OTP flow: the FakeOtpClient
@@ -726,8 +728,8 @@ describe('bulk create (WU #3)', () => {
     app = await buildApp({ config: TEST_ENV });
     const fetchMock = makeOtpFetch((body) => {
       const code = (body as { code?: string }).code;
-      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
-      return { status: 401, body: { error: 'invalid' } };
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID, valid: true } };
+      return { status: 409, body: { error: 'verify_rejected' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
     // Single-step username + pre-issued OTP flow: hermetic fake, no

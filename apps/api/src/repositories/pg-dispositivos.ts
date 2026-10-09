@@ -27,6 +27,36 @@ export interface DispositivoRow {
   created_by: string;
   revoked_at: Date | null;
   revoked_reason: string | null;
+  assigned_student_id: number | null;
+}
+
+/**
+ * Result of a Canvas-bound device owner check.
+ *
+ * `owner` is the only field the caller's access decision consumes. It is
+ * `true` ONLY when every fail-closed predicate holds:
+ *
+ *   - the device row exists for the supplied serial_number,
+ *   - the device status is `active` (i.e. not soft-revoked),
+ *   - the device is assigned (`assigned_student_id IS NOT NULL`),
+ *   - the assigned student is active in `students_cache` (`is_active = TRUE`),
+ *   - the assigned student's `canvas_user_id` matches the supplied id.
+ *
+ * `studentId` is the internal `students_cache.id` (NOT the canvas user id,
+ * NOT the serial number) and is returned only when the caller IS the
+ * owner. It is intentionally a bare numeric id so it can be logged or
+ * audited without leaking the device serial into a denial log line.
+ * The serial is never echoed in the result on purpose: a denied caller
+ * must not be able to enumerate devices they do not own.
+ *
+ * Negative answers are uniformly `{ owner: false, studentId: null }` —
+ * the repository does not distinguish "device does not exist" from
+ * "device revoked" from "wrong student", because the caller should
+ * treat all three identically (deny).
+ */
+export interface DeviceOwnerCheck {
+  owner: boolean;
+  studentId: number | null;
 }
 
 function toResponse(row: DispositivoRow): DispositivoResponse {
@@ -49,7 +79,7 @@ export class PgDispositivoRepo {
   async findById(id: number): Promise<DispositivoRow | null> {
     const r = await this.client.query<DispositivoRow>(
       `SELECT id, serial_number, brand, model, status, created_at, created_by,
-              revoked_at, revoked_reason
+              revoked_at, revoked_reason, assigned_student_id
          FROM dispositivos
         WHERE id = $1`,
       [id],
@@ -74,7 +104,7 @@ export class PgDispositivoRepo {
     const countResult = await this.client.query<{ total: number }>(countSql, params);
     const total = countResult.rows[0]?.total ?? 0;
     const listSql = `SELECT id, serial_number, brand, model, status, created_at, created_by,
-                            revoked_at, revoked_reason
+                            revoked_at, revoked_reason, assigned_student_id
                        FROM dispositivos ${whereSql}
                        ORDER BY created_at DESC
                        LIMIT $${p++} OFFSET $${p++}`;
@@ -115,7 +145,7 @@ export class PgDispositivoRepo {
               model = COALESCE($3, model)
         WHERE id = $1
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason`,
+                  revoked_at, revoked_reason, assigned_student_id`,
       [id, args.brand ?? null, args.model ?? null],
     );
     return r.rows[0] ?? null;
@@ -129,10 +159,75 @@ export class PgDispositivoRepo {
               status = 'revoked'
         WHERE id = $1 AND status = 'active'
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason`,
+                  revoked_at, revoked_reason, assigned_student_id`,
       [id, reason],
     );
     return r.rows[0] ?? null;
+  }
+
+  /**
+   * B2b / Canvas-bound device assignment: write side.
+   *
+   * Sets (or clears, when `studentId` is NULL) the device owner. This is a
+   * pure write: every fail-closed predicate (active device, active student,
+   * existing student) is enforced by the service before calling this method.
+   * Passing NULL always succeeds for an existing row because removing an
+   * owner can never grant access.
+   */
+  async assignStudent(id: number, studentId: number | null): Promise<DispositivoRow | null> {
+    const r = await this.client.query<DispositivoRow>(
+      `UPDATE dispositivos
+          SET assigned_student_id = $2
+        WHERE id = $1
+        RETURNING id, serial_number, brand, model, status, created_at, created_by,
+                  revoked_at, revoked_reason, assigned_student_id`,
+      [id, studentId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  /**
+   * B1 / Canvas-bound device authorization: read-only owner check.
+   *
+   * Single SQL join that covers every fail-closed predicate in one
+   * round-trip. The WHERE clause encodes:
+   *
+   *   - serial match (parameter $1)
+   *   - device status = 'active' (revoked devices cannot authenticate)
+   *   - assigned_student_id IS NOT NULL (unassigned = inventory only)
+   *   - students_cache.is_active = TRUE (graduated/withdrawn deny)
+   *   - canvas_user_id match (parameter $2, prevents cross-student replay)
+   *
+   * The INNER JOIN drops rows that fail any of the FK / status
+   * predicates, so a missing student, a revoked device, an unassigned
+   * device, and a mismatched canvas_user_id all collapse into the same
+   * "no row" outcome. Returning a single boolean (plus owner student id)
+   * keeps the surface area minimal: callers either get `{ owner: true,
+   * studentId }` or `{ owner: false, studentId: null }` — no enum of
+   * failure modes to leak, and no serial in the result.
+   *
+   * B1 scope: this is the only public surface added for owner lookup.
+   * No route, no service, and no access-decision wiring exist yet —
+   * those are explicitly deferred to B2 (admin assignment) and B3
+   * (authenticated service-to-service access decision).
+   */
+  async findActiveOwnerBySerialAndCanvasId(
+    serialNumber: string,
+    canvasUserId: number,
+  ): Promise<DeviceOwnerCheck> {
+    const r = await this.client.query<{ student_id: string }>(
+      `SELECT s.id AS student_id
+         FROM dispositivos d
+         JOIN students_cache s ON s.id = d.assigned_student_id
+        WHERE d.serial_number = $1
+          AND d.status        = 'active'
+          AND s.canvas_user_id = $2
+          AND s.is_active     = TRUE`,
+      [serialNumber, canvasUserId],
+    );
+    const row = r.rows[0];
+    if (!row) return { owner: false, studentId: null };
+    return { owner: true, studentId: Number(row.student_id) };
   }
 
   toResponse(row: DispositivoRow): DispositivoResponse {

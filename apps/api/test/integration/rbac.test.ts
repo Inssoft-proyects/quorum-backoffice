@@ -87,7 +87,7 @@ function makeOtpFetch(): typeof fetch {
   return (async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/v1/otps/verify')) {
-      return new Response(JSON.stringify({ id: 'otp-rbac-test' }), { status: 200 });
+      return new Response(JSON.stringify({ id: 'otp-rbac-test', valid: true }), { status: 200 });
     }
     return new Response('not used', { status: 404 });
   }) as unknown as typeof fetch;
