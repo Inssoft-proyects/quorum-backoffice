@@ -47,7 +47,13 @@ import {
 import { AppError } from '../lib/errors';
 
 function actorFromRequest(req: FastifyRequest): string {
-  return req.session?.user?.email ?? 'dev-user';
+  const u = req.session?.user;
+  if (!u) return 'dev-user';
+  // OTPs are issued bound to the canonical username (lower/trim), matching
+  // the login flow. Fall back to email only for legacy accounts without a
+  // username so verification does not fail on a subject mismatch.
+  const username = u.username?.trim().toLowerCase();
+  return username && username.length > 0 ? username : u.email;
 }
 
 function otpFromRequest(req: FastifyRequest): string | undefined {

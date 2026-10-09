@@ -262,7 +262,7 @@ export class AuthService {
 
     // MeResponse keeps `email` for existing UI/audit consumers.
     return {
-      user: { id: user.id, email: user.email, role: user.role as UserRole },
+      user: { id: user.id, email: user.email, username: user.username, role: user.role as UserRole },
       sessionToken: token,
     };
   }
@@ -281,7 +281,7 @@ export class AuthService {
     }
     const user = await this.users.findById(session.user_id);
     if (!user || user.disabled_at !== null) return null;
-    return { id: user.id, email: user.email, role: user.role as UserRole };
+    return { id: user.id, email: user.email, username: user.username, role: user.role as UserRole };
   }
 
   async logout(

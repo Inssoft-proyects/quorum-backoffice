@@ -32,7 +32,10 @@ import { CanvasClient } from '../services/canvas-client';
 import { requireRole, requireSession } from '../plugins/rbac';
 
 function actorFromRequest(req: FastifyRequest): string {
-  return req.session?.user?.email ?? 'dev-user';
+  const u = req.session?.user;
+  if (!u) return 'dev-user';
+  const username = u.username?.trim().toLowerCase();
+  return username && username.length > 0 ? username : u.email;
 }
 
 function otpFromRequest(req: FastifyRequest): string | undefined {

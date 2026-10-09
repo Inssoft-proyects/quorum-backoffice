@@ -34,6 +34,6 @@ export class SessionHydrator {
     }
     const user = await this.users.findById(session.user_id);
     if (!user || user.disabled_at !== null) return null;
-    return { id: user.id, email: user.email, role: user.role };
+    return { id: user.id, email: user.email, username: user.username, role: user.role };
   }
 }

@@ -82,6 +82,9 @@ export type LoginRequest = LoginRequestOtp;
 export interface MeResponse {
   id: number;
   email: string;
+  /** Canonical login username (nullable for legacy accounts). Used as the
+   *  OTP subject for destructive-operation verification. */
+  username: string | null;
   role: UserRole;
 }
 
