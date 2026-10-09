@@ -45,8 +45,9 @@ function makeOtpFetch(
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/v1/otps/verify')) {
       const raw = init?.body ? String(init.body) : '{}';
-      const parsed = JSON.parse(raw) as { code?: string };
-      const r = behaviour(parsed);
+      const parsed = JSON.parse(raw) as { code?: string; token?: string };
+      // The wire field is `token` (quorum-otp contract); accept legacy `code`.
+      const r = behaviour({ code: parsed.token ?? parsed.code });
       return new Response(JSON.stringify(r.body), { status: r.status });
     }
     return new Response('not found', { status: 404 });
@@ -74,8 +75,8 @@ describe('dispositivos routes with mocked OTP happy path (integration, real PG)'
 
     app = await buildApp({ config: TEST_ENV });
     const fetchMock = makeOtpFetch((body) => {
-      if (body.code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
-      return { status: 401, body: { error: 'invalid' } };
+      if (body.code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID, valid: true } };
+      return { status: 409, body: { error: 'verify_rejected' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
   });
@@ -209,8 +210,8 @@ describe('dispositivos routes with rejected OTP (integration)', () => {
     pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
     await migrate({ pool, dir: path.resolve(__dirname, '..', '..', 'migrations') });
     app = await buildApp({ config: TEST_ENV });
-    // Every OTP verify returns 401.
-    const fetchMock = makeOtpFetch(() => ({ status: 401, body: { error: 'invalid' } }));
+    // Every OTP verify is rejected with the canonical 409 verify_rejected.
+    const fetchMock = makeOtpFetch(() => ({ status: 409, body: { error: 'verify_rejected' } }));
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
   });
 

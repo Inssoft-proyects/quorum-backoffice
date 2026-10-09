@@ -64,11 +64,12 @@ function makeOtpFetch(behaviour: (body: unknown) => { status: number; body: unkn
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/v1/otps/verify')) {
       const raw = init?.body ? String(init.body) : '{}';
-      const parsed = JSON.parse(raw) as { code?: string };
-      if (parsed.code === '999999') {
+      const parsed = JSON.parse(raw) as { code?: string; token?: string };
+      const normalized = { code: parsed.token ?? parsed.code };
+      if (normalized.code === '999999') {
         return new Response(JSON.stringify({ error: 'invalid' }), { status: 401 });
       }
-      const r = behaviour(JSON.parse(raw));
+      const r = behaviour(normalized);
       return new Response(JSON.stringify(r.body), { status: r.status });
     }
     return new Response('not found', { status: 404 });
@@ -122,7 +123,7 @@ describe('matriculas routes (integration, real PG)', () => {
     app = await buildApp({ config: TEST_ENV });
     const fetchMock = makeOtpFetch((body) => {
       const code = (body as { code?: string }).code;
-      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID, valid: true } };
       return { status: 401, body: { error: 'invalid' } };
     });
     (globalThis as { fetch: typeof fetch }).fetch = fetchMock;
@@ -152,7 +153,7 @@ describe('matriculas routes (integration, real PG)', () => {
   async function seedMarbete(publicUid: string, assignedTo: number | null = null): Promise<number> {
     const r = await pool.query<{ id: number }>(
       `INSERT INTO marbetes (public_uid, code_hash, status, assigned_student_id, created_by)
-       VALUES ($1, 'a'.repeat(64), 'active', $2, 'seed') RETURNING id`,
+       VALUES ($1, '${'a'.repeat(64)}', 'active', $2, 'seed') RETURNING id`,
       [publicUid, assignedTo],
     );
     const id = r.rows[0]?.id;
@@ -288,9 +289,9 @@ describe('matriculas routes (integration, real PG)', () => {
       {
         total: 3,
         items: [
-          { id: 1, canvas_user_id: 80_001, full_name: 'Sync A', email: 'sa@x' },
-          { id: 2, canvas_user_id: 80_002, full_name: 'Sync B', email: 'sb@x' },
-          { id: 3, canvas_user_id: 80_003, full_name: 'Sync C', email: 'sc@x' },
+          { id: 1, canvas_user_id: 80_001, full_name: 'Sync A', email: 'sa@x.com' },
+          { id: 2, canvas_user_id: 80_002, full_name: 'Sync B', email: 'sb@x.com' },
+          { id: 3, canvas_user_id: 80_003, full_name: 'Sync C', email: 'sc@x.com' },
         ],
       },
     ];
@@ -315,7 +316,7 @@ describe('matriculas routes (integration, real PG)', () => {
     // Restore OTP mock for subsequent tests.
     (globalThis as { fetch: typeof fetch }).fetch = makeOtpFetch((body) => {
       const code = (body as { code?: string }).code;
-      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID } };
+      if (code === VALID_OTP) return { status: 200, body: { id: MOCK_OTP_ID, valid: true } };
       return { status: 401, body: { error: 'invalid' } };
     });
   });

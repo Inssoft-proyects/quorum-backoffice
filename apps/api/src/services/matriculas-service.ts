@@ -668,7 +668,9 @@ export class MatriculasService {
           publicUid: row.marbete_public_uid!,
           maskedCode: maskCode(row.marbete_public_uid!),
           status: row.marbete_status!,
-          assignedAt: row.marbete_assigned_at!.toISOString(),
+          assignedAt: row.marbete_assigned_at
+            ? row.marbete_assigned_at.toISOString()
+            : null,
           assignedBy: row.marbete_assigned_by,
         }
       : null;
@@ -683,7 +685,7 @@ export class MatriculasService {
       email: row.email,
       sisId: row.sis_id,
       isActive: row.is_active,
-      registeredAt: row.last_synced_at.toISOString(),
+      registeredAt: row.last_synced_at ? row.last_synced_at.toISOString() : null,
       marbete,
     };
   }

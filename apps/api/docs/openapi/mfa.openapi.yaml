@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: Quorum MFA — Acceso por API (Canvas LMS / móvil)
+  version: 1.0.0
+  description: |
+    Contratos de autenticación multifactor para accesos de **estudiantes** a Canvas LMS,
+    usados por la aplicación móvil y por el interceptor de Canvas.
+
+    Flujo: el cliente autentica con `POST /api/v1/mfa/authenticate` (marbete + número de
+    serie + OTP dinámico). El éxito emite la cookie `__Host-mfa_sid` y devuelve la identidad
+    del estudiante. Para redirigir a Canvas (SSO) se usa `POST /api/v1/mfa/redirect-token`
+    (token de un solo uso) y Canvas lo canjea con `POST /api/v1/mfa/consume` (HMAC S2S).
+
+    Taxonomía de denegación (`code`): `deny.marbete_unknown`, `deny.student_inactive`,
+    `deny.device_unknown`, `deny.device_not_bound_to_student`, `deny.otp_invalid`,
+    `deny.otp_missing`, `deny.dependency_fail`. Errores de forma del request devuelven
+    `validation_error` (400).
+servers:
+  - url: /
+    description: Relativo al host que sirve la documentación (backend.* o backoffice.*)
+tags:
+  - name: mfa
+    description: Autenticación multifactor de estudiantes (M1/M5)
+  - name: redirect
+    description: Redirección SSO Canvas (M3)
+paths:
+  /api/v1/mfa/authenticate:
+    post:
+      tags: [mfa]
+      operationId: mfaAuthenticate
+      summary: Autentica a un estudiante (marbete + serial + OTP)
+      description: |
+        Autentica con tres factores. Éxito: 201 + cookie `__Host-mfa_sid` (Secure, Path=/,
+        sin Domain) y el cuerpo `MfaAuthenticateResponse`. El `session_id` del cuerpo es el
+        mismo valor de la cookie (el canal JSON móvil puede usarlo sin almacén de cookies).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaAuthenticateRequest' }
+      responses:
+        '201':
+          description: Sesión de estudiante emitida.
+          headers:
+            Set-Cookie:
+              description: '__Host-mfa_sid=<session_id>; Secure; HttpOnly; Path=/; SameSite=Lax'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaAuthenticateResponse' }
+        '400':
+          description: Forma de request inválida (campos fuera de rango, OTP malformado).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401':
+          description: Denegación de política (ver `code`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
+        '503':
+          description: Fallo de dependencia (OTP/DB/Redis).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
+  /api/v1/mfa/session:
+    get:
+      tags: [mfa]
+      operationId: mfaSession
+      summary: Devuelve la sesión MFA activa de estudiante
+      description: |
+        200 con campos `null` cuando no hay sesión activa; 401 cuando la cookie es
+        desconocida/inválida. El `role` siempre es `student` (implícito, no se repite en el body).
+      responses:
+        '200':
+          description: Sesión actual (o campos null si no hay sesión).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaSessionResponse' }
+        '401':
+          description: Sin sesión MFA válida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
+  /api/v1/mfa/redirect-token:
+    post:
+      tags: [redirect]
+      operationId: mfaRedirectToken
+      summary: Emite un token de redirección de un solo uso (SSO Canvas)
+      description: |
+        Requiere la cookie `__Host-mfa_sid`. `next_url` debe pertenecer a un origen de la
+        allow-list `MFA_ALLOWED_REDIRECT_ORIGINS`. El token es de un solo uso (Redis,
+        TTL corto) y se consume vía `POST /api/v1/mfa/consume`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaRedirectTokenRequest' }
+      responses:
+        '200':
+          description: Token de un solo uso emitido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaRedirectTokenResponse' }
+        '400':
+          description: '`next_url` inválido.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401':
+          description: Sin sesión MFA válida o sesión de tipo incorrecto.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
+        '403':
+          description: "Origen no permitido (code: mfa_redirect_origin_not_allowed)."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
+  /api/v1/mfa/consume:
+    post:
+      tags: [redirect]
+      operationId: mfaConsume
+      summary: Canjea un token de redirección (Canvas → backoffice, HMAC S2S)
+      description: |
+        Llamado por Canvas. Autenticación HMAC S2S (cabecera `Authorization: HMAC <name>
+        <ts> <hex>`). El token es de un solo uso (getdel atómico); el `next_url` devuelto está
+        acotado al origen emitido.
+      security:
+        - HMAC: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaConsumeRequest' }
+      responses:
+        '200':
+          description: Token válido; identidad de estudiante + destino.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaConsumeResponse' }
+        '400':
+          description: '`token` malformado (debe ser 64 hex en minúsculas).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401':
+          description: Token inválido/consumido (`mfa_token_invalid`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
+        '503':
+          description: Fallo de dependencia.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
+components:
+  securitySchemes:
+    HMAC:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'Cabecera HMAC S2S: `Authorization: HMAC <name> <ts> <hex>`'
+  schemas:
+    MfaAuthenticateRequest:
+      type: object
+      required: [marbete_code, serial_number, otp]
+      properties:
+        marbete_code:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Código físico del marbete (se hashea sha256 en el servidor).
+        serial_number:
+          type: string
+          minLength: 3
+          maxLength: 128
+          description: Número de serie del dispositivo.
+        otp:
+          type: string
+          pattern: '^[A-Z0-9]{6}$'
+          description: OTP dinámico de 6 caracteres en mayúsculas.
+    MfaAuthenticateResponse:
+      type: object
+      required: [canvas_user_id, student_name, student_email, role, session_id, expires_at]
+      properties:
+        canvas_user_id: { type: integer }
+        student_name: { type: string }
+        student_email: { type: string, format: email }
+        role: { type: string, enum: [student] }
+        session_id: { type: string, minLength: 16, maxLength: 128 }
+        expires_at: { type: string, format: date-time }
+    MfaSessionResponse:
+      type: object
+      properties:
+        canvas_user_id: { type: [integer, 'null'] }
+        student_name: { type: [string, 'null'] }
+        student_email: { type: [string, 'null'] }
+        session_id: { type: [string, 'null'] }
+        expires_at: { type: [string, 'null'] }
+    MfaRedirectTokenRequest:
+      type: object
+      required: [next_url]
+      properties:
+        next_url: { type: string, minLength: 1, maxLength: 2048 }
+    MfaRedirectTokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, description: Token de un solo uso (Redis, TTL corto). }
+    MfaConsumeRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: 64 caracteres hex en minúsculas (32 bytes aleatorios).
+    MfaConsumeResponse:
+      type: object
+      required: [canvas_user_id, student_name, student_email, role, next_url]
+      properties:
+        canvas_user_id: { type: integer }
+        student_name: { type: string }
+        student_email: { type: string }
+        role: { type: string, enum: [Learner, Instructor, Administrator, TA] }
+        next_url: { type: string }
+    DenyEnvelope:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - deny.marbete_unknown
+            - deny.student_inactive
+            - deny.device_unknown
+            - deny.device_not_bound_to_student
+            - deny.otp_invalid
+            - deny.otp_missing
+            - deny.dependency_fail
+            - mfa_token_invalid
+            - mfa_redirect_origin_not_allowed
+        message: { type: string }
+        details: { nullable: true }
+    ErrorEnvelope:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [validation_error] }
+        message: { type: string }
+        details: { nullable: true }

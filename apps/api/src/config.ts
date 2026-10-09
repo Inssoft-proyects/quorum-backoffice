@@ -60,6 +60,36 @@ const ConfigSchema = z.object({
 
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
   BOOTSTRAP_ADMIN_PASSWORD: z.string().min(8).optional(),
+
+  // Service-auth (B3.1): inbound HMAC-authenticated callers
+  // (e.g. the Canvas pipeline, the Jitsi join coordinator) are
+  // registered here as `name:secret,name:secret`. The plugin
+  // `requireServiceAuth()` parses this and rejects every call
+  // when the parsed registry is empty, so an unset / empty
+  // env var fails closed at the request boundary. We keep the
+  // field optional in the schema so pre-existing test fixtures
+  // (rbac.test.ts, dispositivos.test.ts, ...) that don't set it
+  // continue to boot; production deployments MUST set it
+  // before the `/api/v1/access/decision` route goes live (B3.2).
+  BACKOFFICE_SERVICE_TOKENS: z.string().default(''),
+  BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
+
+  // M3 / MFA SSO redirect: comma-separated allowlist of Canvas
+  // origins (protocol + host + port) that the MFA web page may
+  // redirect the student to. The MFA web page calls
+  // POST /api/v1/mfa/redirect-token with the `next_url`; the
+  // route parses the URL, extracts the origin, and compares it
+  // against this allowlist using constant-time string compare.
+  // The SAME allowlist is consulted on the consume path so a
+  // token issued for an allowlisted origin cannot be replayed
+  // against a different origin. Empty / missing → every
+  // `next_url` is rejected with 403 mfa_redirect_origin_not_allowed
+  // (fail-closed).
+  MFA_ALLOWED_REDIRECT_ORIGINS: z.string().default(''),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

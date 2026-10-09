@@ -41,6 +41,8 @@ import {
   type MarbeteDetailResponse,
   type MatriculasCountersResponse,
   type MeResponse,
+  type MfaAuthenticateRequest,
+  type MfaAuthenticateResponse,
   type OtpGrantStatusResponse,
   type RevealMarbeteResponse,
   type SyncMatriculasResponse,
@@ -68,6 +70,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly status: number,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -87,7 +90,12 @@ async function parseError(res: Response): Promise<ApiError> {
   } catch {
     /* non-JSON body */
   }
-  return new ApiError(body?.code ?? 'unknown', body?.message ?? res.statusText, res.status);
+  return new ApiError(
+    body?.code ?? 'unknown',
+    body?.message ?? res.statusText,
+    res.status,
+    body?.details,
+  );
 }
 
 function buildHeaders(cookie?: string, extra?: Record<string, string>): Record<string, string> {
@@ -204,6 +212,74 @@ export async function login(body: LoginRequest, cookie?: string): Promise<MeResp
   return data.user;
 }
 
+// ---- MFA (M1 endpoint, M2 web client) ----
+
+/**
+ * Three-factor authentication (marbete code + device serial + dynamic
+ * OTP). The endpoint sets the `__Host-mfa_sid` student session
+ * cookie as a side effect; the JSON body returns the resolved
+ * student identity so the client can render the success screen
+ * without a follow-up `GET /api/v1/mfa/session` call.
+ *
+ * Throws `ApiError` on transport failures or 4xx/5xx. The error
+ * `code` carries the `deny.*` taxonomy (401) or `validation_error`
+ * (400) or `deny.dependency_fail` (503). The MFA web form maps
+ * each of these to a short Spanish message — see
+ * `apps/web/app/mfa/mfa-form.tsx`.
+ *
+ * `credentials: 'include'` is wired into `apiPost` so the browser
+ * will keep the Set-Cookie header the server returns.
+ */
+export async function mfaAuthenticate(
+  body: MfaAuthenticateRequest,
+  cookie?: string,
+): Promise<MfaAuthenticateResponse> {
+  return apiPost<MfaAuthenticateResponse>('/api/v1/mfa/authenticate', body, cookie);
+}
+
+// ---- MFA (M3 redirect-token — SSO between BackOffice and Canvas) ----
+
+/**
+ * `POST /api/v1/mfa/redirect-token` (M3). The MFA web page calls
+ * this AFTER a successful `mfaAuthenticate` to mint a one-time
+ * token that Canvas exchanges for a Canvas-side session via
+ * `POST /api/v1/mfa/consume`.
+ *
+ * The call is authenticated by the `__Host-mfa_sid` student
+ * session cookie the M1 endpoint set — NOT by HMAC service-auth.
+ * The browser sends the cookie automatically via
+ * `credentials: 'include'`. The body is the validated `next_url`
+ * the MFA page will navigate to (with the token appended as a
+ * query string).
+ *
+ * Throws `ApiError` on transport failures or 4xx/5xx. The error
+ * `code` carries the documented M3 taxonomy:
+ *   - `validation_error`        (400) — body failed Zod validation
+ *   - `invalid_request`         (400) — next_url is not a parseable URL
+ *   - `unauthorized`            (401) — no active MFA session
+ *   - `mfa_session_kind_invalid` (401) — session is a backoffice operator session
+ *   - `mfa_redirect_origin_not_allowed` (403) — next_url origin not allowlisted
+ *
+ * On a 5xx (Redis down) the route returns 500 with code `internal`
+ * — the MFA form catches this and falls back to the direct
+ * navigation with a warn log.
+ */
+export interface MfaRedirectTokenRequest {
+  next_url: string;
+}
+
+export interface MfaRedirectTokenResponse {
+  token: string;
+  expires_in: number;
+}
+
+export async function mfaIssueRedirectToken(
+  body: MfaRedirectTokenRequest,
+  cookie?: string,
+): Promise<MfaRedirectTokenResponse> {
+  return apiPost<MfaRedirectTokenResponse>('/api/v1/mfa/redirect-token', body, cookie);
+}
+
 export async function logout(cookie?: string): Promise<void> {
   // No body sent; omit content-type so Fastify doesn't try to parse an
   // empty JSON document (which it would reject with 500). The route
@@ -275,12 +351,7 @@ export async function deleteMarbete(
   otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
-  return apiDeleteWithOtp<MarbeteDetailResponse>(
-    `/api/v1/marbetes/${id}`,
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiDeleteWithOtp<MarbeteDetailResponse>(`/api/v1/marbetes/${id}`, req, otpCode, cookie);
 }
 
 // ---- Marbetes (WU8b2) ----
@@ -289,10 +360,7 @@ export async function getStudentByCanvasId(
   canvasUserId: number,
   cookie?: string,
 ): Promise<StudentDetailResponse> {
-  return apiGet<StudentDetailResponse>(
-    `/api/v1/students?canvasUserId=${canvasUserId}`,
-    cookie,
-  );
+  return apiGet<StudentDetailResponse>(`/api/v1/students?canvasUserId=${canvasUserId}`, cookie);
 }
 
 export async function createMarbete(
@@ -309,12 +377,7 @@ export async function updateMarbete(
   otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
-  return apiPatchWithOtp<MarbeteDetailResponse>(
-    `/api/v1/marbetes/${id}`,
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPatchWithOtp<MarbeteDetailResponse>(`/api/v1/marbetes/${id}`, req, otpCode, cookie);
 }
 
 export async function revealMarbete(
@@ -342,12 +405,7 @@ export async function bulkCreateMarbetes(
   otpCode: string,
   cookie?: string,
 ): Promise<BulkCreateMarbetesResponse> {
-  return apiPostWithOtp<BulkCreateMarbetesResponse>(
-    '/api/v1/marbetes/bulk',
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPostWithOtp<BulkCreateMarbetesResponse>('/api/v1/marbetes/bulk', req, otpCode, cookie);
 }
 
 // ---- Marbetes bulk upload via .xlsx (T4) ----
@@ -456,12 +514,7 @@ export async function createDispositivo(
   otpCode: string,
   cookie?: string,
 ): Promise<DispositivoDetailResponse> {
-  return apiPostWithOtp<DispositivoDetailResponse>(
-    '/api/v1/dispositivos',
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPostWithOtp<DispositivoDetailResponse>('/api/v1/dispositivos', req, otpCode, cookie);
 }
 
 export async function updateDispositivo(

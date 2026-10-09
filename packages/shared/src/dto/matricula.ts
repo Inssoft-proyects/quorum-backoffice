@@ -40,7 +40,7 @@ export interface MarbeteSummary {
   publicUid: string;
   maskedCode: string;
   status: MarbeteStatus;
-  assignedAt: string;
+  assignedAt: string | null;
   /** Operator username captured at assign time (NULL on legacy rows). */
   assignedBy: string | null;
 }
@@ -80,7 +80,7 @@ export interface MatriculaListItem {
    * does not surface a per-student createdAt so this is the closest
    * stable value.
    */
-  registeredAt: string;
+  registeredAt: string | null;
   /**
    * The currently-assigned marbete for this student, or null when the
    * student has no active marbete. The join filters on
