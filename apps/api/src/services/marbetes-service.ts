@@ -8,7 +8,7 @@
 import type pg from 'pg';
 import type { FastifyBaseLogger } from 'fastify';
 import { AppError } from '../lib/errors';
-import { generatePublicUid, maskCode, sha256Hex } from '../lib/marbete-id';
+import { maskCode, sha256Hex } from '../lib/marbete-id';
 import { PgMarbeteRepo } from '../repositories/pg-marbetes';
 import { PgStudentRepo } from '../repositories/pg-students';
 import { OtpClient } from './otp-client';
@@ -218,25 +218,27 @@ export class MarbetesService {
       assignedInternalId = await this.resolveCanvasStudent(req.canvasUserId);
     }
 
+    // Store the operator-supplied code as the marbete number (public_uid)
+    // so the catalog can mask it for display. The sha256 hash is kept as an
+    // internal index for the MFA `code_hash` lookup.
+    const publicUid = req.code;
+    const codeHash = sha256Hex(req.code);
     let row: import('../repositories/pg-marbetes').MarbeteRow | null = null;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const publicUid = generatePublicUid();
-      const codeHash = sha256Hex(req.code);
-      try {
-        row = await this.repo.insert({
-          publicUid,
-          codeHash,
-          createdBy: actor,
-          assignedStudentId: assignedInternalId,
-        });
-        break;
-      } catch (err) {
-        const e = err as { code?: string; constraint?: string };
-        if (e.code === '23505' && e.constraint?.includes('public_uid')) continue;
-        throw err;
+    try {
+      row = await this.repo.insert({
+        publicUid,
+        codeHash,
+        createdBy: actor,
+        assignedStudentId: assignedInternalId,
+      });
+    } catch (err) {
+      const e = err as { code?: string; constraint?: string };
+      if (e.code === '23505' && e.constraint?.includes('public_uid')) {
+        throw AppError.conflict('marbete code already exists');
       }
+      throw err;
     }
-    if (!row) throw AppError.internal('failed to allocate unique public_uid');
+    if (!row) throw AppError.internal('failed to insert marbete');
 
     const audit = new AuditService(this.deps.pool);
     await audit.write({
@@ -405,7 +407,7 @@ export class MarbetesService {
         index: survivor.index,
         code: survivor.code,
         codeHash,
-        publicUid: generatePublicUid(),
+        publicUid: survivor.code,
       });
     }
 

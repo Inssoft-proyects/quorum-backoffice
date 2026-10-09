@@ -162,15 +162,12 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
               id="credential-number"
               name="credential-number"
               type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
               autoComplete="off"
               aria-describedby="credential-number-help"
-              placeholder="91234567"
+              placeholder="VALIDO-2609982468"
               value={code}
               onChange={(e) => {
-                const onlyDigits = e.target.value.replace(/\D/g, '');
-                setCode(onlyDigits);
+                setCode(e.target.value.trim());
                 if (error) setError(null);
               }}
               disabled={loading}
@@ -178,7 +175,7 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
               data-testid="credential-number-input"
             />
             <p className="form-field__hint" id="credential-number-help">
-              Solo dígitos numéricos. Se enmascarará una vez registrado por seguridad.
+              Código alfanumérico del marbete. Se enmascarará una vez registrado por seguridad.
             </p>
           </div>
 
