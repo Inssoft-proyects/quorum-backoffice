@@ -1,53 +1,72 @@
-# Marbetes catalog: store the code and mask it for display
+# Marbetes: catálogo correcto, código ofuscado y flujo de revelado
 
 ## Goal
 
-The `/backoffice/marbetes` catalog must show exactly the 10 real marbetes
-(`VALIDO-2609982468` … `VALIDO-2609982477`), display each masked as `V***68`
-(first char + `***` + last 2), and store the full code instead of only a hash.
+Que `/backoffice/marbetes` muestre exactamente los 10 marbetes reales
+(`VALIDO-2609982468` … `VALIDO-2609982477`), con el número ofuscado
+(`V***68`), sin columna ID, y que "Revelar marbete" desofusque el número
+**en la tabla** con su debida verificación OTP y auditoría.
 
-## Context / Root cause
+## Decisions (aprobadas por el operador)
 
-- The marbetes table stored only `code_hash = sha256(code)` plus a generated
-  `public_uid = m-<6 hex of hash>`. The plaintext code was never stored, so the
-  catalog could not mask it and instead rendered `m***1a`.
-- A previous synthetic-data load (2026-10-06) inserted 10 `VALIDO-*` marbetes
-  with `m-*` public_uids, plus 10 obsolete `CRD-*` marbetes from 2023–2024.
-  The catalog therefore showed 20 rows (wrong), with the synthetic ones first
-  (ordered by created_at DESC).
+1. Los 10 marbetes correctos/productivos son `VALIDO-2609982468…2477`
+   (no `CRD-XXXX`, que era basura obsoleta de 2023–2024).
+2. El número de marbete es **dato sensible**: se guarda completo y se
+   muestra **ofuscado** (primer char + `***` + 2 últimos → `V***68`).
+3. La columna **ID** (numérica, asignada por BD) **no se muestra**.
+   "No. Marbete" es la llave del catálogo.
+4. Catálogo de scopes OTP pequeño: `login`, `marbete`, `bitacoras`.
 
-## Decisions (operator-approved)
+## Causa raíz (resumen)
 
-1. Masked display format: `V***68` (first char + `***` + last 2 chars).
-2. Store the full marbete code (not a hash) as the operator-facing number.
+- La tabla guardaba solo `code_hash` + `public_uid` generado `m-XXXX`, por
+  lo que ofuscaba `m***1a` en vez del código real.
+- El OTP se verificaba con `subject = email` (`admin@quorum.local`) pero
+  quorum-otp emite ligado al **username canónico** (`admin`) → rechazo 409.
+- `MaskedNumber` tenía la prop `revealed` para desofuscar en la tabla, pero
+  nunca estaba cableada.
 
-## Changes
+## Cambios
 
-### Data remediation (production `quorum_backoffice`)
+### Datos (producción `quorum_backoffice`)
 
-- Backup: `marbetes_backup_20261009` (20 rows).
-- Deleted the 10 obsolete `CRD-*` rows.
-- Set `public_uid = VALIDO-2609982468…2477` for the 10 real rows (matched by
-  `code_hash`).
+- Backup `marbetes_backup_20261009` (20 filas).
+- Eliminados los 10 `CRD-*`; `public_uid` = `VALIDO-2609982468…2477`.
+- Catálogo final: 10 filas, ofuscadas `V***68…V***77`.
 
-### Code (branch `fix/quorum-ecosystem-remediation-p2`)
+### Código (rama `fix/quorum-ecosystem-remediation-p2`)
 
-- `apps/api/src/services/marbetes-service.ts`: `create`/`bulkCreate` now store
-  `req.code` as `public_uid` (the marbete number) instead of `generatePublicUid()`.
-  `code_hash` is kept as an internal index for the MFA `code_hash` lookup.
-- `apps/web/components/inventory/add-marbete-dialog.tsx`: accepts alphanumeric
-  codes (`VALIDO-…`) instead of digits-only.
-- `packages/shared/src/dto/marbete.ts`: doc comments updated.
+- `marbetes-service.ts`: `create`/`bulkCreate` guardan el código como
+  `public_uid` (no `m-XXXX`); scopes OTP unificados a `marbete`
+  (`OTP_SCOPE`); `verifyOtp(actor, otpCode, grantEligible)`.
+- `matriculas-service.ts`: `ASSIGN_GRANT_SCOPES` → `{ 'marbete' }`.
+- `auth.ts` / `session-hydrator.ts` / `session.ts` / `auth-service.ts`:
+  `MeResponse` expone `username` (nullable).
+- `routes/{marbetes,dispositivos,matriculas}.ts`: `actorFromRequest` usa el
+  username canónico (trim/lower) con fallback a email; reconciliado el fix
+  B7a (`serviceName: app.config.OTP_SERVICE_NAME`).
+- `marbetes-table.tsx` / `marbetes-page-client.tsx`: columna ID eliminada;
+  `revealedCodes` cableado a `MaskedNumber.revealed` (desofusca en la tabla).
+- `add-marbete-dialog.tsx`: acepta código alfanumérico.
 
-## Verification
+### Despliegue
 
-- Typecheck `apps/api` + `packages/shared`: clean.
-- Unit tests: API marbetes (20) + web marbetes (26) green.
-- DB catalog: 10 rows, masked `V***68` … `V***77`.
+Build in-place en `/opt/quorum-backoffice` (que tiene MFA + página `/mfa`
+que la rama no tiene), `kubectl rollout restart` de API y web. Backups:
+`apps/api/dist.predeploy-*` y `apps/web/.next.predeploy-*`.
 
-## Remaining
+## Verificación
 
-- Deploy the API + web change to `/opt/quorum-backoffice` and restart the pods
-  (production mutation; pending operator go-ahead).
-- Follow-up (optional): drop the internal `code_hash` once MFA no longer depends
-  on it; decide cleanup of the synthetic students/devices.
+- Typecheck API + web limpios.
+- 132 tests unitarios API + 200 web en verde.
+- Playwright (producción): antes `V***77`, tras revelar
+  `VALIDO-2609982477` **en la celda de la tabla** + banner.
+
+## Pendientes / drift conocido (fuera de este alcance)
+
+- `main`/`master` NO contiene MFA (`mfa-authenticate-service`, `pg-mfa-repo`,
+  rutas `/mfa`, migraciones 0015–0020) ni el endpoint de asignación de
+  dispositivos; viven en `feat/synthetic-test-data` /
+  `feat/canvas-jitsi-device-binding`. Requiere reconciliación aparte.
+- `bitacoras` quedó reservado; la pantalla de auditoría es read-only (sin OTP).
+- Push/merge a `master` pendiente de decisión del operador.
