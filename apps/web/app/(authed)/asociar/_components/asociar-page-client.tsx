@@ -206,12 +206,40 @@ export function AsociarPageClient({
   const canWrite = userRole === 'admin' || userRole === 'operator';
 
   // ---- Tab + metric filter chip sync (canon behavior) ----
+  // Switching tabs must also LOAD that tab's data. The server component only
+  // pre-fetches the initial status, so switching to "Asignados" used to render
+  // an empty list even when assignments existed — the panel was never fed.
   function setActiveTabSync(tab: 'unassigned' | 'assigned'): void {
     setActiveTab(tab);
-    // Switch the filter chip on the two metric cards. The cards are
-    // data-driven (MetricCard) so we just need to flip their
-    // `aria-pressed` state through the React render; the click handler
-    // here is fired by the card onClick which calls setActiveTabSync.
+    void loadTabItems(tab);
+  }
+
+  /** Loads one tab's page of matrículas plus the shared header counters. */
+  async function loadTabItems(tab: 'unassigned' | 'assigned'): Promise<void> {
+    try {
+      const [nextCounters, nextItems] = await Promise.all([
+        getMatriculasCounters(),
+        listMatriculas({
+          status: tab,
+          search: search || undefined,
+          isActive: 'true',
+          limit: 200,
+          offset: 0,
+        }),
+      ]);
+      setCounters(nextCounters);
+      setAvailableMarbetesTotal(nextCounters.availableMarbetes);
+      if (tab === 'assigned') {
+        setAssignedItems(nextItems.items);
+        setAssignedPage(1);
+      } else {
+        setUnassignedItems(nextItems.items);
+        setUnassignedPage(1);
+      }
+    } catch {
+      // Keep whatever is already rendered; the panel falls back to its
+      // empty state. A transient API failure must not blank the screen.
+    }
   }
 
   // ---- Refetch after writes ----
