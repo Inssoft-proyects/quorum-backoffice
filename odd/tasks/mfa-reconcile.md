@@ -53,15 +53,17 @@ as remaining delta below.
 
 ## Remaining delta (git vs /opt, out of scope)
 
-- Migration `0020_students_sis_id.sql` (nullable PII + `sis_id`) — synthetic/SIS
-  concern, not required by MFA. Present in production + `feat/synthetic-test-data`.
 - Synthetic test-data seeders (`apps/api/scripts/synthetic/**`) — deliberately
   excluded (they polluted production on 2026-10-06).
 - Any hostPath-only assets under `/opt/quorum-backoffice` not represented in git.
 
-## Verification (2026-10-09)
+Migration `0020_students_sis_id` is now **included** (it was a hard dependency:
+`master`'s `pg-matriculas.ts` already referenced `students_cache.sis_id`, so the
+matriculas list 500'd without it — see Findings).
 
-`bash scripts/ci-checks.sh` (unit gate):
+## Verification (2026-10-09, final — ALL GREEN)
+
+`DATABASE_URL_TEST=… bash scripts/ci-checks.sh` (full gate, EXIT 0):
 
 - shared build + typecheck — OK
 - api typecheck — OK (0 errors)
@@ -69,48 +71,40 @@ as remaining delta below.
 - web typecheck — OK
 - web unit — 31 suites / 221 tests passed
 - standalone-assets smoke + postbuild wiring — OK
+- **api integration — 17 suites / 216 tests passed (0 failed)** (incl. MFA
+  `mfa-authenticate`/`mfa-mobile`/`mfa-redirect-token`, device-assignment,
+  access-decisions, matriculas, marbetes, rbac).
 
-Integration (disposable DB `quorum_backoffice_test` + Redis, run directly with
-`--testPathPatterns` because `--testPathPattern` was removed in jest 30 — see
-findings):
+## Findings (all resolved on this branch)
 
-- **MFA integration suites — 4 suites / 74 tests PASS** (`mfa-authenticate`,
-  `mfa-mobile`, `mfa-redirect-token.int`).
-- Full integration run: 17 suites / 204 passed, **12 failed** — all 12 are
-  pre-existing on `master` (unrelated to MFA): `matriculas`, `marbetes`
-  (OTP-enforcement), `rbac`. Baseline on `master` = **29 failed** in the same
-  suites, so the merge reduced them to 12 (B7a OTP_SERVICE_NAME HMAC fixes
-  landed via the MFA branch) but did not introduce any new failure.
-
-## Findings (pre-existing, NOT introduced by this branch)
-
-- `apps/api/package.json` `test:integration` uses `--testPathPattern`, removed
-  in jest 30 (`--testPathPatterns`). `npm run test:integration` (and the
-  integration phase of `ci-checks.sh`) exits with a CLI error before running.
-  Pre-existing on `master`.
-- Marbete destructive-op OTP enforcement is broken on `master`: the
-  "rejected OTP" integration cases (POST/PATCH/DELETE without a valid OTP)
-  return 201/200 instead of 401. Pre-existing; security-relevant, but out of
-  scope for this MFA reconcile (separate remediation).
-- Matriculas integration suite fails on `master` (paginated list empty,
-  counters 0, sync → 503 Canvas mock). Pre-existing.
+- `--testPathPattern` (jest 30) → `--testPathPatterns` — fixed (commit `8301f08`).
+- `otp_grants` grant-cache leak across destructive-op test suites → clear
+  `otp_grants` in `beforeAll` — fixed (commit `2309ff6`).
+- Matriculas `seedMarbete` SQL interpolation (`'a'.repeat(64)` → `${…}`) +
+  sync mock emails (`sa@x` → `sa@x.com`) — fixed (commit `2309ff6`).
+- Matriculas OTP mock read `code` instead of wire field `token`, and omitted
+  `valid:true` → `otp_service_unexpected_body` 503 — fixed (commit `2309ff6`).
+- `master` referenced `students_cache.sis_id` without migration 0020 → list 500
+  `column s.sis_id does not exist` — fixed by adding 0020 (commit `a9ac08d`).
+- Matriculas list `.toISOString()` on null `assigned_at`/`last_synced_at` → 500 —
+  fixed with nullable DTO + guards (commit `159609f`).
 
 ## RDD review outcome (2026-10-09)
 
-RDD switch = ON (global). `inspect` resolved (after `gentle-ai sync` and excluding
-untracked build artifacts). START is **blocked terminal** with
-`lens_context_budget_exceeded`: this repo has no prior review lineage, so the
-controller scoped the first candidate as the **entire repository**
-(base = initial empty commit `2799de57` → HEAD, ~500 paths), which exceeds the
-reviewer lens context budget. No review authority was created; nothing to
-abandon/repair.
+RDD switch = ON (global). `inspect` resolved. Two attempts:
+1. Whole-repo candidate (controller default, no prior lineage → base = empty
+   commit `2799de57`) → **terminal `lens_context_budget_exceeded`** (~500 paths).
+2. Scoped committed range (START with `baseRef=master d7d80b0` +
+   `committedOnly`) → controller rejected with
+   `native-start-retained-selection-candidate-mismatch` (the retained
+   workspace untracked-exclude selection does not match a committed-range
+   candidate). No review authority created; nothing to abandon/repair.
 
 Resolution options (user decision):
 - Split the MFA surface into a chained sequence of smaller reviewable commits
   (M1 / M2 / M3 / B2 / access-decisions), each under budget, and review each.
 - Skip re-review: the MFA code was already reviewed when it landed as
-  `feat/mfa-canvas-integration` (PR #11) with approved RDD lineages for
-  M1/M2/Canvas per Engram.
+  `feat/mfa-canvas-integration` (PR #11) with approved RDD lineages per Engram.
 
 ## Acceptance criteria
 
