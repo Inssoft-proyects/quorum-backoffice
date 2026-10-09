@@ -2,6 +2,8 @@
 
 > Filed by the orchestrator during the MFA reconcile of `quorum-backoffice`
 > (PR #15). Route to the gentle-ai review-integration maintainer.
+>
+> **GitHub issue filed**: https://github.com/Gentleman-Programming/gentle-shell/issues/1985
 
 ## Summary
 
