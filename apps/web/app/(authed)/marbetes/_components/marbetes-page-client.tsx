@@ -63,8 +63,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
     return items.filter((m) => {
       const matchesSearch =
         q.length === 0 ||
-        m.maskedCode.toLowerCase().includes(q) ||
-        String(m.id).includes(q);
+        m.maskedCode.toLowerCase().includes(q);
       if (!matchesSearch) return false;
       if (filter === 'available')
         return m.status === 'active' && m.assignedStudentId === null;
@@ -170,6 +169,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   }
 
   const [lastRevealedCode, setLastRevealedCode] = useState<string | null>(null);
+  const [revealedCodes, setRevealedCodes] = useState<Record<number, string>>({});
   const [infoBanner, setInfoBanner] = useState<InfoBanner | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -201,6 +201,9 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   }, []);
 
   const handleRevealed = (fullCode: string) => {
+    if (revealing) {
+      setRevealedCodes((prev) => ({ ...prev, [revealing.id]: fullCode }));
+    }
     setLastRevealedCode(fullCode);
     refresh();
   };
@@ -308,7 +311,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
               className="inventory-search__input"
               type="search"
               autoComplete="off"
-              placeholder="Buscar por ID o no. marbete"
+              placeholder="Buscar por no. marbete"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -327,6 +330,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
           items={pagedItems}
           userRole={userRole}
           now={now}
+          revealedCodes={revealedCodes}
           onDelete={(m) => setRevoking(m)}
           onEdit={(m) => setRevealing(m)}
         />

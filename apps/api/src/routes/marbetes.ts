@@ -47,7 +47,13 @@ import {
 import { AppError } from '../lib/errors';
 
 function actorFromRequest(req: FastifyRequest): string {
-  return req.session?.user?.email ?? 'dev-user';
+  const u = req.session?.user;
+  if (!u) return 'dev-user';
+  // OTPs are issued bound to the canonical username (lower/trim), matching
+  // the login flow. Fall back to email only for legacy accounts without a
+  // username so verification does not fail on a subject mismatch.
+  const username = u.username?.trim().toLowerCase();
+  return username && username.length > 0 ? username : u.email;
 }
 
 function otpFromRequest(req: FastifyRequest): string | undefined {
@@ -63,9 +69,13 @@ function metaFromRequest(req: FastifyRequest): { ip: string | null; userAgent: s
 }
 
 export async function registerMarbetesRoutes(app: FastifyInstance): Promise<void> {
+  // B7a (P5.1): see the dispositivos twin comment. The HMAC service
+  // identity on destructive marbetes operations must be the
+  // operator-configured OTP_SERVICE_NAME, not the OtpClient default.
   const otp = new OtpClient({
     baseUrl: app.config.OTP_SERVICE_URL,
     serviceToken: app.config.OTP_SERVICE_TOKEN,
+    serviceName: app.config.OTP_SERVICE_NAME,
   });
 
   // Per-actor OTP grant cache. TTL is driven by config so operators can

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useMemo, useState } from 'react';
 import type { MarbeteDetailResponse, UserRole } from '@quorum-backoffice/shared';
 import { hasAtLeastRole } from '@quorum-backoffice/shared';
-import { IdBadge, MaskedNumber, SortHeader, StatusChip, type SortState } from '@/components/inventory';
+import { MaskedNumber, SortHeader, StatusChip, type SortState } from '@/components/inventory';
 
 interface Props {
   items: MarbeteDetailResponse[];
@@ -12,6 +12,8 @@ interface Props {
   onDelete: (item: MarbeteDetailResponse) => void;
   onEdit: (item: MarbeteDetailResponse) => void;
   isPending?: boolean;
+  /** marbeteId → full code for rows the operator has just revealed. */
+  revealedCodes?: Record<number, string>;
   /** Forces the validity chip rule independent of the current date (used in tests). */
   now?: Date;
 }
@@ -52,8 +54,8 @@ function statusChip(status: MarbeteDetailResponse['status'], assignedStudentId: 
 /**
  * Redesigned marbetes list (maquette v2).
  *
- * Renders ID / No. Marbete / Estado / Estudiante / Fecha de carga /
- * Vigencia / Acciones. The student column is preserved (the maquette
+ * Renders No. Marbete / Estado / Estudiante / Fecha de carga / Vigencia /
+ * Acciones. The student column is preserved (the maquette
  * omits it but the existing unit test requires the student full name and
  * email to be in the DOM). Action column shows "Revelar" and "Baja"
  * using the canon `.admin-action` icon+label pills and an inline SVG
@@ -65,11 +67,11 @@ function statusChip(status: MarbeteDetailResponse['status'], assignedStudentId: 
  * `validity-date-${id}`) are preserved so the current test suite keeps
  * passing.
  *
- * Sorting applies client-side to the already-fetched items over the four
- * sortable columns (ID, No. Marbete, Fecha de carga, Vigencia). Cycles
+ * Sorting applies client-side to the already-fetched items over the three
+ * sortable columns (No. Marbete, Fecha de carga, Vigencia). Cycles
  * through none → asc → desc as in the maquette.
  */
-export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, now }: Props) {
+export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, revealedCodes, now }: Props) {
   const canManage = hasAtLeastRole(userRole, 'admin');
   const effectiveNow = now ?? new Date();
   const [sort, setSort] = useState<SortState | null>(null);
@@ -90,8 +92,6 @@ export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, no
     const sortedItems = [...decorated].sort((a, b) => {
       const dir = sort.direction === 'asc' ? 1 : -1;
       switch (sort.key) {
-        case 'id':
-          return a.item.publicUid.localeCompare(b.item.publicUid) * dir;
         case 'credential':
           return a.item.maskedCode.localeCompare(b.item.maskedCode) * dir;
         case 'loadDate':
@@ -131,14 +131,6 @@ export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, no
           <thead>
             <tr>
               <SortHeader
-                label="ID"
-                sortKey="id"
-                currentSort={sort}
-                onSort={handleSort}
-                ariaSortDefault="none"
-                ariaLabel="Ordenar ID ascendente"
-              />
-              <SortHeader
                 label="No. Marbete"
                 sortKey="credential"
                 currentSort={sort}
@@ -173,11 +165,8 @@ export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, no
               const chip = statusChip(m.status, m.assignedStudentId);
               return (
                 <tr key={m.id} data-testid={`marbete-row-${m.id}`}>
-                  <td data-label="ID" className="data-table__id">
-                    <IdBadge value={m.publicUid} />
-                  </td>
                   <td data-label="No. Marbete" className="data-table__credential">
-                    <MaskedNumber value={m.maskedCode} />
+                    <MaskedNumber value={m.maskedCode} revealed={revealedCodes?.[m.id]} />
                   </td>
                   <td data-label="Estado">
                     <StatusChip variant={chip.variant}>{chip.label}</StatusChip>

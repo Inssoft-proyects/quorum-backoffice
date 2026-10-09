@@ -19,8 +19,9 @@ export const MarbeteIdParam = z.object({
 // ---- Create ----
 export const CreateMarbeteRequest = z.object({
   /**
-   * Plain code as read by the mobile app's QR bicapa scanner. The API hashes
-   * it (sha256) before persisting; the plain code is never stored.
+   * Plain code as read by the mobile app's QR bicapa scanner. Stored as the
+   * marbete's operator-facing number (public_uid) and displayed masked; a
+   * sha256 hash is also kept as an internal index for the MFA `code_hash` lookup.
    */
   code: z.string().min(8).max(128),
   /**
@@ -121,7 +122,7 @@ export const RevealMarbeteRequest = z.object({
 export type RevealMarbeteRequest = z.infer<typeof RevealMarbeteRequest>;
 
 export interface RevealMarbeteResponse {
-  /** The full publicUid, e.g. "m-AB12CD". */
+  /** The full marbete code, e.g. "VALIDO-2609982468". */
   code: string;
   /** ISO 8601 timestamp of the reveal. */
   revealedAt: string;

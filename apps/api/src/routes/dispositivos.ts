@@ -21,7 +21,10 @@ import { OtpClient } from '../services/otp-client';
 import { requireSession, requireRole } from '../plugins/rbac';
 
 function actorFromRequest(req: FastifyRequest): string {
-  return req.session?.user?.email ?? 'dev-user';
+  const u = req.session?.user;
+  if (!u) return 'dev-user';
+  const username = u.username?.trim().toLowerCase();
+  return username && username.length > 0 ? username : u.email;
 }
 
 function otpFromRequest(req: FastifyRequest): string | undefined {
@@ -37,9 +40,15 @@ function metaFromRequest(req: FastifyRequest): { ip: string | null; userAgent: s
 }
 
 export async function registerDispositivosRoutes(app: FastifyInstance): Promise<void> {
+  // B7a (P5.1): the HMAC service identity MUST be the operator-configured
+  // OTP_SERVICE_NAME (default 'quorum-backoffice'). Before this fix the
+  // inline OtpClient fell back to the constructor default and signed every
+  // destructive dispositivos operation as 'quorum-backoffice' even when
+  // the operator registered a different name on the quorum-otp side.
   const otp = new OtpClient({
     baseUrl: app.config.OTP_SERVICE_URL,
     serviceToken: app.config.OTP_SERVICE_TOKEN,
+    serviceName: app.config.OTP_SERVICE_NAME,
   });
 
   const getService = (): DispositivosService =>

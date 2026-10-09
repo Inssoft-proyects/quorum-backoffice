@@ -48,7 +48,7 @@ async function plugin(app: FastifyInstance): Promise<void> {
     const testActor = req.headers['x-test-actor'];
     if (typeof testActor === 'string' && testActor.length > 0) {
       req.session = {
-        user: { id: 0, email: testActor, role: 'admin' as UserRole },
+        user: { id: 0, email: testActor, username: testActor, role: 'admin' as UserRole },
         source: 'test-actor',
       };
       return;

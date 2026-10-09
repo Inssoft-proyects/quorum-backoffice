@@ -13,7 +13,7 @@
  *
  * OTP grant window: assignBulk / unassign route through the same
  * grant-aware `verifyOtp` helper as MarbetesService (same scope
- * family `marbete.update`), so one OTP cover both an assign and a
+ * family `marbete`), so one OTP cover both an assign and a
  * follow-up unassign inside the 20-minute window. The sync endpoint
  * is read-only toward Canvas and writes only to the local cache,
  * so it deliberately does NOT require OTP.
@@ -70,7 +70,7 @@ interface ServiceDeps {
 const GRANT_SCOPE = 'marbete';
 
 /** Grant-eligible OTP scopes for assign / unassign. */
-const ASSIGN_GRANT_SCOPES = new Set(['marbete.update']);
+const ASSIGN_GRANT_SCOPES = new Set(['marbete']);
 
 /** Hard cap on the Canvas sync pagination. Mirrors the parent task. */
 const SYNC_MAX_ROWS = 20_000;
@@ -176,7 +176,7 @@ export class MatriculasService {
     otpCode: string | undefined,
     meta: RequestMeta = {},
   ): Promise<AssignBulkInternalResult> {
-    const otpResult = await this.verifyOtpGrant(actor, 'marbete.update', otpCode);
+    const otpResult = await this.verifyOtpGrant(actor, 'marbete', otpCode);
 
     // ---- Pure pre-validation: duplicates ----
     const seenMarbetes = new Map<number, number>(); // marbeteId → first index
@@ -402,7 +402,7 @@ export class MatriculasService {
     otpCode: string | undefined,
     meta: RequestMeta = {},
   ): Promise<{ marbeteId: number; publicUid: string }> {
-    const otpResult = await this.verifyOtpGrant(actor, 'marbete.update', otpCode);
+    const otpResult = await this.verifyOtpGrant(actor, 'marbete', otpCode);
 
     const existing = await this.marbetes.findById(req.marbeteId);
     if (!existing) {
