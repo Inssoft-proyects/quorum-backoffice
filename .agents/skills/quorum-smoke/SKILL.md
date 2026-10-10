@@ -44,5 +44,6 @@ ecosystem is healthy end to end.
 
 ## References
 
+- `scripts/smoke.sh` — runnable FQDN/TLS/nginx/ports probe table.
 - `/planQuorum/dev/quorum-backoffice/scripts/smoke-post-deploy.sh`
 - `/planQuorum/dev/quorum-otp/docs/OPERATIONS.md`

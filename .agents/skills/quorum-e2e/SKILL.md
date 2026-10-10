@@ -44,5 +44,6 @@ targets the `monitor.inecuni.com` vhost and the host-loopback OTP issuer.
 
 ## References
 
+- `references/e2e-triage.md` — failure triage playbook.
 - `/planQuorum/dev/e2e/run-e2e.mjs`, `/planQuorum/dev/playwright.config.mjs`
 - `/planQuorum/dev/e2e/_helpers/login.mjs` (rate-limit-tolerant login)

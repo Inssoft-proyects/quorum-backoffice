@@ -52,5 +52,6 @@ Use when deploying or rolling out a Quorum service on the live k3s cluster
 
 ## References
 
+- `references/k3s-gotchas.md` — host-level k3s/nginx gotchas.
 - `/planQuorum/dev/quorum-otp/docs/f5-deploy-runbook.md`
 - `/planQuorum/dev/odd/tasks/otp-skip-scope-match-prod-enable.md`

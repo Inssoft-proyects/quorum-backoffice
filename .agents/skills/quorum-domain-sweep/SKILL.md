@@ -43,4 +43,5 @@ Use when a Quorum service, script, test, or runbook still points at a retired ho
 
 ## References
 
+- `scripts/sweep.sh` — legacy-hit sweep across all workspaces.
 - `/planQuorum/dev/odd/tasks/quorum-ecosystem-remediation-plan.md` (H5, P2.x)
