@@ -136,6 +136,20 @@ export type MfaAuthenticateRequest = z.infer<typeof MfaAuthenticateRequest>;
 //                      loosening of the DTO for the synthetic
 //                      test-data case.
 //   - student_email  : same rationale as student_name.
+//   - matricula      : the SIS matrícula (6-char uppercase
+//                      alnum) resolved from `students_cache.sis_id`
+//                      on the MFA-authenticate path. Exposed so a
+//                      downstream Jitsi proxy can set the
+//                      participant display name to the matrícula
+//                      without a follow-up SIS lookup. Nullable
+//                      since migration 0020: legacy rows (inserted
+//                      before 0020) and synthetic high-privacy rows
+//                      (sis_id + canvas_user_id only) may carry
+//                      `sis_id = NULL` and surface as `null` here.
+//                      The MFA policy itself still requires an
+//                      active student record; the nullable surface
+//                      is a wire-level forward-compat loosening for
+//                      synthetic test-data rows.
 //   - role           : always 'student' for the MFA session (the
 //                      other 'user' role is reserved for BackOffice
 //                      operator sessions).
@@ -148,11 +162,50 @@ export const MfaAuthenticateResponse = z.object({
   canvas_user_id: z.number().int().positive(),
   student_name: z.string().nullable(),
   student_email: z.string().email().nullable(),
+  // SIS identity used as the conferencing display name; nullable
+  // for synthetic rows that carry no SIS matrícula yet.
+  matricula: z.string().nullable(),
   role: z.literal('student'),
   session_id: z.string().min(16).max(128),
   expires_at: z.string().datetime(),
 });
 export type MfaAuthenticateResponse = z.infer<typeof MfaAuthenticateResponse>;
+
+// ---------------------------------------------------------------------------
+// MfaConsumeResponse
+// ---------------------------------------------------------------------------
+//
+// The response of `POST /api/v1/mfa/consume` (Canvas → BackOffice
+// MFA redirect-token exchange). The student identity is returned
+// after the single-use Redis key is `GETDEL`-ed so Canvas can issue
+// its own session. Mirrors the MfaAuthenticateResponse student
+// surface so the consume route and the authenticate route share
+// one wire contract for `canvas_user_id` + the denormalized
+// `student_name` / `student_email`. The session-related fields
+// (cookie, session_id, expires_at) belong to the MFA authenticate
+// route, NOT to the consume route, and are therefore absent here.
+//
+//   - matricula : the SIS matrícula carried through the
+//                 `students_cache.sis_id` column. Exposed so the
+//                 downstream Jitsi proxy can set the participant
+//                 display name to the matrícula without a
+//                 follow-up SIS lookup. Nullable for the same
+//                 forward-compat reason as
+//                 `MfaAuthenticateResponse.matricula`: legacy
+//                 rows (inserted before migration 0020) and
+//                 synthetic high-privacy students (sis_id +
+//                 canvas_user_id only) may carry `sis_id = NULL`.
+export const MfaConsumeResponse = z.object({
+  canvas_user_id: z.number().int().positive(),
+  student_name: z.string().nullable(),
+  student_email: z.string().email().nullable(),
+  // SIS identity used as the conferencing display name; nullable
+  // for synthetic rows that carry no SIS matrícula yet.
+  matricula: z.string().nullable(),
+  role: z.literal('student'),
+  next_url: z.string().min(1).max(2048),
+});
+export type MfaConsumeResponse = z.infer<typeof MfaConsumeResponse>;
 
 // ---------------------------------------------------------------------------
 // MfaSessionResponse

@@ -113,17 +113,25 @@ export interface MfaAuthenticateMeta {
  * returned in the response body; the JSON channel (M5) can use
  * the body value directly without a cookie store.
  *
- * Since migration 0020_students_sis_id.sql: `studentName` and
- * `studentEmail` are nullable. A synthetic high-privacy students
- * row (sis_id + canvas_user_id only) cannot satisfy the MFA
- * flow today (the route layer rejects missing students before
- * the policy runs), but the DTO surface is now loose enough
- * to host a future "SIS-only" flow without a breaking change.
+ * Since migration 0020_students_sis_id.sql: `studentName`,
+ * `studentEmail`, and `matricula` are nullable. A synthetic
+ * high-privacy students row (sis_id + canvas_user_id only)
+ * cannot satisfy the MFA flow today (the route layer rejects
+ * missing students before the policy runs), but the DTO
+ * surface is now loose enough to host a future "SIS-only"
+ * flow without a breaking change.
+ *
+ * `matricula` is the value of `students_cache.sis_id` at
+ * authentication time. The route surfaces it in the wire
+ * response so a downstream Jitsi proxy can set the
+ * conferencing participant display name to the matrícula
+ * without a follow-up SIS lookup.
  */
 export interface MfaAuthenticateResult {
   canvasUserId: number;
   studentName: string | null;
   studentEmail: string | null;
+  matricula: string | null;
   sessionId: string;
   sessionToken: string;
   expiresAt: Date;
@@ -433,6 +441,13 @@ export class MfaAuthenticateService {
         canvasUserId: student.canvas_user_id,
         studentName: student.full_name,
         studentEmail: student.email,
+        // The SIS matrícula carried by the resolved students_cache
+        // row. Surface as-is so the route can echo it in the
+        // MfaAuthenticateResponse envelope (the Jitsi proxy
+        // consumes the value as the participant display name).
+        // A legacy row with `sis_id IS NULL` surfaces as `null`
+        // without coercion.
+        matricula: student.sis_id,
         sessionId: sessionToken,
         sessionToken,
         expiresAt,

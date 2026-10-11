@@ -239,12 +239,13 @@ describe('generateMfaRedirectToken — 32 random bytes hex', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildMfaRedirectPayload — wire payload shape', () => {
-  it('produces a payload with the documented field set', () => {
+  it('produces a payload with the documented field set, including the SIS matrícula', () => {
     const issued = new Date('2026-01-01T00:00:00.000Z');
     const p = buildMfaRedirectPayload({
       canvasUserId: 7001,
       studentName: 'Marie Curie',
       studentEmail: 'marie@example.test',
+      matricula: 'A00001',
       role: 'student',
       nextUrl: 'https://canvas.example.com/dashboard',
       issuedAt: issued,
@@ -253,6 +254,7 @@ describe('buildMfaRedirectPayload — wire payload shape', () => {
       canvas_user_id: 7001,
       student_name: 'Marie Curie',
       student_email: 'marie@example.test',
+      matricula: 'A00001',
       role: 'student',
       next_url: 'https://canvas.example.com/dashboard',
       issued_at: '2026-01-01T00:00:00.000Z',
@@ -264,11 +266,25 @@ describe('buildMfaRedirectPayload — wire payload shape', () => {
       canvasUserId: 1,
       studentName: 'X',
       studentEmail: 'x@example.test',
+      matricula: 'A00001',
       role: 'student',
       nextUrl: 'https://canvas.example.com/',
       issuedAt: new Date(),
     });
     expect(p.role).toBe('student');
+  });
+
+  it('accepts a null matrícula (legacy / synthetic high-privacy students)', () => {
+    const p = buildMfaRedirectPayload({
+      canvasUserId: 1,
+      studentName: 'X',
+      studentEmail: 'x@example.test',
+      matricula: null,
+      role: 'student',
+      nextUrl: 'https://canvas.example.com/',
+      issuedAt: new Date(),
+    });
+    expect(p.matricula).toBeNull();
   });
 });
 

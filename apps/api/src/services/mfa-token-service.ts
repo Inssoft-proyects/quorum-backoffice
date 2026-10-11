@@ -184,17 +184,25 @@ export function generateMfaRedirectToken(): string {
  * to Canvas unchanged (minus any internal-only fields). The
  * `role` is always `'student'` for an MFA session.
  *
- * Since migration 0020_students_sis_id.sql: `student_name` and
- * `student_email` are nullable. A synthetic high-privacy student
- * (sis_id + canvas_user_id only) has NULL PII and the redirect
- * payload surfaces `null` for those fields. The MFA chain still
- * requires an active student record at the issuing endpoint, so
- * the loosen here is purely a wire-level forward-compat change.
+ * Since migration 0020_students_sis_id.sql: `student_name`,
+ * `student_email`, and `matricula` are nullable. A synthetic
+ * high-privacy student (sis_id + canvas_user_id only) has
+ * NULL PII and the redirect payload surfaces `null` for
+ * those fields. The MFA chain still requires an active
+ * student record at the issuing endpoint, so the loosen
+ * here is purely a wire-level forward-compat change.
+ *
+ * `matricula` carries the SIS matrícula (the value of
+ * `students_cache.sis_id` at issue time) so the consume
+ * endpoint can surface it to Canvas without a follow-up SIS
+ * lookup. The downstream Jitsi proxy consumes it as the
+ * participant display name.
  */
 export interface MfaRedirectPayload {
   canvas_user_id: number;
   student_name: string | null;
   student_email: string | null;
+  matricula: string | null;
   role: 'student';
   next_url: string;
   issued_at: string;
@@ -209,6 +217,7 @@ export interface MfaRedirectInput {
   canvasUserId: number;
   studentName: string | null;
   studentEmail: string | null;
+  matricula: string | null;
   role: 'student';
   nextUrl: string;
   issuedAt: Date;
@@ -226,6 +235,7 @@ export function buildMfaRedirectPayload(
     canvas_user_id: input.canvasUserId,
     student_name: input.studentName,
     student_email: input.studentEmail,
+    matricula: input.matricula,
     role: 'student',
     next_url: input.nextUrl,
     issued_at: input.issuedAt.toISOString(),
@@ -259,6 +269,7 @@ export interface MfaIssueInput {
   canvasUserId: number;
   studentName: string | null;
   studentEmail: string | null;
+  matricula: string | null;
   nextUrl: string;
 }
 
@@ -271,6 +282,7 @@ export interface MfaConsumeResult {
   canvasUserId: number;
   studentName: string | null;
   studentEmail: string | null;
+  matricula: string | null;
   role: 'student';
   nextUrl: string;
 }
@@ -353,6 +365,7 @@ export class MfaTokenService {
       canvasUserId: input.canvasUserId,
       studentName: input.studentName,
       studentEmail: input.studentEmail,
+      matricula: input.matricula,
       role: 'student',
       nextUrl: input.nextUrl,
       issuedAt: new Date(),
@@ -486,6 +499,13 @@ export class MfaTokenService {
       canvasUserId: payload.canvas_user_id,
       studentName: payload.student_name,
       studentEmail: payload.student_email,
+      // Round-trip the SIS matrícula through the Redis
+      // payload so the consume response can surface it to
+      // Canvas / Jitsi without a follow-up SIS lookup. The
+      // value is opaque on this side and never validated
+      // here (the DTO layer is responsible for the wire
+      // shape).
+      matricula: payload.matricula,
       role: 'student',
       nextUrl: payload.next_url,
     };
