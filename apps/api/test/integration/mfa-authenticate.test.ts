@@ -117,11 +117,18 @@ async function seedStudent(
   canvasId: number,
   name: string,
   active: boolean,
+  sisId: string | null = null,
 ): Promise<number> {
+  // The happy-path student seeds a non-null `sis_id` so the
+  // response carries a real matrícula end-to-end. Tests that
+  // exercise the null branch pass `sisId: null` (the
+  // default for legacy rows). The column is nullable +
+  // partial-unique (per migration 0020), so the null case
+  // is the same INSERT shape as before 0020.
   const r = await pool.query<{ id: number }>(
-    `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [canvasId, name, `student-${canvasId}@quorum.local`, active],
+    `INSERT INTO students_cache (canvas_user_id, full_name, email, sis_id, is_active)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [canvasId, name, `student-${canvasId}@quorum.local`, sisId, active],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('student_seed_failed');
@@ -285,9 +292,17 @@ function happyBody(overrides: Partial<AuthBody> = {}): AuthBody {
 
 async function fetchHappyFixtures(
   pool: Pool,
-): Promise<{ studentId: number; otherStudentId: number; inactiveStudentId: number }> {
-  // The happy-path student is bound to a marbete and a device.
-  const studentId = await seedStudent(pool, CANVAS_HAPPY, 'Happy MFA Student', true);
+): Promise<{
+  studentId: number;
+  otherStudentId: number;
+  inactiveStudentId: number;
+}> {
+  // The happy-path student is bound to a marbete and a
+  // device, AND carries a SIS matrícula so the
+  // authenticate response can expose it. `A00001` is the
+  // synthetic 6-char uppercase alnum matricula migration
+  // 0020 documents.
+  const studentId = await seedStudent(pool, CANVAS_HAPPY, 'Happy MFA Student', true, 'A00001');
   const otherStudentId = await seedStudent(pool, CANVAS_OTHER, 'Other MFA Student', true);
   const inactiveStudentId = await seedStudent(
     pool,
@@ -397,6 +412,7 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
       canvas_user_id: number;
       student_name: string;
       student_email: string;
+      matricula: string | null;
       role: 'student';
       session_id: string;
       expires_at: string;
@@ -404,6 +420,11 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
     expect(body.canvas_user_id).toBe(CANVAS_HAPPY);
     expect(body.student_name).toBe('Happy MFA Student');
     expect(body.student_email).toBe(`student-${CANVAS_HAPPY}@quorum.local`);
+    // The seeded `sis_id` is `A00001` (see fetchHappyFixtures).
+    // The route MUST surface it as the Jitsi participant
+    // display name so the Jitsi proxy can render the
+    // matrícula without a follow-up SIS lookup.
+    expect(body.matricula).toBe('A00001');
     expect(body.role).toBe('student');
     expect(body.session_id).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
     expect(new Date(body.expires_at).getTime()).toBeGreaterThan(Date.now());
@@ -465,6 +486,75 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
     const body = r.json() as { session_id: string };
     const sess = await sessionRow(pool, body.session_id);
     expect(sess).not.toBeNull();
+  });
+
+  // -----------------------------------------------------------------
+  // Matrícula (SIS identity) surface — happy + null branches
+  // -----------------------------------------------------------------
+
+  it('happy: matricula on the response equals the SIS seed value (sis_id round-trips end-to-end)', async () => {
+    // The default happy-path student is seeded with
+    // `sis_id = 'A00001'` (see fetchHappyFixtures). The
+    // authenticated response MUST surface it so the Jitsi
+    // proxy can set the participant display name to the
+    // matrícula without a follow-up SIS lookup.
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/mfa/authenticate',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify(happyBody()),
+    });
+    expect(r.statusCode).toBe(201);
+    const body = r.json() as { matricula: string | null };
+    expect(body.matricula).toBe('A00001');
+  });
+
+  it('happy: synthetic high-privacy student (sis_id IS NULL) surfaces matricula=null on the response', async () => {
+    // A synthetic high-privacy student (inserted before
+    // migration 0020, or a row whose `sis_id` was never
+    // back-filled) carries `sis_id = NULL`. The MFA chain
+    // MUST still issue a session (the chain requires an
+    // active student record, NOT a non-null sis_id), and
+    // the response MUST surface `matricula: null` so the
+    // Jitsi proxy can branch on "we don't know the
+    // matrícula yet" vs. "we have one". A future refactor
+    // that coerces NULL to '' would render an empty
+    // display name and trip this test.
+    const noMatriculaCanvas = 90_777;
+    const noMatriculaStudentId = await seedStudent(
+      pool,
+      noMatriculaCanvas,
+      'Synthetic No-Matrícula Student',
+      true,
+      null,
+    );
+    await seedMarbete(pool, {
+      code: 'CODE-SYN-NO-SIS-1234',
+      publicUid: 'm-SYNNOSIS',
+      assignedStudentId: noMatriculaStudentId,
+    });
+    await seedDevice(pool, {
+      serial: 'SN-MFA-SYNNOSIS',
+      assignedStudentId: noMatriculaStudentId,
+    });
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/mfa/authenticate',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify(
+        happyBody({
+          marbete_code: 'CODE-SYN-NO-SIS-1234',
+          serial_number: 'SN-MFA-SYNNOSIS',
+        }),
+      ),
+    });
+    expect(r.statusCode).toBe(201);
+    const body = r.json() as {
+      canvas_user_id: number;
+      matricula: string | null;
+    };
+    expect(body.canvas_user_id).toBe(noMatriculaCanvas);
+    expect(body.matricula).toBeNull();
   });
 
   // -----------------------------------------------------------------

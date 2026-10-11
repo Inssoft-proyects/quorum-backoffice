@@ -107,6 +107,12 @@ function makeStudentRow(overrides: Partial<MfaStudentRow> = {}): MfaStudentRow {
     canvas_user_id: 7001,
     full_name: 'Marie Curie',
     email: 'marie@example.test',
+    // Default to a synthetic-looking 6-char uppercase alnum
+    // matrícula so the happy-path happy-path test (which
+    // asserts the wire response carries the value) does not
+    // have to override the field. Tests that exercise the
+    // null branch override with `sis_id: null`.
+    sis_id: 'A00001',
     is_active: true,
     ...overrides,
   };
@@ -484,6 +490,11 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
     expect(result.canvasUserId).toBe(7001);
     expect(result.studentName).toBe('Marie Curie');
     expect(result.studentEmail).toBe('marie@example.test');
+    // The default student row carries `sis_id: 'A00001'`; the
+    // service MUST thread that value through to the wire result
+    // so the route can surface it as the Jitsi participant
+    // display name.
+    expect(result.matricula).toBe('A00001');
     expect(result.sessionToken).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
     expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
 
@@ -636,6 +647,42 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
     expect(ins.id).toBe(result.sessionToken);
     expect(ins.ip).toBe('127.0.0.1');
     expect(ins.userAgent).toBe('jest-unit/1.0');
+  });
+
+  it('7) success path with sis_id IS NULL surfaces `matricula: null` on the wire result (legacy / synthetic row)', async () => {
+    // A legacy / synthetic high-privacy row carries
+    // `students_cache.sis_id = NULL`. The service must NOT
+    // coerce the NULL to '' (the Jitsi proxy MUST see
+    // `null` so it can branch on "we still don't know the
+    // matrícula" vs. "we have one"). The DTO accepts a
+    // null value; the route echoes it verbatim.
+    built.repo.setStudent(makeStudentRow({ sis_id: null }));
+    built.otp.setNext({ ok: true, otpId: 'otp-mfa-unit-null-matricula' });
+    const result = await built.service.authenticate(baseInput(), META);
+    expect(result.canvasUserId).toBe(7001);
+    expect(result.matricula).toBeNull();
+    // The deny-path invariants still hold: PII leakage
+    // guards (no code/serial/OTP in any output) and the
+    // session insert is still issued.
+    expect(built.repo.sessionInserts).toHaveLength(1);
+    expect(built.audit).toHaveLength(1);
+    const auditJson = JSON.stringify(built.audit[0]);
+    expect(auditJson).not.toContain('PLAINTEXT-CODE-12345');
+    expect(auditJson).not.toContain('SN-UNIT-1');
+    expect(auditJson).not.toContain('123456');
+  });
+
+  it('8) the matrícula on the wire result matches the value the repo SELECTed (no coercion / transformation)', async () => {
+    built.repo.setStudent(makeStudentRow({ sis_id: 'Z99999' }));
+    built.otp.setNext({ ok: true, otpId: 'otp-mfa-unit-matricula-bc' });
+    const result = await built.service.authenticate(baseInput(), META);
+    // The service MUST surface the exact string the repo
+    // returned. A future refactor that lowercases,
+    // trims, or otherwise transforms the value would
+    // change the Jitsi proxy's participant display name
+    // and would also break the contract documented in
+    // migration 0020 (sis_id is a verbatim SIS code).
+    expect(result.matricula).toBe('Z99999');
   });
 
   it('marbete_unknown path: an audit row is written with entity_id="unknown" and the deny code', async () => {

@@ -182,6 +182,11 @@ export async function registerMfaRoutes(
       canvas_user_id: result.canvasUserId,
       student_name: result.studentName,
       student_email: result.studentEmail,
+      // Surface the SIS matrícula from `students_cache.sis_id`
+      // so a downstream Jitsi proxy can set the participant
+      // display name to the matrícula without a follow-up
+      // SIS lookup. `null` for legacy / synthetic rows.
+      matricula: result.matricula,
       role: 'student',
       session_id: result.sessionId,
       expires_at: result.expiresAt.toISOString(),

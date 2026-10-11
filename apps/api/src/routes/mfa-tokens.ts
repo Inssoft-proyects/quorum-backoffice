@@ -53,7 +53,10 @@ import {
 } from '../plugins/service-auth';
 import { AppError } from '../lib/errors';
 import { isValidSessionToken } from '../lib/session-token';
-import { MFA_SESSION_COOKIE_NAME } from '@quorum-backoffice/shared';
+import {
+  MFA_SESSION_COOKIE_NAME,
+  MfaConsumeResponse,
+} from '@quorum-backoffice/shared';
 import { PgMfaRepo } from '../repositories/pg-mfa-repo';
 import { MfaTokenService } from '../services/mfa-token-service';
 import {
@@ -132,32 +135,14 @@ const MfaConsumeRequest = z.object({
   token: z.string().regex(/^[0-9a-f]{64}$/, 'token must be 64 lowercase hex chars'),
 });
 
-/**
- * `POST /api/v1/mfa/consume` response. The service returns
- * `role: 'student'` for the M3 surface (the MFA session is
- * always a student session, by construction — a BackOffice
- * operator session cannot mint a redirect token). The hand-
- * authored `mfa.openapi.yaml` lists Canvas role values
- * (Learner / Instructor / Administrator / TA); the generated
- * doc narrows this to `student` to match the actual service
- * return type, surfacing the pre-existing drift as a typed
- * property of the generated spec.
- *
- * `student_name` and `student_email` are nullable since
- * migration 0020_students_sis_id.sql: a synthetic high-privacy
- * students row carries no PII, so the redirect-token payload
- * surfaces `null` for those fields. The MFA chain still
- * requires an active student record (the route returns 401
- * when the row is missing), so the loosen here is purely a
- * wire-level forward-compat change.
- */
-const MfaConsumeResponse = z.object({
-  canvas_user_id: z.number().int().positive(),
-  student_name: z.string().nullable(),
-  student_email: z.string().email().nullable(),
-  role: z.literal('student'),
-  next_url: z.string().min(1).max(2048),
-});
+// `MfaConsumeResponse` lives in `@quorum-backoffice/shared`
+// (see `packages/shared/src/dto/mfa.ts`) so apps/api and
+// apps/web can consume the same wire shape. The schema
+// carries `matricula: z.string().nullable()` so a downstream
+// Jitsi proxy can set the participant display name to the
+// matrícula without a follow-up SIS lookup. Nullable for
+// legacy rows / synthetic high-privacy students that carry
+// `sis_id IS NULL`.
 
 // ---------------------------------------------------------------------------
 // Route registration
@@ -284,18 +269,18 @@ export async function registerMfaTokenRoutes(app: FastifyInstance): Promise<void
     // service keeps this denormalized on the session row
     // by inserting the canvas_user_id directly).
     //
-    // Since migration 0020_students_sis_id.sql, full_name and
-    // email are nullable (synthetic high-privacy rows have no
-    // PII). The studentRow return type is widened accordingly;
-    // the redirect-token payload carries `null` for those fields
-    // when the row is a synthetic one. The M1 service still
-    // rejects the MFA flow when the student is missing entirely,
-    // so the existing "student record is missing" 401 path
-    // stays unchanged.
+    // Since migration 0020_students_sis_id.sql, full_name, email,
+    // and sis_id are nullable (synthetic high-privacy rows have
+    // no PII and may carry no SIS matrícula yet). The studentRow
+    // return type is widened accordingly; the redirect-token
+    // payload carries `null` for those fields when the row is a
+    // synthetic one. The M1 service still rejects the MFA flow
+    // when the student is missing entirely, so the existing
+    // "student record is missing" 401 path stays unchanged.
     const studentRow = await (
       app.pg as unknown as import('pg').Pool
-    ).query<{ full_name: string | null; email: string | null }>(
-      `SELECT full_name, email
+    ).query<{ full_name: string | null; email: string | null; sis_id: string | null }>(
+      `SELECT full_name, email, sis_id
          FROM students_cache
         WHERE canvas_user_id = $1`,
       [session.canvas_user_id],
@@ -317,6 +302,12 @@ export async function registerMfaTokenRoutes(app: FastifyInstance): Promise<void
       canvasUserId: session.canvas_user_id,
       studentName: student.full_name,
       studentEmail: student.email,
+      // Surface the SIS matrícula (the value of
+      // `students_cache.sis_id`) through the redirect-token
+      // payload so the consume response can deliver it to
+      // Canvas / Jitsi as the participant display name.
+      // `null` for legacy / synthetic rows.
+      matricula: student.sis_id,
       nextUrl: body.next_url,
     });
     reply.status(200);
@@ -373,6 +364,12 @@ export async function registerMfaTokenRoutes(app: FastifyInstance): Promise<void
         canvas_user_id: result.canvasUserId,
         student_name: result.studentName,
         student_email: result.studentEmail,
+        // Round-trip the SIS matrícula so the downstream
+        // Jitsi proxy can set the participant display name
+        // to the matrícula without a follow-up SIS lookup.
+        // `null` for legacy / synthetic rows that carry
+        // `sis_id IS NULL`.
+        matricula: result.matricula,
         role: result.role,
         next_url: result.nextUrl,
       };

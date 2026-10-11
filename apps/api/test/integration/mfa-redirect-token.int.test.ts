@@ -112,11 +112,16 @@ async function seedStudent(
   canvasId: number,
   name: string,
   active: boolean,
+  sisId: string | null = null,
 ): Promise<number> {
+  // The happy-path student seeds `sis_id = 'A00001'` so the
+  // redirect-token's stored payload + the consume response
+  // can carry the matrícula end-to-end. Tests that exercise
+  // the null branch pass `sisId: null`.
   const r = await pool.query<{ id: number }>(
-    `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [canvasId, name, `student-${canvasId}@quorum.local`, active],
+    `INSERT INTO students_cache (canvas_user_id, full_name, email, sis_id, is_active)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [canvasId, name, `student-${canvasId}@quorum.local`, sisId, active],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('student_seed_failed');
@@ -325,7 +330,7 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
     await pool.query(`DELETE FROM marbetes`);
     await pool.query(`DELETE FROM students_cache`);
 
-    studentId = await seedStudent(pool, CANVAS_HAPPY, 'M3 Happy Student', true);
+    studentId = await seedStudent(pool, CANVAS_HAPPY, 'M3 Happy Student', true, 'A00001');
     otherStudentId = await seedStudent(pool, CANVAS_OTHER, 'M3 Other Student', true);
     localStudentId = await seedStudent(pool, CANVAS_LOCAL, 'M3 Local Student', true);
     await seedMarbete(pool, {
@@ -379,6 +384,7 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
       canvas_user_id: number;
       student_name: string;
       student_email: string;
+      matricula: string | null;
       role: string;
       next_url: string;
       issued_at: string;
@@ -386,6 +392,10 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
     expect(payload.canvas_user_id).toBe(CANVAS_HAPPY);
     expect(payload.student_name).toBe('M3 Happy Student');
     expect(payload.student_email).toBe(`student-${CANVAS_HAPPY}@quorum.local`);
+    // The stored payload carries the SIS matrícula end-to-end
+    // so the consume path can surface it to Canvas / Jitsi
+    // without a follow-up SIS lookup.
+    expect(payload.matricula).toBe('A00001');
     expect(payload.role).toBe('student');
     expect(payload.next_url).toBe(ALLOWLISTED_NEXT);
     expect(typeof payload.issued_at).toBe('string');
@@ -405,6 +415,117 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
     expect(r.statusCode).toBe(200);
     const body = r.json() as { token: string };
     expect(body.token).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  // -----------------------------------------------------------------
+  // /redirect-token + /consume — matrícula (SIS) round-trip
+  // -----------------------------------------------------------------
+
+  it('redirect-token: stores the SIS matrícula in the Redis payload; consume returns it as matricula', async () => {
+    // The happy-path seed (in beforeEach) sets `sis_id = 'A00001'`
+    // on the student bound to SERIAL_HAPPY. The Redis payload
+    // written by /redirect-token MUST include the matrícula
+    // (the value is opaque on this side and not validated), and
+    // the /consume response MUST surface it as `matricula` so
+    // the Jitsi proxy can use it as the participant display
+    // name.
+    const issue = await app.inject({
+      method: 'POST',
+      url: '/api/v1/mfa/redirect-token',
+      headers: { 'content-type': 'application/json', cookie: mfaCookie },
+      payload: JSON.stringify(issueBody()),
+    });
+    expect(issue.statusCode).toBe(200);
+    const { token } = issue.json() as { token: string };
+
+    const stored = await app.redis.get(`mfa_redirect:${token}`);
+    expect(stored).not.toBeNull();
+    const storedPayload = JSON.parse(stored!) as {
+      matricula?: string | null;
+    };
+    expect(storedPayload.matricula).toBe('A00001');
+
+    const consume = await postSigned(app, '/api/v1/mfa/consume', {
+      body: consumeBody(token),
+    });
+    expect(consume.statusCode).toBe(200);
+    const consumeBodyJson = consume.json() as { matricula: string | null };
+    expect(consumeBodyJson.matricula).toBe('A00001');
+  });
+
+  it('consume: synthetic high-privacy student (sis_id IS NULL) surfaces matricula=null on the response', async () => {
+    // A synthetic student with `sis_id = NULL` (legacy row,
+    // or a row whose SIS source was never back-filled) MUST
+    // still mint a redirect-token (the consume chain does
+    // not require a non-null matrícula) AND the consume
+    // response MUST surface `matricula: null` so the Jitsi
+    // proxy can branch on "we don't know the matrícula
+    // yet" vs. "we have one". A coercion to '' would render
+    // an empty display name and trip this test.
+    const noMatriculaCanvas = 91_777;
+    const noMatriculaStudentId = await seedStudent(
+      pool,
+      noMatriculaCanvas,
+      'M3 No-Matrícula Student',
+      true,
+      null,
+    );
+    await seedMarbete(pool, {
+      code: 'CODE-M3-SYNNOSIS-12',
+      publicUid: 'm-M3SYNNOSIS',
+      assignedStudentId: noMatriculaStudentId,
+    });
+    await seedDevice(pool, {
+      serial: 'SN-M3-SYNNOSIS',
+      assignedStudentId: noMatriculaStudentId,
+    });
+    const auth = await app.inject({
+      method: 'POST',
+      url: '/api/v1/mfa/authenticate',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify(
+        mfaBody({
+          marbete_code: 'CODE-M3-SYNNOSIS-12',
+          serial_number: 'SN-M3-SYNNOSIS',
+        }),
+      ),
+    });
+    expect(auth.statusCode).toBe(201);
+    const noMatriculaCookie = cookieFromSetCookie(
+      auth.headers['set-cookie'],
+      '__Host-mfa_sid',
+    );
+    expect(noMatriculaCookie).not.toBeNull();
+
+    const issue = await app.inject({
+      method: 'POST',
+      url: '/api/v1/mfa/redirect-token',
+      headers: {
+        'content-type': 'application/json',
+        cookie: noMatriculaCookie!,
+      },
+      payload: JSON.stringify(issueBody()),
+    });
+    expect(issue.statusCode).toBe(200);
+    const { token } = issue.json() as { token: string };
+
+    const stored = await app.redis.get(`mfa_redirect:${token}`);
+    expect(stored).not.toBeNull();
+    const storedPayload = JSON.parse(stored!) as {
+      matricula?: string | null;
+    };
+    expect(storedPayload.matricula).toBeNull();
+
+    const consume = await postSigned(app, '/api/v1/mfa/consume', {
+      body: consumeBody(token),
+    });
+    expect(consume.statusCode).toBe(200);
+    const consumeBodyJson = consume.json() as {
+      canvas_user_id: number;
+      matricula: string | null;
+    };
+    expect(consumeBodyJson.canvas_user_id).toBe(noMatriculaCanvas);
+    expect(consumeBodyJson.matricula).toBeNull();
   });
 
   // -----------------------------------------------------------------
@@ -604,12 +725,18 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
       canvas_user_id: number;
       student_name: string;
       student_email: string;
+      matricula: string | null;
       role: 'student';
       next_url: string;
     };
     expect(body.canvas_user_id).toBe(CANVAS_HAPPY);
     expect(body.student_name).toBe('M3 Happy Student');
     expect(body.student_email).toBe(`student-${CANVAS_HAPPY}@quorum.local`);
+    // The consume response carries the SIS matrícula so the
+    // downstream Jitsi proxy can set the participant
+    // display name to the matrícula without a follow-up
+    // SIS lookup.
+    expect(body.matricula).toBe('A00001');
     expect(body.role).toBe('student');
     expect(body.next_url).toBe(ALLOWLISTED_NEXT);
 
