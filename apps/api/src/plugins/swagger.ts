@@ -99,6 +99,11 @@ export const DenyEnvelope = z.object({
     'deny.otp_missing',
     'deny.otp_invalid',
     'deny.dependency_fail',
+    // Emitted by the HMAC service-auth preHandler on every S2S route
+    // (access-decisions, mfa/consume, mfa/get-subject) when transport
+    // auth fails. Kept in this shared enum so the generated OpenAPI
+    // DenyEnvelope lists it on those routes.
+    'deny.idp_untrusted',
     'mfa_token_invalid',
     'mfa_redirect_origin_not_allowed',
     'mfa_session_kind_invalid',

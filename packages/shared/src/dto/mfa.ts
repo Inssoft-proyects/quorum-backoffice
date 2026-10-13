@@ -208,6 +208,55 @@ export const MfaConsumeResponse = z.object({
 export type MfaConsumeResponse = z.infer<typeof MfaConsumeResponse>;
 
 // ---------------------------------------------------------------------------
+// MfaGetSubjectRequest / MfaGetSubjectResponse
+// ---------------------------------------------------------------------------
+//
+// `POST /api/v1/mfa/get-subject` — S2S identity resolution. A
+// trusted service (HMAC service-token auth, same plane as
+// `/api/v1/mfa/consume`) sends a marbete code + the device serial
+// bound to the same student and receives the student's
+// `canvas_user_id` (the OTP subject) and SIS matrícula.
+//
+// This endpoint deliberately requires BOTH factors (marbete +
+// serial) even though it does NOT verify an OTP: resolving a
+// marbete to a student identity from the marbete code alone would
+// let a caller enumerate which student owns a marbete. Requiring
+// the paired device serial keeps the privacy posture of the full
+// MFA flow while removing the OTP from this lookup.
+//
+// Field bounds mirror `MfaAuthenticateRequest` so the wire-level
+// validation envelope is identical across the MFA surface:
+//   - marbete_code: 8..128 chars (sha256-hashed at request time;
+//                   the raw value is never logged).
+//   - serial_number: 3..128 chars (canonical dispositivos column).
+//
+// The response carries:
+//   - canvas_user_id : the OTP subject (`String(canvas_user_id)`).
+//   - matricula      : students_cache.sis_id; NULLABLE for legacy
+//                      rows (pre-migration 0020) and synthetic
+//                      high-privacy students (sis_id IS NULL).
+//                      The `matricula` key is always present so a
+//                      caller can branch on `null` without an
+//                      undefined check.
+export const MfaGetSubjectRequest = z.object({
+  marbete_code: z
+    .string()
+    .min(8, 'marbete_code must be at least 8 chars')
+    .max(128, 'marbete_code must be at most 128 chars'),
+  serial_number: z
+    .string()
+    .min(3, 'serial_number must be at least 3 chars')
+    .max(128, 'serial_number must be at most 128 chars'),
+});
+export type MfaGetSubjectRequest = z.infer<typeof MfaGetSubjectRequest>;
+
+export const MfaGetSubjectResponse = z.object({
+  canvas_user_id: z.number().int().positive(),
+  matricula: z.string().nullable(),
+});
+export type MfaGetSubjectResponse = z.infer<typeof MfaGetSubjectResponse>;
+
+// ---------------------------------------------------------------------------
 // MfaSessionResponse
 // ---------------------------------------------------------------------------
 //
