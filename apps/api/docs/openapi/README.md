@@ -6,7 +6,7 @@
 
 - `index.html` → Swagger UI (carga `openapi.yaml` de la misma ruta).
 - `openapi.yaml` → spec OpenAPI 3.1 de la superficie MFA (`authenticate`, `session`,
-  `redirect-token`, `consume`) + taxonomía `deny.*`.
+  `redirect-token`, `consume`, `get-subject`) + taxonomía `deny.*`.
 
 `backend.quorum.asistentepro.mx` es un CNAME que ya apunta al host; el vhost
 (`infra/nginx/backend.quorum.asistentepro.mx.conf`) reutiliza el certificado

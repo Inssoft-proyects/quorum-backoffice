@@ -11,6 +11,10 @@ info:
     del estudiante. Para redirigir a Canvas (SSO) se usa `POST /api/v1/mfa/redirect-token`
     (token de un solo uso) y Canvas lo canjea con `POST /api/v1/mfa/consume` (HMAC S2S).
 
+    Resolución S2S de identidad: `POST /api/v1/mfa/get-subject` (marbete + serial →
+    `canvas_user_id` + matrícula SIS) con autenticación HMAC S2S. Es la consulta previa que
+    un servicio de confianza necesita para emitir un OTP (`subject = canvas_user_id`).
+
     Taxonomía de denegación (`code`): `deny.marbete_unknown`, `deny.student_inactive`,
     `deny.device_unknown`, `deny.device_not_bound_to_student`, `deny.otp_invalid`,
     `deny.otp_missing`, `deny.dependency_fail`. Errores de forma del request devuelven
@@ -154,6 +158,42 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DenyEnvelope' }
+  /api/v1/mfa/get-subject:
+    post:
+      tags: [mfa]
+      operationId: mfaGetSubject
+      summary: Resuelve identidad (marbete + serial) → canvas_user_id + matrícula
+      description: |
+        Consulta S2S (HMAC) previa a la emisión de un OTP: dado un código de marbete y el
+        número de serie del dispositivo ligado al mismo estudiante, devuelve el
+        `canvas_user_id` (subject del OTP) y la matrícula SIS. No requiere OTP: se admiten
+        solo servicios con HMAC registrado (`Authorization: HMAC <name> <ts> <hex>`).
+      security:
+        - HMAC: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaGetSubjectRequest' }
+      responses:
+        '200':
+          description: Identidad resuelta.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaGetSubjectResponse' }
+        '400':
+          description: Forma de request inválida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401':
+          description: |
+            Fallo de autenticación de servicio (`deny.idp_untrusted`) o denegación de
+            política (`deny.marbete_unknown`, `deny.student_inactive`, `deny.device_unknown`,
+            `deny.device_not_bound_to_student`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DenyEnvelope' }
 components:
   securitySchemes:
     HMAC:
@@ -225,6 +265,30 @@ components:
         student_email: { type: string }
         role: { type: string, enum: [Learner, Instructor, Administrator, TA] }
         next_url: { type: string }
+    MfaGetSubjectRequest:
+      type: object
+      required: [marbete_code, serial_number]
+      properties:
+        marbete_code:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Código físico del marbete (se hashea sha256 en el servidor).
+        serial_number:
+          type: string
+          minLength: 3
+          maxLength: 128
+          description: Número de serie del dispositivo ligado al mismo estudiante.
+    MfaGetSubjectResponse:
+      type: object
+      required: [canvas_user_id, matricula]
+      properties:
+        canvas_user_id:
+          type: integer
+          description: Subject del OTP (`String(canvas_user_id)`).
+        matricula:
+          type: [string, 'null']
+          description: Matrícula SIS (`students_cache.sis_id`); null para filas legacy/sintéticas.
     DenyEnvelope:
       type: object
       required: [code, message]
@@ -241,6 +305,7 @@ components:
             - deny.dependency_fail
             - mfa_token_invalid
             - mfa_redirect_origin_not_allowed
+            - deny.idp_untrusted
         message: { type: string }
         details: { nullable: true }
     ErrorEnvelope:

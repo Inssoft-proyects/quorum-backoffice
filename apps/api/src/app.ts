@@ -39,6 +39,7 @@ import { registerMatriculasRoutes } from './routes/matriculas';
 import { registerAccessDecisionsRoutes } from './routes/access-decisions';
 import { registerMfaRoutes } from './routes/mfa';
 import { registerMfaTokenRoutes } from './routes/mfa-tokens';
+import { registerMfaGetSubjectRoutes } from './routes/mfa-get-subject';
 import authDepsPlugin from './plugins/auth-deps';
 
 declare module 'fastify' {
@@ -140,6 +141,13 @@ export async function buildApp(
   // service fails closed (every origin rejected) when the env
   // is empty.
   await registerMfaTokenRoutes(app as unknown as FastifyInstance);
+  // S2S identity resolution: POST /api/v1/mfa/get-subject
+  // (marbete + device serial → canvas_user_id + matrícula). HMAC
+  // service-auth via BACKOFFICE_SERVICE_TOKENS, same plane as
+  // /api/v1/mfa/consume and /api/v1/access-decisions. Registered
+  // AFTER registerAccessDecisionsRoutes so the globally-registered
+  // captureRawBodyPlugin is in place for the HMAC preHandler.
+  await registerMfaGetSubjectRoutes(app as unknown as FastifyInstance);
 
   return app;
 }

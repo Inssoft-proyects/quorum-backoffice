@@ -195,6 +195,9 @@ interface MobileAuthResponse {
   canvas_user_id: number;
   student_name: string;
   student_email: string;
+  // SIS matrícula mirrored from students_cache.sis_id; null for
+  // legacy / synthetic rows (migration 0020 nullable surface).
+  matricula: string | null;
   role: 'student';
   session_id: string;
   expires_at: string; // ISO 8601
@@ -382,6 +385,7 @@ describe('M5 / Mobile contract for POST /api/v1/mfa/authenticate', () => {
       'canvas_user_id',
       'student_name',
       'student_email',
+      'matricula',
       'role',
       'session_id',
       'expires_at',
@@ -395,6 +399,10 @@ describe('M5 / Mobile contract for POST /api/v1/mfa/authenticate', () => {
     expect(body['student_name']).toBe('Mobile Student A');
     expect(typeof body['student_email']).toBe('string');
     expect(body['student_email']).toBe(`student-${CANVAS_A}@quorum.local`);
+    // matricula mirrors students_cache.sis_id; the seeded mobile
+    // student carries no SIS id, so it surfaces as null (the DTO
+    // makes it nullable for legacy / synthetic rows).
+    expect(body['matricula']).toBeNull();
     expect(body['role']).toBe('student');
     expect(typeof body['session_id']).toBe('string');
     // The session_id is the same opaque base64url string the
@@ -425,6 +433,7 @@ describe('M5 / Mobile contract for POST /api/v1/mfa/authenticate', () => {
     expect(reparsed.canvas_user_id).toBe(first.canvas_user_id);
     expect(reparsed.student_name).toBe(first.student_name);
     expect(reparsed.student_email).toBe(first.student_email);
+    expect(reparsed.matricula).toBe(first.matricula);
     expect(reparsed.role).toBe(first.role);
     expect(reparsed.session_id).toBe(first.session_id);
     expect(reparsed.expires_at).toBe(first.expires_at);
