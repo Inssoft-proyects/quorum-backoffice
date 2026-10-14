@@ -56,3 +56,9 @@ Si tienes dudas, pregúntame."
   - `get-subject` sigue **404** (PR #19 sin mergear); los scripts default `SUBJECT=13` (fixture TOPGR4) y `get-subject` es opt-in vía `USE_GET_SUBJECT=1`. Lección guardada en Engram (obs. 363).
   - Documento de flujos: `docs/mfa-flujos.md` (en el worktree principal) — 3 flujos revisados/cerrados, endpoints, tokens (pedir al área de desarrollo) y fixture.
   - Pendientes: merge del PR #19 (habilitar get-subject) y commit/push de scripts + docs (sin autorización aún). Fallo pre-existente `mfa-mobile.test.ts` sigue abierto.
+- **L11** (2026-10-14, cierre de pendientes):
+  - **Merge**: PR #19 MERGEADO a `master` → commit `cd5ea21` (merge commit; rama `feat/mfa-matricula-master` conservada con `--delete-branch=false`).
+  - **Deploy a producción**: endpoint `get-subject` desplegado en `/opt/quorum-backoffice` (rsync de `packages/shared/src/dto/mfa.ts` + `apps/api/src/routes/mfa-get-subject.ts` + `apps/api/src/services/mfa-get-subject-service.ts`; patch de `app.ts` y `swagger.ts`; rebuild `shared`+`api`; `kubectl rollout restart deployment/quorum-backoffice-api`). Backup `/tmp/opt-backup-getsubject-20261014-082914.tgz`. Verificado real sin mocks: `get-subject` 200 `{canvas_user_id:13,matricula:TOPGR4}`, sin HMAC 401 `deny.idp_untrusted`, flujo móvil completo (get-subject→/v1/otps→/mfa/authenticate) 201 con `matricula` en body.
+  - **Commit + push de scripts + docs** (Conventional Commits): `feat/mfa-matricula-master` (test(api) `ba83318`, feat(api) `3154bc0`, docs(odd) `57f36cf`) y `docs/cursos-openapi` (feat(api) `8388085`, docs(mfa) `496b046`).
+  - **Test corregido**: `mfa-mobile.test.ts` ahora espera `matricula` (nullable); `mfa-mobile` 7/7 y suite de integración completa 18 suites / 234 tests verde.
+  - **Drift de tests en /opt limpiado**: sincronizados 7 archivos de test (5 de `bf5bc4f` + 2 de `get-subject`) que estaban obsoletos o ausentes en `/opt`; `npm run build` en producción vuelve a salir 0.
