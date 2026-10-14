@@ -1,0 +1,364 @@
+openapi: 3.1.0
+info:
+  title: Quorum Cursos — Catálogo de cursos (API)
+  version: 1.0.0
+  description: |
+    Contratos del **catálogo de cursos** del portal-api de Quorum.
+
+    ## ¿Dónde corre la API?
+
+    Esta documentación se sirve desde
+    `https://backoffice.inecuni.com/cursos/` como **spec de referencia**.
+    El endpoint real corre en el servicio **`portal-api`** (NO en el
+    backoffice), expuesto internamente al cluster. El botón "Try it out"
+    del Swagger UI ejecutará contra este host y devolverá 404 — usa
+    `curl` contra la URL del portal-api (ver abajo) para ejecutar las
+    llamadas de verdad.
+
+    ## Ejecución real (curl)
+
+    El token es el mismo `admin-token` que ya usa
+    `GET /v1/students` (el backoffice lo consume vía
+    `CANVAS_PORTAL_API_TOKEN`). Formato:
+
+        curl -sS "https://<portal-api>/api/v1/cursos?status=active" \
+          -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+
+        curl -sS "https://<portal-api>/api/v1/cursos/c-12345" \
+          -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+
+    En el cluster, el portal-api se invoca a la URL configurada en
+    `CANVAS_PORTAL_API_URL` del backoffice (típicamente
+    `http://portal-api:3000`).
+
+    ## Auth
+
+    `Authorization: Bearer <admin-token>`. El endpoint **NO** acepta
+    LTI (`ltik`), **NO** participa del flujo Jitsi, y **NO** usa
+    cookies. Es una superficie de solo lectura, máquina/operador.
+
+    ## PII
+
+    Las respuestas nunca llevan `email` en claro. Solo se expone
+    `email_hash` (de los maestros). Política binding en el header de
+    `apps/portal-api/src/courses/repo.ts`.
+
+    ## Errores
+
+    El portal-api responde con la envoltura `{ error, details? }` (códigos
+    `invalid_request` para 400, `unauthorized` para 401, `not_found` para
+    404). El 401 también lo puede emitir el `app.authenticate` global
+    antes de llegar a la ruta.
+servers:
+  - url: /
+    description: |
+      Host-relative. Spec de referencia servida desde el backoffice;
+      la API ejecuta en el portal-api (ver `info.description`).
+tags:
+  - name: cursos
+    description: Catálogo de cursos (admin/operador) — portal-api
+security:
+  - BearerAuth: []
+paths:
+  /api/v1/cursos:
+    get:
+      tags: [cursos]
+      operationId: listCursos
+      summary: Lista el catálogo de cursos
+      description: |
+        Devuelve cursos con `status='active'` por default, paginados por
+        cursor (keyset `(term DESC, name ASC, id ASC)`). Filtros
+        opcionales: `status`, `term`, `search`. La respuesta incluye
+        `total` (independiente de la paginación) y `next_cursor`
+        opaco (base64url JSON); cuando no hay más páginas, `next_cursor`
+        es `null`.
+      parameters:
+        - in: query
+          name: status
+          description: Filtro por estado. Default `active`.
+          required: false
+          schema:
+            type: string
+            enum: [active, archived, draft]
+            default: active
+        - in: query
+          name: term
+          description: Filtro exacto por término (ej. `2026-1`).
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - in: query
+          name: search
+          description: Substring case-insensitive sobre `name`.
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - in: query
+          name: limit
+          description: Tamaño de página (1..200, default 50).
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - in: query
+          name: cursor
+          description: Cursor opaco de la página anterior (`next_cursor`).
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Catálogo paginado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseCatalogList'
+              examples:
+                vacio:
+                  summary: Catálogo vacío
+                  value:
+                    total: 0
+                    items: []
+                    next_cursor: null
+                con_datos:
+                  summary: Catálogo con cursos activos
+                  value:
+                    total: 2
+                    items:
+                      - id: c-101
+                        name: Álgebra I
+                        term: 2026-1
+                        status: active
+                        canvas_id: "101"
+                        canvas_synced_at: '2026-01-01T00:00:00Z'
+                        archived_at: null
+                        active_enrollments: 28
+                        teacher_count: 2
+                    next_cursor: null
+        '400':
+          description: Query inválido (status fuera de enum, limit fuera de rango, cursor malformado).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalError'
+              examples:
+                invalid_limit:
+                  value:
+                    error: invalid_request
+                    details: { field: limit, min: 1, max: 200 }
+                invalid_cursor:
+                  value:
+                    error: invalid_request
+                    details: { message: invalid_cursor }
+        '401':
+          description: Bearer ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalError'
+              examples:
+                sin_header:
+                  value: { error: unauthorized }
+  /api/v1/cursos/{id}:
+    get:
+      tags: [cursos]
+      operationId: getCurso
+      summary: Detalle de un curso
+      description: |
+        Resuelve por **id interno** del portal-api; si no matchea,
+        usa el query `?canvasId=` como fallback. Devuelve `404` cuando
+        ninguno de los dos matchea.
+
+        La respuesta incluye `teachers` (solo `email_hash`, nunca
+        `email`), `next_session` (la próxima conferencia futura, o
+        `null`), `teacher_email_hash` y `active_enrollments`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          description: Id interno del curso (ej. `c-12345`).
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - in: query
+          name: canvasId
+          required: false
+          description: Fallback por Canvas id cuando el `:id` del path no matchea.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        '200':
+          description: Detalle completo del curso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseCatalogDetail'
+              examples:
+                completo:
+                  summary: Curso con maestros y próxima sesión
+                  value:
+                    id: c-101
+                    name: Álgebra I
+                    term: 2026-1
+                    status: active
+                    canvas_id: "101"
+                    canvas_synced_at: '2026-01-01T00:00:00Z'
+                    archived_at: null
+                    teacher_email_hash: sha256:9f2c...
+                    teachers:
+                      - sub: canvas|inst1
+                        display_name: Profa. María Pérez
+                        role: Instructor
+                        email_hash: sha256:1a3b...
+                    next_session:
+                      conference_id: conf-2026-1-1
+                      scheduled_start: '2026-02-01T15:00:00Z'
+                      scheduled_end: '2026-02-01T16:00:00Z'
+                      status: scheduled
+                    active_enrollments: 28
+        '400':
+          description: Path inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalError'
+        '401':
+          description: Bearer ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalError'
+              examples:
+                sin_header:
+                  value: { error: unauthorized }
+        '404':
+          description: Ni el `:id` del path ni el `?canvasId=` matchean.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalError'
+              examples:
+                no_encontrado:
+                  value: { error: not_found }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        El mismo `admin-token` configurado en el portal-api
+        (`ADMIN_TOKEN` / `CANVAS_PORTAL_API_TOKEN`). Falla cerrado:
+        header ausente o token incorrecto → 401.
+  schemas:
+    CourseCatalogList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CourseCatalogItem' }
+        total:
+          type: integer
+          minimum: 0
+          description: Total de cursos que matchean el filtro (independiente de la paginación).
+        next_cursor:
+          type: [string, 'null']
+          description: Cursor opaco (base64url JSON) de la siguiente página; `null` cuando no hay más.
+    CourseCatalogItem:
+      type: object
+      required:
+        [id, name, term, status, canvas_id, canvas_synced_at, archived_at, active_enrollments, teacher_count]
+      properties:
+        id: { type: string, description: Id interno del portal-api (ej. `c-101`). }
+        name: { type: string }
+        term: { type: string }
+        status:
+          type: string
+          enum: [active, archived, draft]
+        canvas_id:
+          type: [string, 'null']
+          description: Canvas id; `null` si el curso aún no se ha sincronizado desde Canvas.
+        canvas_synced_at:
+          type: [string, 'null']
+          format: date-time
+        archived_at:
+          type: [string, 'null']
+          format: date-time
+        active_enrollments:
+          type: integer
+          minimum: 0
+          description: Conteo de `enrollments` con `status='active'`.
+        teacher_count:
+          type: integer
+          minimum: 0
+          description: Conteo de instructores/administradores activos en el curso.
+    CourseCatalogDetail:
+      allOf:
+        - $ref: '#/components/schemas/CourseCatalogItem'
+        - type: object
+          required: [teacher_email_hash, teachers, next_session, active_enrollments]
+          properties:
+            teacher_email_hash:
+              type: [string, 'null']
+              description: Hash del email del profesor primario (nunca el email en claro).
+            teachers:
+              type: array
+              items: { $ref: '#/components/schemas/TeacherSummary' }
+            next_session:
+              oneOf:
+                - $ref: '#/components/schemas/NextSessionProjection'
+                - type: 'null'
+            active_enrollments:
+              type: integer
+              minimum: 0
+    TeacherSummary:
+      type: object
+      required: [sub, display_name, role, email_hash]
+      properties:
+        sub:
+          type: string
+          description: OIDC subject del profesor (prefijo `canvas|...`).
+        display_name: { type: string }
+        role:
+          type: string
+          enum: [Instructor, Administrator, TA]
+        email_hash:
+          type: string
+          description: Hash del email; nunca se expone el email en claro.
+    NextSessionProjection:
+      type: object
+      required: [conference_id, scheduled_start, scheduled_end, status]
+      properties:
+        conference_id: { type: string }
+        scheduled_start: { type: string, format: date-time }
+        scheduled_end:
+          type: [string, 'null']
+          format: date-time
+        status:
+          type: string
+          enum: [scheduled, active, idle]
+    PortalError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: |
+            Código de error. Valores: `invalid_request` (400),
+            `unauthorized` (401), `not_found` (404).
+        details:
+          type: object
+          additionalProperties: true
+          description: "Detalle opcional (ej. `{ field: 'limit', min: 1, max: 200 }`)."
+        message:
+          type: string
+          description: Mensaje opcional (no se usa en este endpoint).
