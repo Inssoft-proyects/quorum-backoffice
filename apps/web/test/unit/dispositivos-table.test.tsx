@@ -28,13 +28,31 @@ const sample: DispositivoDetailResponse[] = [
 ];
 
 describe('DispositivosTable', () => {
+  const noop = () => {};
+
   it('shows empty state when no items', () => {
-    render(<DispositivosTable items={[]} userRole="admin" onEdit={() => {}} onRevoke={() => {}} />);
+    render(
+      <DispositivosTable
+        items={[]}
+        userRole="admin"
+        onEdit={noop}
+        onRevoke={noop}
+        onReactivate={noop}
+      />,
+    );
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
   });
 
   it('renders rows with full serial + status badge + brand/model', () => {
-    render(<DispositivosTable items={sample} userRole="admin" onEdit={() => {}} onRevoke={() => {}} />);
+    render(
+      <DispositivosTable
+        items={sample}
+        userRole="admin"
+        onEdit={noop}
+        onRevoke={noop}
+        onReactivate={noop}
+      />,
+    );
     expect(screen.getByText('SN-WU9-001')).toBeInTheDocument();
     expect(screen.getByText('SN-WU9-002')).toBeInTheDocument();
     expect(screen.getByText('Activo')).toBeInTheDocument();
@@ -44,14 +62,45 @@ describe('DispositivosTable', () => {
   });
 
   it('shows Revoke only for active dispositivos (admin)', () => {
-    render(<DispositivosTable items={sample} userRole="admin" onEdit={() => {}} onRevoke={() => {}} />);
+    render(
+      <DispositivosTable
+        items={sample}
+        userRole="admin"
+        onEdit={noop}
+        onRevoke={noop}
+        onReactivate={noop}
+      />,
+    );
     expect(screen.getByTestId('revoke-1')).toBeInTheDocument();
     expect(screen.queryByTestId('revoke-2')).toBeNull();
   });
 
+  it('shows Reactivate only for revoked dispositivos (admin)', () => {
+    render(
+      <DispositivosTable
+        items={sample}
+        userRole="admin"
+        onEdit={noop}
+        onRevoke={noop}
+        onReactivate={noop}
+      />,
+    );
+    expect(screen.getByTestId('reactivate-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('reactivate-1')).toBeNull();
+  });
+
   it('hides action buttons for operator', () => {
-    render(<DispositivosTable items={sample} userRole="operator" onEdit={() => {}} onRevoke={() => {}} />);
+    render(
+      <DispositivosTable
+        items={sample}
+        userRole="operator"
+        onEdit={noop}
+        onRevoke={noop}
+        onReactivate={noop}
+      />,
+    );
     expect(screen.queryByTestId('edit-1')).toBeNull();
     expect(screen.queryByTestId('revoke-1')).toBeNull();
+    expect(screen.queryByTestId('reactivate-2')).toBeNull();
   });
 });

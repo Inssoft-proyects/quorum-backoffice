@@ -161,4 +161,20 @@ export async function registerDispositivosRoutes(app: FastifyInstance): Promise<
       return svc.unassign(actor, id, otpCode, meta);
     },
   );
+
+  // Logical-delete model / Admin-only, OTP-gated un-revoke. Bodyless
+  // (mirrors unassign): the device id alone identifies the row. 404 unknown,
+  // 409 already active. Reuses DispositivosService.reactivate.
+  app.post<{ Params: { id: string } }>(
+    '/api/v1/dispositivos/:id/reactivate',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const { id } = DispositivoIdParam.parse(req.params);
+      const actor = actorFromRequest(req);
+      const otpCode = otpFromRequest(req);
+      const meta = metaFromRequest(req);
+      const svc = getService();
+      return svc.reactivate(actor, id, otpCode, meta);
+    },
+  );
 }

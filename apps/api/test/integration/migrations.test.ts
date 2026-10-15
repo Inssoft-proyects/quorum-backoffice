@@ -69,6 +69,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0018_audit_action_mfa_authenticate.sql',
       '0019_audit_action_mfa_consume.sql',
       '0020_students_sis_id.sql',
+      '0021_audit_action_device_reactivate.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -97,6 +98,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0018_audit_action_mfa_authenticate.sql',
       '0019_audit_action_mfa_consume.sql',
       '0020_students_sis_id.sql',
+      '0021_audit_action_device_reactivate.sql',
     ]);
   });
 
@@ -110,6 +112,17 @@ describe('migrations runner (integration, real PG)', () => {
     const labels = r.rows.map((row) => row.enum_label);
     expect(labels).toContain('dispositivo.assign');
     expect(labels).toContain('dispositivo.unassign');
+  });
+
+  it('audit_action enum includes dispositivo.reactivate after 0021', async () => {
+    // Logical-delete model: the reactivation endpoint and the create-upsert
+    // emit this event; the 0021 migration must extend the enum with the same
+    // byte-for-byte label in packages/shared/src/dto/audit.ts.
+    const r = await pool.query<{ enum_label: string }>(
+      "SELECT unnest(enum_range(NULL::audit_action))::text AS enum_label",
+    );
+    const labels = r.rows.map((row) => row.enum_label);
+    expect(labels).toContain('dispositivo.reactivate');
   });
 
   it('0011_backoffice_username adds a nullable unique users.username column without backfill', async () => {

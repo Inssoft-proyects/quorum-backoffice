@@ -545,6 +545,23 @@ export async function revokeDispositivo(
   );
 }
 
+/**
+ * Un-revoke a revoked dispositivo (logical-delete model). Bodyless POST;
+ * the server only needs the id + the X-OTP-Code header.
+ */
+export async function reactivateDispositivo(
+  id: number,
+  otpCode: string,
+  cookie?: string,
+): Promise<DispositivoDetailResponse> {
+  return apiPostWithOtp<DispositivoDetailResponse>(
+    `/api/v1/dispositivos/${id}/reactivate`,
+    {},
+    otpCode,
+    cookie,
+  );
+}
+
 // ---- Matrículas (WU v3 "Asignación de marbetes") ----
 //
 // Both `assignMatriculas` and `unassignMatricula` are admin + OTP-gated

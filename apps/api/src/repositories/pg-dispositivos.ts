@@ -87,6 +87,17 @@ export class PgDispositivoRepo {
     return r.rows[0] ?? null;
   }
 
+  async findBySerialNumber(serialNumber: string): Promise<DispositivoRow | null> {
+    const r = await this.client.query<DispositivoRow>(
+      `SELECT id, serial_number, brand, model, status, created_at, created_by,
+              revoked_at, revoked_reason, assigned_student_id
+         FROM dispositivos
+        WHERE serial_number = $1`,
+      [serialNumber],
+    );
+    return r.rows[0] ?? null;
+  }
+
   async list(filter: ListDispositivosFilter): Promise<{ rows: DispositivoRow[]; total: number }> {
     const where: string[] = [];
     const params: unknown[] = [];
@@ -161,6 +172,33 @@ export class PgDispositivoRepo {
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
                   revoked_at, revoked_reason, assigned_student_id`,
       [id, reason],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  /**
+   * Logical-delete model: reactivate a revoked device (un-revoke / re-register
+   * over the same row). Only `status`, `revoked_at`, `revoked_reason`, and the
+   * optional brand/model are touched — `created_at`/`created_by` (first
+   * registration identity) and `assigned_student_id` are intentionally left
+   * untouched, so the physical device keeps one stable row and the audit trail
+   * never dangles.
+   */
+  async reactivate(
+    id: number,
+    args: { brand?: string | null; model?: string | null },
+  ): Promise<DispositivoRow | null> {
+    const r = await this.client.query<DispositivoRow>(
+      `UPDATE dispositivos
+          SET status = 'active',
+              revoked_at = NULL,
+              revoked_reason = NULL,
+              brand = COALESCE($2, brand),
+              model = COALESCE($3, model)
+        WHERE id = $1 AND status = 'revoked'
+        RETURNING id, serial_number, brand, model, status, created_at, created_by,
+                  revoked_at, revoked_reason, assigned_student_id`,
+      [id, args.brand ?? null, args.model ?? null],
     );
     return r.rows[0] ?? null;
   }
