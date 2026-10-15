@@ -50,6 +50,7 @@ const DESTRUCTIVE_ACTIONS = new Set([
   'dispositivo.create',
   'dispositivo.update',
   'dispositivo.revoke',
+  'dispositivo.reactivate',
   'dispositivo.assign',
   'dispositivo.unassign',
 ]);
@@ -106,6 +107,15 @@ export class DispositivosService {
     return this.toDetail(row);
   }
 
+  /**
+   * Create a device, or reactivate it when the serial already exists in
+   * `revoked` state (logical-delete model). A serial that exists in `active`
+   * state is still a conflict, so the UNIQUE constraint keeps its meaning.
+   *
+   * Re-registration reuses the same row (stable id) and only refreshes
+   * `status`/`revoked_at`/`revoked_reason` and the optional brand/model;
+   * `created_at`/`created_by` and `assigned_student_id` are left untouched.
+   */
   async create(
     actor: string,
     req: CreateDispositivoRequest,
@@ -113,6 +123,33 @@ export class DispositivosService {
     meta: RequestMeta = {},
   ): Promise<DispositivoDetailResponse> {
     const otpResult = await this.verifyOtp(actor, 'dispositivo.create', otpCode);
+
+    const existing = await this.repo.findBySerialNumber(req.serialNumber);
+    if (existing) {
+      if (existing.status === 'active') {
+        throw AppError.conflict(`serial_number '${req.serialNumber}' already exists`);
+      }
+      const before = this.repo.toResponse(existing);
+      const row = await this.repo.reactivate(existing.id, {
+        brand: req.brand ?? null,
+        model: req.model ?? null,
+      });
+      if (!row) throw AppError.conflict('dispositivo cannot be reactivated');
+
+      const audit = new AuditService(this.deps.pool);
+      await audit.write({
+        actorId: actor,
+        action: 'dispositivo.reactivate',
+        entityType: 'dispositivo',
+        entityId: String(row.id),
+        beforeJson: before,
+        afterJson: this.repo.toResponse(row),
+        otpId: otpResult.otpId,
+        ip: meta.ip ?? null,
+        userAgent: meta.userAgent ?? null,
+      });
+      return this.toDetail(row);
+    }
 
     let row;
     try {
@@ -197,6 +234,43 @@ export class DispositivosService {
     await audit.write({
       actorId: actor,
       action: 'dispositivo.revoke',
+      entityType: 'dispositivo',
+      entityId: String(row.id),
+      beforeJson: before,
+      afterJson: this.repo.toResponse(row),
+      otpId: otpResult.otpId,
+      ip: meta.ip ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
+    return this.toDetail(row);
+  }
+
+  /**
+   * Logical-delete model: un-revoke a revoked device back to `active`.
+   * Bodyless (mirrors `unassign`): the device id alone identifies the row.
+   * Rejects a no-op with 409 so admins cannot burn an OTP without a state
+   * change. Only `status`/`revoked_at`/`revoked_reason` are flipped.
+   */
+  async reactivate(
+    actor: string,
+    id: number,
+    otpCode: string | undefined,
+    meta: RequestMeta = {},
+  ): Promise<DispositivoDetailResponse> {
+    const otpResult = await this.verifyOtp(actor, 'dispositivo.reactivate', otpCode);
+
+    const existing = await this.repo.findById(id);
+    if (!existing) throw AppError.notFound(`dispositivo ${id} not found`);
+    if (existing.status === 'active') throw AppError.conflict('dispositivo is already active');
+
+    const before = this.repo.toResponse(existing);
+    const row = await this.repo.reactivate(id, {});
+    if (!row) throw AppError.conflict('dispositivo cannot be reactivated');
+
+    const audit = new AuditService(this.deps.pool);
+    await audit.write({
+      actorId: actor,
+      action: 'dispositivo.reactivate',
       entityType: 'dispositivo',
       entityId: String(row.id),
       beforeJson: before,

@@ -25,6 +25,9 @@ export const AuditAction = z.enum([
   // the SQL labels must match the 0016 migration byte-for-byte.
   'dispositivo.assign',
   'dispositivo.unassign',
+  // Logical-delete model: reactivation (un-revoke / re-register over the
+  // same row) emits this granular event; SQL label added in 0021.
+  'dispositivo.reactivate',
   'auth.login',
   'auth.logout',
   'auth.failed',
