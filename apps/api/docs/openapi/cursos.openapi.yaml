@@ -71,21 +71,24 @@ paths:
       operationId: listCursos
       summary: Lista el catálogo de cursos
       description: |
-        Devuelve cursos con `status='active'` por default, paginados por
-        cursor (keyset `(term DESC, name ASC, id ASC)`). Filtros
-        opcionales: `status`, `term`, `search`. La respuesta incluye
-        `total` (independiente de la paginación) y `next_cursor`
-        opaco (base64url JSON); cuando no hay más páginas, `next_cursor`
-        es `null`.
+        Devuelve cursos paginados por cursor (keyset
+        `(term DESC, name ASC, id ASC)`). **Si no se envía `status` no hay
+        filtro por estado**: se devuelven todos los estados, de modo que un
+        curso todavía no activo (recién creado en Canvas, `unpublished` →
+        `draft`) también se entrega. Filtros opcionales: `status`, `term`,
+        `search`. La respuesta incluye `total` (independiente de la
+        paginación) y `next_cursor` opaco (base64url JSON); cuando no hay más
+        páginas, `next_cursor` es `null`.
       parameters:
         - in: query
           name: status
-          description: Filtro por estado. Default `active`.
+          description: |
+            Filtro por estado. **Omitirlo significa "sin filtro"**: se
+            devuelven todos los estados (útil para ver cursos aún no activos).
           required: false
           schema:
             type: string
             enum: [active, archived, draft]
-            default: active
         - in: query
           name: term
           description: Filtro exacto por término (ej. `2026-1`).
