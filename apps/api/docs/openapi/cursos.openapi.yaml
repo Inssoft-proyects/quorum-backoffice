@@ -7,29 +7,29 @@ info:
 
     ## ¿Dónde corre la API?
 
-    Esta documentación se sirve desde
-    `https://backoffice.inecuni.com/cursos/` como **spec de referencia**.
-    El endpoint real corre en el servicio **`portal-api`** (NO en el
-    backoffice), expuesto internamente al cluster. El botón "Try it out"
-    del Swagger UI ejecutará contra este host y devolverá 404 — usa
-    `curl` contra la URL del portal-api (ver abajo) para ejecutar las
-    llamadas de verdad.
+    La API corre en el servicio **`portal-api`** (NO en el backoffice). Se
+    expone públicamente a través del reverse proxy nginx del VPS, tanto en
+    `backend.inecuni.com` como en `backoffice.inecuni.com`, bajo
+    `location ^~ /api/v1/cursos` → `proxy_pass http://127.0.0.1:8090`.
+    Por eso el botón "Try it out" del Swagger UI (servido desde
+    `https://backoffice.inecuni.com/cursos/`) ejecuta same-origin y **sí**
+    responde.
 
-    ## Ejecución real (curl)
+    ## Ejecución (curl)
 
-    El token es el mismo `admin-token` que ya usa
-    `GET /v1/students` (el backoffice lo consume vía
-    `CANVAS_PORTAL_API_TOKEN`). Formato:
+    El token es el `ADMIN_TOKEN` del portal-api (el mismo valor que el
+    backoffice usa como `CANVAS_PORTAL_API_TOKEN`). Formato:
 
-        curl -sS "https://<portal-api>/api/v1/cursos?status=active" \
+        curl -sS "https://backend.inecuni.com/api/v1/cursos?status=active" \
           -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 
-        curl -sS "https://<portal-api>/api/v1/cursos/c-12345" \
+        curl -sS "https://backend.inecuni.com/api/v1/cursos/c-12345" \
           -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
 
-    En el cluster, el portal-api se invoca a la URL configurada en
-    `CANVAS_PORTAL_API_URL` del backoffice (típicamente
-    `http://portal-api:3000`).
+    Los mismos paths responden igual bajo
+    `https://backoffice.inecuni.com`. Dentro del cluster, el portal-api se
+    invoca a la URL configurada en `CANVAS_PORTAL_API_URL` del backoffice
+    (típicamente `http://portal-api:3000`).
 
     ## Auth
 
@@ -52,8 +52,13 @@ info:
 servers:
   - url: /
     description: |
-      Host-relative. Spec de referencia servida desde el backoffice;
-      la API ejecuta en el portal-api (ver `info.description`).
+      Same-origin. La doc se sirve desde un host que enruta
+      `/api/v1/cursos` al portal-api vía el reverse proxy nginx
+      (`backoffice.inecuni.com` o `backend.inecuni.com`).
+  - url: https://backend.inecuni.com
+    description: portal-api vía reverse proxy nginx (host alterno).
+  - url: https://backoffice.inecuni.com
+    description: portal-api vía reverse proxy nginx (host de esta doc).
 tags:
   - name: cursos
     description: Catálogo de cursos (admin/operador) — portal-api
