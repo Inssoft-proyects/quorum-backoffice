@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { DispositivoDetailResponse, UserRole } from '@quorum-backoffice/shared';
 import { hasAtLeastRole } from '@quorum-backoffice/shared';
-import { Ban, Pencil } from 'lucide-react';
+import { Ban, Pencil, RotateCcw } from 'lucide-react';
 import { IdBadge, SortHeader, StatusChip, type SortState } from '@/components/inventory';
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   onSortChange?: (s: SortState | null) => void;
   onEdit: (item: DispositivoDetailResponse) => void;
   onRevoke: (item: DispositivoDetailResponse) => void;
+  onReactivate: (item: DispositivoDetailResponse) => void;
   isPending?: boolean;
 }
 
@@ -41,8 +42,8 @@ function formatDate(iso: string): string {
  * Renders ID (DIS-####) / Serial / Marca / Modelo / Estado / Registrado
  * / Acciones. The serial is shown in full (it's the device's hardware
  * identifier, not a secret). Action column shows "Editar" and "Revocar"
- * (the maquet icons) and is gated by admin role. Edit + Revoke are
- * hidden for revoked rows — only "Activo" rows are mutable.
+ * for active rows, and "Reactivar" for revoked rows (logical-delete model),
+ * gated by admin role.
  *
  * `sort` and `onSortChange` are optional so existing tests can render
  * the table with the pre-v2 prop shape. In production the page client
@@ -55,6 +56,7 @@ export function DispositivosTable({
   onSortChange,
   onEdit,
   onRevoke,
+  onReactivate,
   isPending,
 }: Props) {
   const canManage = hasAtLeastRole(userRole, 'admin');
@@ -155,6 +157,20 @@ export function DispositivosTable({
                         >
                           <Ban className="row-action__icon" aria-hidden />
                           Revocar
+                        </button>
+                      </div>
+                    ) : canManage && d.status === 'revoked' ? (
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="row-action"
+                          onClick={() => onReactivate(d)}
+                          disabled={isPending}
+                          data-testid={`reactivate-${d.id}`}
+                          aria-label="Reactivar"
+                        >
+                          <RotateCcw className="row-action__icon" aria-hidden />
+                          Reactivar
                         </button>
                       </div>
                     ) : null}

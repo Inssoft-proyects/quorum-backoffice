@@ -19,6 +19,7 @@ import { DispositivosFilters } from './dispositivos-filters';
 import { CreateDialog } from './create-dialog';
 import { EditDialog } from './edit-dialog';
 import { RevokeDialog } from './revoke-dialog';
+import { ReactivateDialog } from './reactivate-dialog';
 
 type FilterKey = 'all' | 'active' | 'revoked' | 'no-brand';
 
@@ -67,6 +68,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<DispositivoDetailResponse | null>(null);
   const [toRevoke, setToRevoke] = useState<DispositivoDetailResponse | null>(null);
+  const [toReactivate, setToReactivate] = useState<DispositivoDetailResponse | null>(null);
 
   // Counts for the metric cards (computed from the source list, not the
   // search-filtered view, so the cards remain stable while the user types).
@@ -338,6 +340,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
           onSortChange={setSort}
           onEdit={setEditing}
           onRevoke={setToRevoke}
+          onReactivate={setToReactivate}
         />
 
         <Pagination
@@ -365,6 +368,11 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
       <RevokeDialog
         dispositivo={toRevoke}
         onClose={() => setToRevoke(null)}
+        onSuccess={() => router.refresh()}
+      />
+      <ReactivateDialog
+        dispositivo={toReactivate}
+        onClose={() => setToReactivate(null)}
         onSuccess={() => router.refresh()}
       />
     </div>
