@@ -1,74 +1,102 @@
-# MFA OpenAPI — entrega de contratos al equipo móvil
+# OpenAPI — Swagger y specs de la superficie BackOffice
 
-## Dónde se despliega
+Documento canónico para encontrar los Swagger UI y los specs OpenAPI de la
+suite BackOffice: dónde viven en el repo, qué archivos son la fuente de
+verdad, y qué URLs públicas los sirven.
 
-`https://backend.quorum.asistentepro.mx/mfa/`
+## Índice de swaggers / OpenAPI
 
-- `index.html` → Swagger UI (carga `openapi.yaml` de la misma ruta).
-- `openapi.yaml` → spec OpenAPI 3.1 de la superficie MFA (`authenticate`, `session`,
-  `redirect-token`, `consume`, `get-subject`) + taxonomía `deny.*`.
+| Servicio | Swagger UI (sitio) | Spec OpenAPI (sitio) | Fuente en repo (`apps/api/docs/openapi/`) | Desplegado en `/opt` |
+|---|---|---|---|---|
+| **MFA** (incluye `get-subject`) | `https://backoffice.inecuni.com/mfa/` | `https://backoffice.inecuni.com/mfa/openapi.yaml` | `mfa.openapi.yaml` | `/opt/quorum-backoffice/docs/mfa/` |
+| **Cursos** | `https://backoffice.inecuni.com/cursos/` | `https://backoffice.inecuni.com/cursos/openapi.yaml` | `cursos.openapi.yaml` | `/opt/quorum-backoffice/docs/cursos/` |
 
-`backend.quorum.asistentepro.mx` es un CNAME que ya apunta al host; el vhost
-(`infra/nginx/backend.quorum.asistentepro.mx.conf`) reutiliza el certificado
-wildcard `*.quorum.asistentepro.mx`, por lo que **no se requiere un cert nuevo**.
+> **Alias legacy:** `backoffice.quorum.asistentepro.mx/*` redirige (301) a
+> `backoffice.inecuni.com/*` (rebranding). Ambas formas llegan al mismo contenido.
 
-## Spec generado (issue #9)
+### `get-subject` en el swagger de MFA
 
-A partir de esta iteración la superficie MFA también se sirve desde la app
-vía `@fastify/swagger` + `@fastify/swagger-ui` (registrados en
-`apps/api/src/plugins/swagger.ts`):
+`get-subject` está **agrupado dentro de MFA** (no es un path `/mfa/get-subject`
+aparte). En el spec de MFA aparece como:
 
-- Documento OpenAPI 3.1 → `GET /docs/json` (servido por `@fastify/swagger`).
-- UI interactiva → `GET /docs` (servida por `@fastify/swagger-ui`,
-  deshabilitada cuando `NODE_ENV=test` para evitar la dependencia
-  ESM `content-disposition@3` que Jest no puede `require()` con la
-  config `ts-jest` actual).
+- Path: `POST /api/v1/mfa/get-subject` → `operationId: mfaGetSubject`.
+- `security: - HMAC: []` (apiKey en header `Authorization: HMAC <name> <ts> <hex>`).
+- Request: `MfaGetSubjectRequest` (`{ marbete_code, serial_number }`).
+- Response 200: `MfaGetSubjectResponse` (`{ canvas_user_id, matricula }`).
 
-El spec se construye desde los JSON Schemas que las rutas derivan de los
-DTOs Zod en `packages/shared/src/dto/mfa.ts` — **no hay shapes
-hand-duplicados**. El `transformObject` de `fastify-type-provider-zod`
-extrae los envelopes compartidos (`ErrorEnvelope`, `DenyEnvelope`) a
-`components.schemas` y reescribe las respuestas de las rutas a `$ref`
-para que la estructura del documento generado sea estructuralmente
-idéntica a la del YAML hand-authored.
+## Fuentes en el repo
 
-### Diff vs. el YAML estático
+Todo vive bajo `apps/api/docs/openapi/` (worktree `quorum-backoffice-access`, rama `main`):
 
-`npm run openapi:dump --workspace @quorum-backoffice/api` escribe el spec
-generado a `apps/api/docs/openapi/mfa.openapi.generated.yaml` para
-revisión. Diferencias intencionales (todas documentadas en el
-encabezado de `mfa.openapi.generated.yaml`):
+| Archivo | Rol |
+|---|---|
+| `mfa.openapi.yaml` | **Spec a mano** de MFA (autenticación + `get-subject`). Es la fuente de lo que se despliega a `/mfa/openapi.yaml`. |
+| `mfa.openapi.generated.yaml` | Spec **autogenerado** desde los DTOs Zod (`npm run openapi:dump`). Para revisión de drift, no se despliega. |
+| `cursos.openapi.yaml` | Spec de la superficie Cursos (`/api/v1/cursos`, `/api/v1/cursos/{id}`). |
+| `swagger-ui/index.html` | Plantilla de Swagger UI (carga `openapi.yaml` relativo). |
+| `README.md` | Este documento. |
 
-1. **`description: "Default Response"`** en cada respuesta (el spec
-   hand-authored usa descripciones localizadas; el generado usa la
-   default de `@fastify/swagger`).
-2. **`details: {}`** en `ErrorEnvelope` / `DenyEnvelope` (el
-   hand-authored declara `details: { nullable: true }`; el Zod
-   `z.unknown().optional()` se serializa sin el modificador nullable
-   porque `@fastify/swagger` lo descartaría en el post-proceso de
-   OpenAPI 3.1, rompiendo la equivalencia de `JSON.stringify` que
-   usa `createJsonSchemaTransformObject` para extraer los
-   componentes).
-3. **`otp`** en `MfaAuthenticateRequest` se serializa con `allOf`
-   (refleja el `.trim().transform().pipe()` del DTO Zod).
-4. **`MfaConsumeResponse.role`** se enumera como `['student']`
-   (el YAML hand-authored lista los roles de Canvas;
-   el tipo de retorno real del servicio es `'student'`).
-5. **Todas las rutas** aparecen en el documento generado, no
-   solo las del MFA; las que no tienen `schema` adjunto se
-   renderizan con `Default Response` (poco útil hasta que cada
-   slice adjunte su Zod schema).
+## Dónde se despliega (website)
 
-## Deploy (borrador, requiere autorización explícita)
+Los specs estáticos se sirven por nginx desde `/opt/quorum-backoffice/docs/`:
 
-1. `cp -r apps/api/docs/openapi /opt/quorum-backoffice/docs/mfa` (o el root de nginx).
-2. Instalar `infra/nginx/backend.quorum.asistentepro.mx.conf` en la conf de nginx.
-3. `nginx -t && systemctl reload nginx`.
+- MFA → `/opt/quorum-backoffice/docs/mfa/{index.html,openapi.yaml}`
+- Cursos → `/opt/quorum-backoffice/docs/cursos/{index.html,openapi.yaml}`
 
-## Pendientes (issues)
+Mapping nginx (vhost `backend.quorum.asistentepro.mx.conf` y vhost backoffice operator-side):
 
-- ~~Migrar a `@fastify/swagger` + `@fastify/swagger-ui` para generar el spec desde JSON
-  Schemas de las rutas (elimina la deriva manual).~~ **Cerrado en #9.**
-- Decidir si `backend.*` proxy `/api/` para ser el host canónico del API.
-- Retirar el spec hand-authored una vez que el generado se acepte
-  como la fuente única de verdad (issue separada).
+```
+location /mfa/      { root /opt/quorum-backoffice/docs; index index.html; }
+location /cursos/   { root /opt/quorum-backoffice/docs; index index.html; }
+```
+
+> **Host canónico pendiente:** el vhost `backend.quorum.asistentepro.mx` está
+> activo en el host, pero el registro DNS (CNAME → backoffice) **aún no
+> resuelve**. Mientras tanto, los mismos docs se sirven en el subdominio
+> `backoffice` (hoy rebrandeado a `inecuni.com`).
+
+## Spec generado (`@fastify/swagger` + `@fastify/swagger-ui`)
+
+La app Fastify también expone Swagger generado en runtime
+(`apps/api/src/plugins/swagger.ts`, `routePrefix: '/docs'`):
+
+- `GET /docs` → Swagger UI.
+- `GET /docs/json` → `openapi.json`.
+- `GET /docs/yaml` → `openapi.yaml`.
+
+**Alcance:** solo es alcanzable por **port-forward** (ej. `http://127.0.0.1:4100/docs/`),
+porque el nginx público enruta `/api/` pero **no** `/docs/`. Para la entrega al
+equipo móvil/terceros se usan los specs estáticos de la tabla de arriba, no `/docs/`.
+
+- La UI se deshabilita en `NODE_ENV=test` (dependencia ESM `content-disposition@3`
+  incompatible con `ts-jest`).
+- El spec generado se construye desde los DTOs Zod de `packages/shared/src/dto/mfa.ts`
+  (no hay shapes duplicados a mano).
+
+## Procedimiento para actualizar un spec estático
+
+1. Editar el YAML fuente en el repo (`mfa.openapi.yaml` o `cursos.openapi.yaml`).
+2. Desplegar el archivo a `/opt`:
+   ```bash
+   sudo cp apps/api/docs/openapi/mfa.openapi.yaml /opt/quorum-backoffice/docs/mfa/openapi.yaml
+   sudo chown www-data:www-data /opt/quorum-backoffice/docs/mfa/openapi.yaml
+   sudo chmod 644 /opt/quorum-backoffice/docs/mfa/openapi.yaml
+   ```
+3. Validar:
+   ```bash
+   curl -s https://backoffice.inecuni.com/mfa/openapi.yaml | grep -c "get-subject"
+   ```
+   No requiere `nginx reload` (es contenido de un archivo estático ya mapeado).
+
+> **Historial (gap corregido 2026-10-15):** tras el merge del PR #19 el spec
+> estático de `/mfa/` quedó en la versión 06-oct (sin `get-subject`) porque el
+> deploy solo movió código, no `apps/api/docs/openapi/`. Se corrigió copiando
+> `mfa.openapi.yaml` a `/opt/quorum-backoffice/docs/mfa/openapi.yaml` y validando
+> contra el sitio. Registro completo en `odd/tasks/mfa-get-subject.md` (L12).
+
+## Pendientes
+
+- Resolver el DNS del host canónico `backend.quorum.asistentepro.mx` (CNAME).
+- Decidir si `backend.*` pasa a ser el host canónico del API (`/api/`).
+- Retirar el spec a mano una vez que el generado (`mfa.openapi.generated.yaml`)
+  se acepte como fuente única (issue separada).
