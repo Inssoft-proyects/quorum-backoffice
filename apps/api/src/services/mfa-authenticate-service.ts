@@ -32,11 +32,12 @@
  *      `students_cache.id` per migration 0002). If NULL OR the
  *      student has `is_active = false` → `deny.student_inactive`.
  *   4. Look up the device by `serial_number`. If not found, status
- *      != 'active', `revoked_at IS NOT NULL`, or
- *      `assigned_student_id` does not match the marbete's student
- *      → `deny.device_unknown` (for the unknown / revoked paths)
- *      or `deny.device_not_bound_to_student` (for the wrong-owner
- *      path). NEVER log the serial.
+ *      != 'active', or `revoked_at IS NOT NULL` → `deny.device_unknown`.
+ *      The device is an authorization factor (approved allowlist),
+ *      not an identity factor; the marbete → device → student binding
+ *      is no longer enforced (fase 2 retired
+ *      `dispositivos.assigned_student_id` and
+ *      `deny.device_not_bound_to_student`). NEVER log the serial.
  *   5. Call `OtpClient.verify` with
  *      `subject = String(canvas_user_id)` and
  *      `scope = 'mfa.access'`. Map: `ok=true` → continue;
@@ -191,7 +192,6 @@ export interface MfaDeny {
     | 'deny.marbete_unknown'
     | 'deny.student_inactive'
     | 'deny.device_unknown'
-    | 'deny.device_not_bound_to_student'
     | 'deny.otp_invalid'
     | 'deny.dependency_fail';
   message: string;
@@ -303,30 +303,14 @@ export class MfaAuthenticateService {
         );
       }
 
-      // (4) Device lookup. The marbete → device binding is
-      // enforced in a single pass:
-      //   - serial unknown / revoked / unassigned   → deny.device_unknown
-      //   - serial bound to a DIFFERENT student     → deny.device_not_bound_to_student
+      // (4) Device lookup. The device is an authorization factor
+      // (a shared "approved device" allowlist), not an identity
+      // factor: active + non-revoked is enough, regardless of any
+      // student assignment (shared classroom pool).
       const device = await repo.findDeviceBySerialNumber(input.serialNumber);
-      if (
-        !device ||
-        device.status !== 'active' ||
-        device.revoked_at !== null ||
-        device.assigned_student_id === null
-      ) {
+      if (!device || device.status !== 'active' || device.revoked_at !== null) {
         return await this.deny(
-          { code: 'deny.device_unknown', message: 'device is unknown, revoked, or unbound' },
-          student,
-          marbete,
-          meta,
-        );
-      }
-      if (device.assigned_student_id !== student.id) {
-        return await this.deny(
-          {
-            code: 'deny.device_not_bound_to_student',
-            message: 'device is bound to a different student than the marbete',
-          },
+          { code: 'deny.device_unknown', message: 'device is unknown or revoked' },
           student,
           marbete,
           meta,

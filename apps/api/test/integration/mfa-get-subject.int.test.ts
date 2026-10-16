@@ -14,9 +14,8 @@
  *       `access-decision.test.ts` (same preHandler).
  *   (b) deny matrix over seeded fixtures — deny.marbete_unknown
  *       (unknown AND revoked marbete, indistinguishable),
- *       deny.student_inactive, deny.device_unknown,
- *       deny.device_not_bound_to_student.
- *   (c) happy path — active marbete + active student + matching
+ *       deny.student_inactive, deny.device_unknown.
+ *   (c) happy path — active marbete + active student + approved
  *       active device → 200 { canvas_user_id, matricula }.
  *   (d) body validation — short marbete_code → 400 validation_error.
  *   (e) leak guard — the response body never contains the raw
@@ -126,18 +125,22 @@ async function seedDevice(
   args: {
     serial: string;
     status?: 'active' | 'revoked';
-    assignedStudentId?: number | null;
+    // Fase 2 retired `dispositivos.assigned_student_id`; the
+    // seed helper keeps the optional parameter for backward-
+    // compatible call sites but ignores it. The shared-device
+    // allowlist model binds the device to nothing — the MFA
+    // chain consults the marbete's `assigned_student_id`,
+    // not the device's.
   },
 ): Promise<number> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO dispositivos
-       (serial_number, brand, model, status, created_by, assigned_student_id, revoked_at)
-     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3, $4)
+       (serial_number, brand, model, status, created_by, revoked_at)
+     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3)
      RETURNING id`,
     [
       args.serial,
       args.status ?? 'active',
-      args.assignedStudentId ?? null,
       args.status === 'revoked' ? new Date() : null,
     ],
   );
@@ -219,8 +222,8 @@ describe('POST /api/v1/mfa/get-subject — S2S identity resolution (integration,
     await seedStudent(pool, CANVAS_INACTIVE, 'Inactive GetSubject Student', false);
 
     await seedMarbete(pool, { code: CODE_HAPPY, assignedStudentId: studentId });
-    await seedDevice(pool, { serial: SERIAL_HAPPY, assignedStudentId: studentId });
-    await seedDevice(pool, { serial: SERIAL_OTHER, assignedStudentId: otherStudentId });
+    await seedDevice(pool, { serial: SERIAL_HAPPY });
+    await seedDevice(pool, { serial: SERIAL_OTHER });
   });
 
   // (a) transport-auth matrix -------------------------------------------------
@@ -334,10 +337,7 @@ describe('POST /api/v1/mfa/get-subject — S2S identity resolution (integration,
       code: 'GETSUBJ-INACTIVE-STU-003',
       assignedStudentId: inactiveId,
     });
-    await seedDevice(pool, {
-      serial: 'SN-GETSUBJ-INACTIVE',
-      assignedStudentId: inactiveId,
-    });
+    await seedDevice(pool, { serial: 'SN-GETSUBJ-INACTIVE' });
     const res = await inject({
       marbete_code: 'GETSUBJ-INACTIVE-STU-003',
       serial_number: 'SN-GETSUBJ-INACTIVE',
@@ -352,10 +352,13 @@ describe('POST /api/v1/mfa/get-subject — S2S identity resolution (integration,
     expect(res.json()).toMatchObject({ code: 'deny.device_unknown' });
   });
 
-  it('(b5) device bound to a different student → 401 deny.device_not_bound_to_student', async () => {
+  it('(b5) device bound to a different student → 200 (device is an allowlist, not an identity factor)', async () => {
     const res = await inject({ marbete_code: CODE_HAPPY, serial_number: SERIAL_OTHER });
-    expect(res.statusCode).toBe(401);
-    expect(res.json()).toMatchObject({ code: 'deny.device_not_bound_to_student' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      canvas_user_id: CANVAS_HAPPY,
+      matricula: MATRICULA_HAPPY,
+    });
   });
 
   // (d) validation ------------------------------------------------------------

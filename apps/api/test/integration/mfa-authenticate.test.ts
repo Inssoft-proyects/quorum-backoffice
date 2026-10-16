@@ -12,9 +12,8 @@
  *     audit row, session row with kind='student' + canvas_user_id
  *   - denial taxonomy: marbete_unknown (not found / revoked /
  *     deleted), student_inactive (no owner / is_active=false),
- *     device_unknown (not found / revoked / unassigned),
- *     device_not_bound_to_student, otp_invalid, dependency_fail
- *     (OTP 5xx + thrown)
+ *     device_unknown (not found / revoked), otp_invalid,
+ *     dependency_fail (OTP 5xx + thrown)
  *   - body validation: empty marbete_code / missing otp / short otp
  *     → 400 `validation_error`
  *   - session cookie attributes: HttpOnly, Secure, SameSite=Lax,
@@ -164,18 +163,21 @@ async function seedDevice(
   args: {
     serial: string;
     status?: 'active' | 'revoked';
-    assignedStudentId?: number | null;
+    // Fase 2 retired `dispositivos.assigned_student_id`; the seed
+    // helper keeps the optional parameter for backward-compatible
+    // call sites but ignores it. The shared-device allowlist
+    // model binds the device to nothing — the MFA chain consults
+    // the marbete's `assigned_student_id`, not the device's.
   },
 ): Promise<number> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO dispositivos
-       (serial_number, brand, model, status, created_by, assigned_student_id, revoked_at)
-     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3, $4)
+       (serial_number, brand, model, status, created_by, revoked_at)
+     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3)
      RETURNING id`,
     [
       args.serial,
       args.status ?? 'active',
-      args.assignedStudentId ?? null,
       args.status === 'revoked' ? new Date() : null,
     ],
   );
@@ -380,20 +382,16 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
     // The happy-path marbete + device are seeded per-test so a
     // successful authentication in one test does not affect the
     // next. The "happy" marbete is bound to the happy student
-    // AND a device with the matching serial.
+    // AND a device with the matching serial. Fase 2 retired
+    // `dispositivos.assigned_student_id`; the device is a shared
+    // approved allowlist, not an identity factor.
     await seedMarbete(pool, {
       code: CODE_HAPPY,
       publicUid: 'm-HAPPY',
       assignedStudentId: studentId,
     });
-    await seedDevice(pool, {
-      serial: SERIAL_HAPPY,
-      assignedStudentId: studentId,
-    });
-    await seedDevice(pool, {
-      serial: SERIAL_OTHER,
-      assignedStudentId: otherStudentId,
-    });
+    await seedDevice(pool, { serial: SERIAL_HAPPY });
+    await seedDevice(pool, { serial: SERIAL_OTHER });
   });
 
   // -----------------------------------------------------------------
@@ -533,10 +531,7 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
       publicUid: 'm-SYNNOSIS',
       assignedStudentId: noMatriculaStudentId,
     });
-    await seedDevice(pool, {
-      serial: 'SN-MFA-SYNNOSIS',
-      assignedStudentId: noMatriculaStudentId,
-    });
+    await seedDevice(pool, { serial: 'SN-MFA-SYNNOSIS' });
     const r = await app.inject({
       method: 'POST',
       url: '/api/v1/mfa/authenticate',
@@ -641,13 +636,11 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
       publicUid: 'm-INACTIVE',
       assignedStudentId: inactiveStudentId,
     });
-    // The device for the inactive student is bound to the inactive
-    // student id so we get past the device check; the deny
-    // MUST come from the student-inactive branch.
-    await seedDevice(pool, {
-      serial: 'SN-MFA-INACTIVE',
-      assignedStudentId: inactiveStudentId,
-    });
+    // The device for the inactive student is seeded so the deny
+    // comes from the student-inactive branch (not the device
+    // branch). Fase 2 retired `dispositivos.assigned_student_id`;
+    // any active, non-revoked device is accepted.
+    await seedDevice(pool, { serial: 'SN-MFA-INACTIVE' });
     const r = await app.inject({
       method: 'POST',
       url: '/api/v1/mfa/authenticate',
@@ -684,7 +677,6 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
     await seedDevice(pool, {
       serial: 'SN-MFA-REVOKED',
       status: 'revoked',
-      assignedStudentId: studentId,
     });
     const r = await app.inject({
       method: 'POST',
@@ -698,11 +690,12 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
     expect(r.json()).toMatchObject({ code: 'deny.device_unknown' });
   });
 
-  it('device_unknown (unassigned): 401 with deny.device_unknown when the device has no assigned_student_id', async () => {
-    await seedDevice(pool, {
-      serial: 'SN-MFA-UNASSIGNED',
-      assignedStudentId: null,
-    });
+  it('device (unassigned): 201 — unassigned device passes (shared device allowlist)', async () => {
+    // Fase 2 retired `dispositivos.assigned_student_id`; the
+    // device is purely a shared approved-allowlist factor, so
+    // any active, non-revoked device is accepted regardless of
+    // any (now-absent) owner column.
+    await seedDevice(pool, { serial: 'SN-MFA-UNASSIGNED' });
     const r = await app.inject({
       method: 'POST',
       url: '/api/v1/mfa/authenticate',
@@ -711,21 +704,19 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
         happyBody({ serial_number: 'SN-MFA-UNASSIGNED' }),
       ),
     });
-    expect(r.statusCode).toBe(401);
-    expect(r.json()).toMatchObject({ code: 'deny.device_unknown' });
+    expect(r.statusCode).toBe(201);
+    expect((r.json() as { canvas_user_id: number }).canvas_user_id).toBe(CANVAS_HAPPY);
   });
 
-  it('device_not_bound_to_student: 401 with deny.device_not_bound_to_student when the device is bound to a different student', async () => {
+  it('device bound to a different student: 201 — binding is not enforced (device is an allowlist)', async () => {
     const r = await app.inject({
       method: 'POST',
       url: '/api/v1/mfa/authenticate',
       headers: { 'content-type': 'application/json' },
       payload: JSON.stringify(happyBody({ serial_number: SERIAL_OTHER })),
     });
-    expect(r.statusCode).toBe(401);
-    expect(r.json()).toMatchObject({
-      code: 'deny.device_not_bound_to_student',
-    });
+    expect(r.statusCode).toBe(201);
+    expect((r.json() as { canvas_user_id: number }).canvas_user_id).toBe(CANVAS_HAPPY);
   });
 
   // -----------------------------------------------------------------

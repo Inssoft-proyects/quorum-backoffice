@@ -156,15 +156,20 @@ async function seedDevice(
   pool: Pool,
   args: {
     serial: string;
-    assignedStudentId: number;
+    // Fase 2 retired `dispositivos.assigned_student_id`; the
+    // seed helper keeps the optional parameter for backward-
+    // compatible call sites but ignores it. The shared-device
+    // allowlist model binds the device to nothing — the MFA
+    // chain consults the marbete's `assigned_student_id`,
+    // not the device's.
   },
 ): Promise<number> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO dispositivos
-       (serial_number, brand, model, status, created_by, assigned_student_id, revoked_at)
-     VALUES ($1, 'TestBrand', 'TestModel', 'active', 'tester', $2, NULL)
+       (serial_number, brand, model, status, created_by, revoked_at)
+     VALUES ($1, 'TestBrand', 'TestModel', 'active', 'tester', NULL)
      RETURNING id`,
-    [args.serial, args.assignedStudentId],
+    [args.serial],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('device_seed_failed');
@@ -289,8 +294,8 @@ describe('M5 / Mobile contract for POST /api/v1/mfa/authenticate', () => {
       publicUid: 'm-MOBILE-B',
       assignedStudentId: studentBId,
     });
-    await seedDevice(pool, { serial: SERIAL_A, assignedStudentId: studentAId });
-    await seedDevice(pool, { serial: SERIAL_B, assignedStudentId: studentBId });
+    await seedDevice(pool, { serial: SERIAL_A });
+    await seedDevice(pool, { serial: SERIAL_B });
   });
 
   // -----------------------------------------------------------------

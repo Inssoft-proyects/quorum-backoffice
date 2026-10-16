@@ -43,8 +43,7 @@ import { OtpInput } from '@/components/ui/otp-input';
  * emits:
  *   - `deny.marbete_unknown`               — "Marbete no encontrado o inactivo."
  *   - `deny.student_inactive`              — "Estudiante inactivo o sin marbete asignado."
- *   - `deny.device_unknown`                — "Dispositivo no encontrado, revocado o asignado a otro estudiante."
- *   - `deny.device_not_bound_to_student`   — "El dispositivo no está asignado a este estudiante."
+ *   - `deny.device_unknown`                — "Dispositivo no encontrado o revocado."
  *   - `deny.otp_invalid` / `deny.otp_missing` — "Código dinámico incorrecto o expirado."
  *   - `deny.dependency_fail` (503)         — "Servicio de verificación no disponible. Intenta más tarde."
  *   - `validation_error` (400)             — first Zod issue message (English from the
@@ -84,9 +83,7 @@ function explainMfaError(err: unknown): string {
     case 'deny.student_inactive':
       return 'Estudiante inactivo o sin marbete asignado.';
     case 'deny.device_unknown':
-      return 'Dispositivo no encontrado, revocado o asignado a otro estudiante.';
-    case 'deny.device_not_bound_to_student':
-      return 'El dispositivo no está asignado a este estudiante.';
+      return 'Dispositivo no encontrado o revocado.';
     case 'deny.otp_invalid':
     case 'deny.otp_missing':
       return 'Código dinámico incorrecto o expirado.';

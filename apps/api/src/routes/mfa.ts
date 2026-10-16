@@ -101,7 +101,7 @@ export async function registerMfaRoutes(
    *   - 400 Bad Request — body failed Zod validation.
    *   - 401 Unauthorized — every deny code except
    *     `deny.dependency_fail` (marbete_unknown, student_inactive,
-   *     device_unknown, device_not_bound_to_student, otp_invalid).
+   *     device_unknown, otp_invalid).
    *   - 503 Service Unavailable — `deny.dependency_fail` (the OTP
    *     service is down / unreachable, or the DB lookup failed).
    */

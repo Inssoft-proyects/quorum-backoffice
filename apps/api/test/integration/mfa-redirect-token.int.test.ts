@@ -157,18 +157,22 @@ async function seedDevice(
   args: {
     serial: string;
     status?: 'active' | 'revoked';
-    assignedStudentId?: number | null;
+    // Fase 2 retired `dispositivos.assigned_student_id`; the
+    // seed helper keeps the optional parameter for backward-
+    // compatible call sites but ignores it. The shared-device
+    // allowlist model binds the device to nothing — the MFA
+    // chain consults the marbete's `assigned_student_id`,
+    // not the device's.
   },
 ): Promise<number> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO dispositivos
-       (serial_number, brand, model, status, created_by, assigned_student_id, revoked_at)
-     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3, $4)
+       (serial_number, brand, model, status, created_by, revoked_at)
+     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3)
      RETURNING id`,
     [
       args.serial,
       args.status ?? 'active',
-      args.assignedStudentId ?? null,
       args.status === 'revoked' ? new Date() : null,
     ],
   );
@@ -340,7 +344,6 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
     });
     await seedDevice(pool, {
       serial: SERIAL_HAPPY,
-      assignedStudentId: studentId,
     });
 
     // The MFA cookie is reused across most tests so each test
@@ -477,7 +480,6 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
     });
     await seedDevice(pool, {
       serial: 'SN-M3-SYNNOSIS',
-      assignedStudentId: noMatriculaStudentId,
     });
     const auth = await app.inject({
       method: 'POST',

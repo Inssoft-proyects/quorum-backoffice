@@ -5,10 +5,11 @@
  *   - `OtpClient.verify`  — single-use OTP verified against the
  *                           quorum-otp service, scope =
  *                           ACCESS_DECISION_OTP_SCOPE.
- *   - `checkOwner(...)`   — fail-closed owner lookup against the
- *                           `dispositivos` + `students_cache`
- *                           join. Returns `{ owner, studentId }`
- *                           where negative answers collapse to
+ *   - `checkOwner(...)`   — fail-closed shared-device resolution
+ *                           against the `dispositivos` +
+ *                           `students_cache` join. Returns
+ *                           `{ owner, studentId }` where negative
+ *                           answers collapse to
  *                           `{ owner: false, studentId: null }`
  *                           without echoing the device serial.
  *
@@ -22,9 +23,11 @@
  *   5. OTP verify throws (5xx / timeout / unknown) → deny.dependency_fail
  *      The service MUST NEVER propagate the exception — the route
  *      always returns a clean DecisionResponse envelope.
- *   6. owner check returns {owner:false}  → deny.device_unknown
- *      Uniform across unknown / revoked / wrong-owner / inactive
- *      student. The serial is never echoed on any deny path.
+ *   6. checkOwner returns {owner:false}  → deny.device_unknown
+ *      Uniform across unknown / revoked / inactive student. The
+ *      device is an authorization factor (approved allowlist), not
+ *      an identity factor; the serial is never echoed on any deny
+ *      path.
  *   7. owner check returns {owner:true}   → { decision: 'allow',
  *                                             student_id, room_id?,
  *                                             media_policy? }
@@ -121,8 +124,8 @@ export class AccessDecisionService {
       return { decision: 'deny', student_id: null, denial: 'deny.dependency_fail' };
     }
 
-    // (6/7) Owner lookup. Uniform negative answer: the repository
-    // never distinguishes unknown / revoked / wrong-owner / inactive
+    // (6/7) Shared-device resolution. Uniform negative answer: the
+    // repository never distinguishes unknown / revoked / inactive
     // student, and this service does not second-guess it. The
     // device serial MUST NOT appear anywhere in the response — the
     // repository returns `studentId: null` (no serial) and we

@@ -9,7 +9,6 @@
  * Auth (WU6) replaces `x-test-actor` with `req.session.user.id`.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { z } from 'zod';
 import {
   CreateDispositivoRequest,
   DeleteDispositivoRequest,
@@ -20,16 +19,6 @@ import {
 import { DispositivosService } from '../services/dispositivos-service';
 import { OtpClient } from '../services/otp-client';
 import { requireSession, requireRole } from '../plugins/rbac';
-
-/**
- * B2c / body shape for POST /api/v1/dispositivos/:id/assign.
- * Local schema (not in shared) because the endpoint is internal admin
- * surface only and the service still owns the Canvas-id → internal-id
- * resolution. Shared stays dependency-free.
- */
-const AssignDispositivoRequest = z.object({
-  canvasUserId: z.number().int().positive(),
-});
 
 function actorFromRequest(req: FastifyRequest): string {
   const u = req.session?.user;
@@ -127,44 +116,9 @@ export async function registerDispositivosRoutes(app: FastifyInstance): Promise<
     },
   );
 
-  // B2c / Admin-only, OTP-gated bind of a device to a Canvas student.
-  // Fail-closed semantics live in DispositivosService.assign: 404 unknown
-  // device, 409 revoked device, 422 missing/inactive student, and a
-  // before/after audit entry for every successful (re)assignment.
-  app.post<{ Params: { id: string } }>(
-    '/api/v1/dispositivos/:id/assign',
-    { preHandler: requireRole('admin') },
-    async (req) => {
-      const { id } = DispositivoIdParam.parse(req.params);
-      const body = AssignDispositivoRequest.parse(req.body ?? {});
-      const actor = actorFromRequest(req);
-      const otpCode = otpFromRequest(req);
-      const meta = metaFromRequest(req);
-      const svc = getService();
-      return svc.assign(actor, id, body, otpCode, meta);
-    },
-  );
-
-  // B2c / Admin-only, OTP-gated release of a device owner. No body
-  // required: the device id alone identifies the active service.
-  // Rejects a no-op unassign with 409 so admins cannot burn an OTP
-  // without a state change.
-  app.post<{ Params: { id: string } }>(
-    '/api/v1/dispositivos/:id/unassign',
-    { preHandler: requireRole('admin') },
-    async (req) => {
-      const { id } = DispositivoIdParam.parse(req.params);
-      const actor = actorFromRequest(req);
-      const otpCode = otpFromRequest(req);
-      const meta = metaFromRequest(req);
-      const svc = getService();
-      return svc.unassign(actor, id, otpCode, meta);
-    },
-  );
-
-  // Logical-delete model / Admin-only, OTP-gated un-revoke. Bodyless
-  // (mirrors unassign): the device id alone identifies the row. 404 unknown,
-  // 409 already active. Reuses DispositivosService.reactivate.
+  // Logical-delete model / Admin-only, OTP-gated un-revoke. Bodyless:
+  // the device id alone identifies the row. 404 unknown, 409 already
+  // active. Reuses DispositivosService.reactivate.
   app.post<{ Params: { id: string } }>(
     '/api/v1/dispositivos/:id/reactivate',
     { preHandler: requireRole('admin') },

@@ -4,15 +4,14 @@
  * Exercises `MfaGetSubjectService.resolve()` in isolation against a
  * fake `MfaGetSubjectRepoLike`. The service is the single point
  * where the deny.* codes are produced from the marbete lookup, the
- * student hydration, and the device ownership check, so this file
+ * student hydration, and the device authorization check, so this file
  * locks down the policy order end-to-end:
  *
  *   1. marbete not found / revoked / inactive        → deny.marbete_unknown
  *   2. marbete.assigned_student_id IS NULL           → deny.student_inactive
  *   3. student missing / is_active = false           → deny.student_inactive
- *   4. device not found / revoked / unassigned       → deny.device_unknown
- *   5. device assigned to a DIFFERENT student        → deny.device_not_bound_to_student
- *   6. happy path                                    → { canvasUserId, matricula }
+ *   4. device not found / revoked                    → deny.device_unknown
+ *   5. happy path (device active + non-revoked)      → { canvasUserId, matricula }
  *
  * Side contracts:
  *
@@ -68,12 +67,14 @@ function makeStudentRow(overrides: Partial<MfaStudentRow> = {}): MfaStudentRow {
 }
 
 function makeDeviceRow(overrides: Partial<MfaDeviceRow> = {}): MfaDeviceRow {
+  // Fase 2 retired `dispositivos.assigned_student_id`; the
+  // device is now a shared approved allowlist (no per-row owner
+  // column). The default row mirrors the original "happy" path.
   return {
     id: 200,
     serial_number: RAW_SERIAL,
     status: 'active',
     revoked_at: null,
-    assigned_student_id: 100,
     ...overrides,
   };
 }
@@ -128,7 +129,7 @@ async function denyCodeOf(promise: Promise<unknown>): Promise<string> {
 // ---------------------------------------------------------------------------
 
 describe('MfaGetSubjectService.resolve — policy order', () => {
-  it('happy path: active marbete + active student + matching device → { canvasUserId, matricula }', async () => {
+  it('happy path: active marbete + active student + approved device → { canvasUserId, matricula }', async () => {
     const { repo, calls } = makeRepo({
       marbete: makeMarbeteRow(),
       student: makeStudentRow(),
@@ -257,28 +258,36 @@ describe('MfaGetSubjectService.resolve — policy order', () => {
     expect(code).toBe('deny.device_unknown');
   });
 
-  it('device with assigned_student_id = null → deny.device_unknown', async () => {
+  it('device with active + non-revoked → resolves (shared device allowlist; fase 2 retired the per-row owner column)', async () => {
+    // The previous contract tested `device.assigned_student_id = null`;
+    // fase 2 retired the column. Any active, non-revoked device now
+    // resolves the same way.
     const { repo } = makeRepo({
       marbete: makeMarbeteRow(),
       student: makeStudentRow(),
-      device: makeDeviceRow({ assigned_student_id: null }),
+      device: makeDeviceRow(),
     });
-    const code = await denyCodeOf(
-      makeService(repo).resolve({ marbeteCode: RAW_CODE, serialNumber: RAW_SERIAL }),
-    );
-    expect(code).toBe('deny.device_unknown');
+    const result = await makeService(repo).resolve({
+      marbeteCode: RAW_CODE,
+      serialNumber: RAW_SERIAL,
+    });
+    expect(result).toEqual({ canvasUserId: 7001, matricula: 'A00001' });
   });
 
-  it('device bound to a DIFFERENT student → deny.device_not_bound_to_student', async () => {
+  it('device with active + non-revoked → resolves regardless of (now-absent) owner (binding not enforced)', async () => {
+    // The previous contract tested `device.assigned_student_id = 999`;
+    // fase 2 retired the column. Any active, non-revoked device now
+    // resolves regardless of any (now-absent) owner column.
     const { repo } = makeRepo({
       marbete: makeMarbeteRow(),
       student: makeStudentRow({ id: 100 }),
-      device: makeDeviceRow({ assigned_student_id: 999 }),
+      device: makeDeviceRow(),
     });
-    const code = await denyCodeOf(
-      makeService(repo).resolve({ marbeteCode: RAW_CODE, serialNumber: RAW_SERIAL }),
-    );
-    expect(code).toBe('deny.device_not_bound_to_student');
+    const result = await makeService(repo).resolve({
+      marbeteCode: RAW_CODE,
+      serialNumber: RAW_SERIAL,
+    });
+    expect(result).toEqual({ canvasUserId: 7001, matricula: 'A00001' });
   });
 
   it('deny envelope never contains the raw marbete code or the raw serial', async () => {
