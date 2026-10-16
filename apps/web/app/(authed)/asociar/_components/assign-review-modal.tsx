@@ -6,6 +6,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { OtpInput } from '@/components/ui/otp-input';
+import { DialogSelect } from '@/components/ui/dialog-select';
 import {
   Dialog,
   DialogContent,
@@ -95,13 +96,6 @@ export function AssignReviewModal({
 
   const grantActive = grant.status?.active === true;
 
-  // Map marbeteId → maskedCode for the picker labels.
-  const labelById = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const m of available) map.set(m.id, m.maskedCode);
-    return map;
-  }, [available]);
-
   // Conflict detection: every proposed marbete must appear at most
   // once across all rows AND every row must have a proposal.
   const validity = useMemo(() => {
@@ -187,10 +181,11 @@ export function AssignReviewModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="assignment-modal"
+        className="app-modal app-modal--wide assignment-modal"
+        overlayClassName="app-modal__overlay"
         data-testid="assign-review-modal"
       >
-        <DialogHeader>
+        <DialogHeader className="app-modal__header">
           <div className="modal-dialog__icon" aria-hidden>
             <CheckCircle2 />
           </div>
@@ -234,10 +229,6 @@ export function AssignReviewModal({
                 (e) => e.canvasUserId === canvasUserId,
               );
               const fullName = enrollment?.fullName ?? `Matrícula ${canvasUserId}`;
-              const label =
-                typeof marbeteId === 'number'
-                  ? (labelById.get(marbeteId) ?? 'Sin disponibilidad')
-                  : 'Selecciona un marbete';
               const controlId = `review-marbete-${canvasUserId}`;
               return (
                 <div
@@ -256,29 +247,23 @@ export function AssignReviewModal({
                       htmlFor={controlId}
                       className="sr-only"
                     >{`Marbete propuesto para ${fullName}`}</label>
-                    <select
+                    <DialogSelect
                       id={controlId}
                       className="assignment-review__select"
                       data-testid={`assign-review-select-${canvasUserId}`}
                       value={marbeteId === null ? '' : String(marbeteId)}
-                      onChange={(e) => {
-                        const next = Number(e.target.value);
+                      onValueChange={(value) => {
+                        const next = Number(value);
                         if (!Number.isNaN(next) && next > 0) {
                           selectMarbete(canvasUserId, next);
                         }
                       }}
+                      options={available.map((m) => ({ value: String(m.id), label: m.maskedCode }))}
+                      placeholder="Selecciona un marbete"
+                      compact
                       disabled={submitting}
                       aria-label={`Marbete propuesto para ${fullName}`}
-                    >
-                      <option value="" disabled>
-                        Selecciona un marbete
-                      </option>
-                      {available.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.maskedCode}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                 </div>
               );
@@ -325,6 +310,7 @@ export function AssignReviewModal({
               <div data-testid="assign-review-otp">
                 <OtpInput
                   mode="alphanumeric"
+                  autoFocus={false}
                   value={otp}
                   onChange={(v) => {
                     setOtp(v);

@@ -1,62 +1,76 @@
-import Link from 'next/link';
+'use client';
+
+import { useState } from 'react';
+import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 import type { MeResponse } from '@quorum-backoffice/shared';
-import { hasAtLeastRole } from '@quorum-backoffice/shared';
 import { cn } from '@/lib/utils';
+import { BrandMark } from './brand-mark';
+import { NavigationLinks } from './navigation-links';
+import { LogoutButton } from './logout-button';
 
-interface NavItem {
-  href: string;
-  label: string;
-  visible: boolean;
-}
+export function Sidebar({ user, className }: { user: MeResponse; className?: string }) {
+  const [compact, setCompact] = useState(false);
 
-/**
- * Sidebar nav. Marbetes + Dispositivos are visible to all roles;
- * Auditoría is visible only to auditor+.
- */
-export function Sidebar({
-  user,
-  className,
-}: {
-  user: MeResponse;
-  className?: string;
-}) {
-  const items: NavItem[] = [
-    { href: '/dashboard', label: 'Inicio', visible: true },
-    { href: '/marbetes', label: 'Marbetes', visible: true },
-    { href: '/asociar', label: 'Asignación de marbetes', visible: true },
-    { href: '/dispositivos', label: 'Dispositivos', visible: true },
-    {
-      href: '/audit',
-      label: 'Auditoría',
-      visible: hasAtLeastRole(user.role, 'auditor'),
-    },
-  ];
   return (
     <aside
       className={cn(
-        'flex flex-col border-r border-border bg-card px-4 py-6',
+        'relative min-h-0 shrink-0 flex-col overflow-visible border-r border-border bg-card px-3 py-2 transition-[width] duration-200',
+        compact ? 'w-20' : 'w-64',
         className,
       )}
+      data-testid="sidebar"
+      data-compact={compact}
     >
-      <div className="px-2 pb-6 text-sm font-semibold uppercase tracking-wider text-text-muted">
-        Quorum Backoffice
+      <div
+        className={cn(
+          'mb-3 flex min-h-9 items-center',
+          compact ? 'justify-center' : 'justify-between gap-2 px-2',
+        )}
+      >
+        <div className="flex min-w-0 items-center gap-2.5" aria-label="Quorum Backoffice">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center text-text-primary"
+            aria-hidden="true"
+          >
+            <BrandMark size={30} />
+          </span>
+          {!compact && (
+            <span className="flex min-w-0 flex-col leading-tight text-text-primary">
+              <span className="text-xs font-bold uppercase tracking-[0.1em]">Quorum</span>
+              <span className="text-[0.65rem] font-medium uppercase tracking-[0.08em]">
+                Backoffice
+              </span>
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setCompact((value) => !value)}
+          className={cn(
+            'flex h-8 w-8 shrink-0 items-center justify-center text-text-muted hover:bg-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+            compact
+              ? 'absolute -right-4 top-3 z-10 rounded-full border border-border bg-card'
+              : 'rounded-lg',
+          )}
+          aria-label={compact ? 'Expandir menú' : 'Contraer menú'}
+          aria-expanded={!compact}
+          data-testid="sidebar-collapse"
+        >
+          {compact ? (
+            <ChevronsRight className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
       </div>
-      <nav className="flex flex-col gap-1" aria-label="Navegación principal">
-        {items
-          .filter((i) => i.visible)
-          .map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'rounded-md px-3 py-2 text-sm text-text-primary transition-colors',
-                'hover:bg-muted hover:text-primary-500',
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
-      </nav>
+
+      <NavigationLinks user={user} compact={compact} />
+      <div
+        className="shrink-0 border-t border-border px-1 pt-3 pb-2"
+        data-testid="sidebar-footer"
+      >
+        <LogoutButton compact={compact} />
+      </div>
     </aside>
   );
 }

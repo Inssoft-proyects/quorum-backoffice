@@ -314,7 +314,7 @@ export class PgMatriculasRepo {
     // RETURNING after ON CONFLICT DO UPDATE. The other rows are
     // updates (no separate "unchanged" signal at the SQL level).
     const r = await this.client.query<{ canvas_user_id: number; xmax: number }>(
-      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active, last_synced_at)
+      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
        SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::boolean[])
        ON CONFLICT (canvas_user_id) DO UPDATE
          SET full_name = EXCLUDED.full_name,

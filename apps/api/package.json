@@ -20,6 +20,8 @@
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --coverage --runInBand",
     "migrate": "tsx scripts/migrate.ts",
     "seed:e2e": "tsx scripts/seed-e2e-users.ts",
+    "seed:dev": "node --env-file=.env --import=tsx scripts/seed-dev-data.ts",
+    "dev:canvas": "node --env-file=.env --import=tsx scripts/mock-canvas-service.ts",
     "generate:bulk-template": "tsx scripts/generate-bulk-template.ts"
   },
   "dependencies": {

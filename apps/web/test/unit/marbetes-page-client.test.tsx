@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { chooseDialogOption } from './dialog-select-helpers';
 import { MarbetesPageClient } from '@/app/(authed)/marbetes/_components/marbetes-page-client';
 import type { MarbeteDetailResponse } from '@quorum-backoffice/shared';
 
@@ -198,8 +199,8 @@ describe('MarbetesPageClient (maquette v2)', () => {
 
     // Open the reveal dialog from the row's reveal button.
     await user.click(screen.getByTestId('reveal-1'));
-    const reasonSelect = await screen.findByTestId('reveal-reason-select');
-    await user.selectOptions(reasonSelect, 'auditoria');
+    await screen.findByTestId('reveal-reason-select');
+    await chooseDialogOption(user, 'reveal-reason-select', 'Auditoría interna');
 
     // Reveal hits POST /api/v1/marbetes/:id/reveal which is not stubbed
     // here, so we expect an inline error rather than a successful
@@ -238,8 +239,8 @@ describe('MarbetesPageClient (maquette v2)', () => {
     render(<MarbetesPageClient items={[makeMarbete(1)]} userRole="admin" />);
 
     await user.click(screen.getByTestId('delete-1'));
-    const reasonSelect = await screen.findByTestId('deactivate-reason-select');
-    await user.selectOptions(reasonSelect, 'otro');
+    await screen.findByTestId('deactivate-reason-select');
+    await chooseDialogOption(user, 'deactivate-reason-select', 'Otro');
     // D-3-class fix: the revoke dialog now requires an OTP when no
     // grant is active. Type one so the submit button enables.
     const otpInputs = (await screen.findAllByRole('textbox', { name: /Digit/i })) as HTMLInputElement[];

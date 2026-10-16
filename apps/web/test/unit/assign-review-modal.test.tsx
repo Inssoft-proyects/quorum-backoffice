@@ -15,6 +15,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { chooseDialogOption } from './dialog-select-helpers';
 import { AssignReviewModal } from '@/app/(authed)/asociar/_components/assign-review-modal';
 
 interface FetchHandlers {
@@ -101,7 +102,7 @@ describe('AssignReviewModal', () => {
       />,
     );
 
-    await user.selectOptions(screen.getByTestId('assign-review-select-1'), '10');
+    await chooseDialogOption(user, 'assign-review-select-1', '3***10');
     // Row 2 still has its default proposal of the first available
     // (id=10), so selecting 10 for row 1 produces a duplicate.
     expect(screen.getByTestId('assign-review-validation')).toHaveTextContent(
@@ -131,8 +132,8 @@ describe('AssignReviewModal', () => {
     );
 
     // Row 1 picks id=10, row 2 picks id=11 — distinct, no swap needed.
-    await user.selectOptions(screen.getByTestId('assign-review-select-1'), '10');
-    await user.selectOptions(screen.getByTestId('assign-review-select-2'), '11');
+    await chooseDialogOption(user, 'assign-review-select-1', '3***10');
+    await chooseDialogOption(user, 'assign-review-select-2', '3***11');
     expect(screen.getByTestId('assign-review-validation')).toHaveTextContent(
       'Propuesta válida',
     );
@@ -178,7 +179,7 @@ describe('AssignReviewModal', () => {
 
     expect(screen.getByTestId('assign-review-confirm')).toBeDisabled();
 
-    await user.selectOptions(screen.getByTestId('assign-review-select-1'), '10');
+    await chooseDialogOption(user, 'assign-review-select-1', '3***10');
     const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i });
     for (const input of otpInputs) {
       await user.type(input, '1');
@@ -217,7 +218,7 @@ describe('AssignReviewModal', () => {
       />,
     );
 
-    await user.selectOptions(screen.getByTestId('assign-review-select-1'), '10');
+    await chooseDialogOption(user, 'assign-review-select-1', '3***10');
     const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i }) as HTMLInputElement[];
     for (let i = 0; i < 'AB12CD'.length; i += 1) {
       await user.type(otpInputs[i]!, 'AB12CD'[i]!);

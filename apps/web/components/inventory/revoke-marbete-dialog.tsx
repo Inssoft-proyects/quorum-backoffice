@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { OtpInput } from '@/components/ui/otp-input';
+import { DialogSelect } from '@/components/ui/dialog-select';
 import { useOtpGrant } from './use-otp-grant';
 
 export interface RevokeMarbeteDialogProps {
@@ -153,8 +154,12 @@ export function RevokeMarbeteDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="revoke-marbete-dialog">
-        <DialogHeader>
+      <DialogContent
+        className="app-modal"
+        overlayClassName="app-modal__overlay"
+        data-testid="revoke-marbete-dialog"
+      >
+        <DialogHeader className="app-modal__header">
           <div className="modal-dialog__icon modal-dialog__icon--danger" aria-hidden>
             <Ban />
           </div>
@@ -181,24 +186,19 @@ export function RevokeMarbeteDialog({
               <span>Motivo</span>
               <span className="form-field__required">Obligatorio</span>
             </label>
-            <select
+            <DialogSelect
               id="deactivate-reason"
-              className="form-field__input"
               value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
+              onValueChange={(value) => {
+                setReason(value);
                 if (error) setError(null);
               }}
+              options={REASONS}
+              placeholder="Selecciona un motivo"
               disabled={loading}
+              aria-describedby="deactivate-reason-help"
               data-testid="deactivate-reason-select"
-            >
-              <option value="">Selecciona un motivo</option>
-              {REASONS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+            />
             <p className="form-field__hint" id="deactivate-reason-help">
               El motivo permite documentar por qué el marbete deja de estar en circulación.
             </p>
@@ -209,10 +209,11 @@ export function RevokeMarbeteDialog({
               Comentario <span className="form-field__optional">(opcional)</span>
             </label>
             <Textarea
+              className="form-field__input form-field__input--textarea"
               id="deactivate-comment"
               name="deactivate-comment"
               rows={4}
-              placeholder="Agrega contexto adicional si aplica."
+              placeholder="Ej. Marbete dañado durante la entrega"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               disabled={loading}
@@ -237,6 +238,7 @@ export function RevokeMarbeteDialog({
               <div data-testid="revoke-marbete-otp">
                 <OtpInput
                   mode="alphanumeric"
+                  autoFocus={false}
                   value={otp}
                   onChange={(v) => {
                     setOtp(v);
@@ -260,7 +262,8 @@ export function RevokeMarbeteDialog({
             </Button>
             <Button
               type="submit"
-              variant="default"
+              variant="destructive"
+              className="app-modal__destructive-action"
               disabled={!canSubmit}
               data-testid="revoke-marbete-submit"
             >

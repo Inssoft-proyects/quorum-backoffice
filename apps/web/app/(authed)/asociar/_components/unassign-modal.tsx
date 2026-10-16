@@ -6,6 +6,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { OtpInput } from '@/components/ui/otp-input';
+import { DialogSelect } from '@/components/ui/dialog-select';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
@@ -145,10 +146,11 @@ export function UnassignModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="assignment-modal assignment-modal--narrow"
+        className="app-modal app-modal--narrow assignment-modal assignment-modal--narrow"
+        overlayClassName="app-modal__overlay"
         data-testid="unassign-modal"
       >
-        <DialogHeader>
+        <DialogHeader className="app-modal__header">
           <div className="modal-dialog__icon modal-dialog__icon--danger" aria-hidden>
             <AlertTriangle />
           </div>
@@ -205,25 +207,21 @@ export function UnassignModal({
               <span>Motivo</span>
               <span className="form-field__required">Obligatorio</span>
             </label>
-            <select
+            <DialogSelect
               id="unassign-reason"
-              className="form-field__input"
               value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
+              onValueChange={(value) => {
+                setReason(value);
                 if (showReasonError) setShowReasonError(false);
                 if (error) setError(null);
               }}
+              options={REASONS}
+              placeholder="Selecciona un motivo"
               disabled={submitting}
+              aria-describedby="unassign-reason-help unassign-reason-error"
+              aria-invalid={showReasonError}
               data-testid="unassign-reason-select"
-            >
-              <option value="">Selecciona un motivo</option>
-              {REASONS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+            />
             <p className="form-field__hint" id="unassign-reason-help">
               El motivo permite documentar por qué el marbete deja de estar en circulación.
             </p>
@@ -242,10 +240,11 @@ export function UnassignModal({
               Comentario <span className="form-field__optional">(opcional)</span>
             </label>
             <Textarea
+              className="form-field__input form-field__input--textarea"
               id="unassign-comment"
               name="unassign-comment"
               rows={4}
-              placeholder="Agrega contexto adicional si aplica."
+              placeholder="Ej. Se reemplazará el marbete por daño físico"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               disabled={submitting}
@@ -270,6 +269,7 @@ export function UnassignModal({
               <div data-testid="unassign-otp">
                 <OtpInput
                   mode="alphanumeric"
+                  autoFocus={false}
                   value={otp}
                   onChange={(v) => {
                     setOtp(v);

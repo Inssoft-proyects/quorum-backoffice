@@ -298,7 +298,7 @@ export function BulkUploadDialog({
   const canSubmit =
     selectedFile !== null && (grantActive || otp.length === 6) && !submitting;
 
-  const dialogClassName = `bulk-upload__dialog bulk-upload__dialog--${view}`;
+  const dialogClassName = `app-modal app-modal--wide bulk-upload__dialog bulk-upload__dialog--${view}`;
 
   // During processing we ignore Escape and outside clicks per canon
   // (the upload cannot be cancelled). Outside clicks on the form /
@@ -315,13 +315,14 @@ export function BulkUploadDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className={dialogClassName}
+        overlayClassName="app-modal__overlay"
         data-testid="bulk-upload-dialog"
         onEscapeKeyDown={handleEscapeOutside}
         onPointerDownOutside={handleEscapeOutside}
         onInteractOutside={handleEscapeOutside}
       >
         {view !== 'processing' ? (
-          <DialogHeader>
+          <DialogHeader className="app-modal__header">
             <div className="modal-dialog__icon" aria-hidden>
               <Upload />
             </div>
@@ -386,7 +387,15 @@ export function BulkUploadDialog({
             <div className="bulk-upload">
               <div className="bulk-upload__scrollable" data-testid="bulk-upload-scrollable">
                 <div className="bulk-upload__heading">
-                  <h2>Carga tu archivo .xlsx</h2>
+                  <h2>
+                    <label
+                      htmlFor="bulk-upload-file-input"
+                      className="inline-flex cursor-pointer flex-wrap items-center justify-center gap-2"
+                    >
+                      <span>Carga tu archivo .xlsx</span>
+                      <span className="form-field__required">Obligatorio</span>
+                    </label>
+                  </h2>
                   <p>
                     Selecciona un archivo .xlsx con los números de marbete que
                     deseas agregar al inventario.
@@ -438,6 +447,7 @@ export function BulkUploadDialog({
                     <div data-testid="bulk-upload-otp">
                       <OtpInput
                         mode="alphanumeric"
+                        autoFocus={false}
                         value={otp}
                         onChange={(v) => {
                           setOtp(v);

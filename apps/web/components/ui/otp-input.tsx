@@ -6,7 +6,6 @@ import {
   type ClipboardEvent,
   type ChangeEvent,
 } from 'react';
-import { cn } from '@/lib/utils';
 
 /**
  * Six-character (configurable) OTP / one-time-code input.
@@ -139,7 +138,7 @@ export function OtpInput({
 
   return (
     <div
-      className="flex gap-2"
+      className="otp-input__group"
       role="group"
       aria-label={ariaLabel}
       data-testid={dataTestId}
@@ -161,15 +160,7 @@ export function OtpInput({
           disabled={disabled}
           aria-label={`Digit ${i + 1} of ${length}`}
           id={i === 0 ? id : undefined}
-          className={cn(
-            // Subtle default chrome (matches the design PNG). On focus we
-            // switch the border + ring to the project gold token and add
-            // a faint gold tint so the active box stands out without
-            // overpowering the inactive ones.
-            'h-12 w-11 rounded-md border border-input bg-background text-center text-lg font-mono uppercase',
-            'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:bg-primary-500/10',
-            'disabled:opacity-50',
-          )}
+          className="otp-input__box"
         />
       ))}
     </div>

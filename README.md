@@ -139,6 +139,37 @@ npm test                  # unit + integration
 npx playwright test --config=apps/web/e2e/lookfeel/playwright.config.ts  # e2e (contra staging)
 ```
 
+### Datos ficticios para desarrollo local
+
+El seed de usuarios no crea marbetes, dispositivos ni matrículas. Para probar
+las tablas sin datos de producción, con `apps/api/.env` apuntando a la base
+local `quorum_backoffice` o `quorum_backoffice_dev`, ejecuta:
+
+```bash
+npm run -w @quorum-backoffice/api seed:dev
+```
+
+El comando carga 14 matrículas ficticias (12 activas), con códigos de prueba
+`1S39YA` a `1S39YN`, 12 marbetes (4 asignados) y 12 dispositivos. Se puede
+repetir: omite los identificadores que ya existen y solo actualiza los nombres
+de matrículas creados por una versión anterior de este seed. No modifica otros
+registros. Solo funciona con `NODE_ENV=development` y una URL PostgreSQL de
+loopback.
+
+Para que «Sincronizar matrículas» funcione sin el portal real, deja el
+simulador en marcha en otra terminal antes de pulsar el botón:
+
+```bash
+npm run -w @quorum-backoffice/api dev:canvas
+```
+
+Sirve el mismo padrón ficticio en `127.0.0.1:3000` con el token Bearer de
+`CANVAS_PORTAL_API_TOKEN`. La API debe usar `CANVAS_PORTAL_API_URL=http://127.0.0.1:3000`
+(valor del `.env` local). Limpia los filtros de la URL si una tabla sigue vacía;
+en Asignación revisa «Sin asignar» y «Asignados». Auditoría conserva los
+eventos de autenticación existentes y registra las nuevas operaciones hechas
+desde la interfaz.
+
 Puertos (convención):
 - **DEV**: api `3100`, web `3002`
 - **PROD**: api `4100`, web `4002` (ambos en hostNetwork vía k3s)

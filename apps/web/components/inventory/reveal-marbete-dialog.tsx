@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { OtpInput } from '@/components/ui/otp-input';
+import { DialogSelect } from '@/components/ui/dialog-select';
 import { ApiError, revealMarbete } from '@/lib/api-client';
 
 export interface RevealMarbeteDialogProps {
@@ -113,8 +114,12 @@ export function RevealMarbeteDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="reveal-marbete-dialog">
-        <DialogHeader>
+      <DialogContent
+        className="app-modal"
+        overlayClassName="app-modal__overlay"
+        data-testid="reveal-marbete-dialog"
+      >
+        <DialogHeader className="app-modal__header">
           <div className="modal-dialog__icon" aria-hidden>
             <Eye />
           </div>
@@ -143,24 +148,19 @@ export function RevealMarbeteDialog({
               <span>Motivo</span>
               <span className="form-field__required">Obligatorio</span>
             </label>
-            <select
+            <DialogSelect
               id="reveal-reason"
-              className="form-field__input"
               value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
+              onValueChange={(value) => {
+                setReason(value);
                 if (error) setError(null);
               }}
+              options={REASONS}
+              placeholder="Selecciona un motivo"
               disabled={loading}
+              aria-describedby="reveal-reason-help"
               data-testid="reveal-reason-select"
-            >
-              <option value="">Selecciona un motivo</option>
-              {REASONS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+            />
             <p className="form-field__hint" id="reveal-reason-help">
               El motivo sirve para tener un seguimiento más puntual de cada revelación.
             </p>
@@ -171,10 +171,11 @@ export function RevealMarbeteDialog({
               Comentario <span className="form-field__optional">(opcional)</span>
             </label>
             <Textarea
+              className="form-field__input form-field__input--textarea"
               id="reveal-comment"
               name="reveal-comment"
               rows={4}
-              placeholder="Agrega contexto adicional si aplica."
+              placeholder="Ej. Solicitud del titular para verificar el número"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               disabled={loading}
@@ -190,6 +191,7 @@ export function RevealMarbeteDialog({
             <div data-testid="reveal-marbete-otp">
               <OtpInput
                 mode="alphanumeric"
+                autoFocus={false}
                 value={otp}
                 onChange={(v) => {
                   setOtp(v);

@@ -9,7 +9,6 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -130,86 +129,93 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="add-marbete-dialog">
-        <DialogHeader>
-          <div className="modal-dialog__icon" aria-hidden>
-            <PlusCircle />
-          </div>
-          <DialogTitle className="modal-dialog__title" data-testid="add-marbete-title">
-            Agregar marbete
-          </DialogTitle>
-          <DialogDescription
-            className="modal-dialog__description"
-            id="add-marbete-description"
-          >
-            Registra un marbete físico en el inventario.{' '}
-            <b>El sistema calculará la vigencia y lo asignará en el estado Disponible</b>{' '}
-            automáticamente.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        className="app-modal add-marbete-dialog"
+        overlayClassName="app-modal__overlay"
+        data-testid="add-marbete-dialog"
+      >
+        <div className="modal-dialog__icon" aria-hidden>
+          <PlusCircle />
+        </div>
 
-        <form onSubmit={handleSubmit} className="modal-dialog__content" noValidate>
-          {error ? (
-            <Alert variant="destructive" role="alert" data-testid="add-marbete-error">
-              {error}
-            </Alert>
-          ) : null}
-          <div className="form-field">
-            <label htmlFor="credential-number" className="form-field__label">
-              Número de marbete
-            </label>
-            <Input
-              id="credential-number"
-              name="credential-number"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="off"
-              aria-describedby="credential-number-help"
-              placeholder="91234567"
-              value={code}
-              onChange={(e) => {
-                const onlyDigits = e.target.value.replace(/\D/g, '');
-                setCode(onlyDigits);
-                if (error) setError(null);
-              }}
-              disabled={loading}
-              className="form-field__input"
-              data-testid="credential-number-input"
-            />
-            <p className="form-field__hint" id="credential-number-help">
-              Solo dígitos numéricos. Se enmascarará una vez registrado por seguridad.
-            </p>
-          </div>
-
-          {grantActive && expiresLabel ? (
-            <Alert
-              variant="success"
-              role="status"
-              data-testid="add-marbete-grant-note"
+        <form onSubmit={handleSubmit} className="add-marbete-dialog__form" noValidate>
+          <div className="modal-dialog__content">
+            <DialogTitle className="modal-dialog__title" data-testid="add-marbete-title">
+              Agregar marbete
+            </DialogTitle>
+            <DialogDescription
+              className="modal-dialog__description"
+              id="add-marbete-description"
             >
-              OTP vigente hasta {expiresLabel}. No necesitas capturar un código nuevo.
-            </Alert>
-          ) : (
-            <div className="form-field add-marbete__otp">
-              <span className="form-field__label form-field__label--row">
-                <span>Código OTP</span>
+              Registra un marbete físico en el inventario.{' '}
+              <b>El sistema calculará la vigencia y lo asignará en el estado Disponible</b>{' '}
+              automáticamente.
+            </DialogDescription>
+
+            {error ? (
+              <Alert variant="destructive" role="alert" data-testid="add-marbete-error">
+                {error}
+              </Alert>
+            ) : null}
+            <div className="form-field">
+              <label htmlFor="credential-number" className="form-field__label form-field__label--row">
+                <span>Número de marbete</span>
                 <span className="form-field__required">Obligatorio</span>
-              </span>
-              <div data-testid="add-marbete-otp">
-                <OtpInput
-                  mode="alphanumeric"
-                  value={otp}
-                  onChange={(v) => {
-                    setOtp(v);
-                    if (error) setError(null);
-                  }}
-                  disabled={loading}
-                  aria-label="Código OTP"
-                />
-              </div>
+              </label>
+              <Input
+                id="credential-number"
+                name="credential-number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="Ej. 12345678"
+                autoComplete="off"
+                aria-describedby="credential-number-help"
+                value={code}
+                onChange={(e) => {
+                  const onlyDigits = e.target.value.replace(/\D/g, '');
+                  setCode(onlyDigits);
+                  if (error) setError(null);
+                }}
+                disabled={loading}
+                className="form-field__input"
+                data-testid="credential-number-input"
+              />
+              <p className="form-field__hint" id="credential-number-help">
+                Solo dígitos numéricos. Se enmascarará una vez registrado por seguridad.
+              </p>
             </div>
-          )}
+
+            {grantActive && expiresLabel ? (
+              <Alert
+                variant="success"
+                role="status"
+                data-testid="add-marbete-grant-note"
+              >
+                OTP vigente hasta {expiresLabel}. No necesitas capturar un código nuevo.
+              </Alert>
+            ) : (
+              <div className="form-field add-marbete__otp">
+                <span className="form-field__label form-field__label--row">
+                  <span>Código OTP</span>
+                  <span className="form-field__required">Obligatorio</span>
+                </span>
+                <div className="add-marbete-dialog__otp-input" data-testid="add-marbete-otp">
+                  <OtpInput
+                    mode="alphanumeric"
+                    autoFocus={false}
+                    value={otp}
+                    onChange={(v) => {
+                      setOtp(v);
+                      if (error) setError(null);
+                    }}
+                    disabled={loading}
+                    aria-label="Código OTP"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
 
           <DialogFooter className="modal-dialog__actions">
             <Button

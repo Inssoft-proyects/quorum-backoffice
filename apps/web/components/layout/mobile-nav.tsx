@@ -1,84 +1,69 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useRef, useState } from 'react';
 import { Menu } from 'lucide-react';
 import type { MeResponse } from '@quorum-backoffice/shared';
-import { hasAtLeastRole } from '@quorum-backoffice/shared';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { BrandMark } from './brand-mark';
+import { NavigationLinks } from './navigation-links';
+import { LogoutButton } from './logout-button';
 
-interface NavItem {
-  href: string;
-  label: string;
-  visible: boolean;
-}
-
-/**
- * Mobile navigation drawer (RESP-001).
- *
- * Hamburger trigger visible only on viewports < 768px (Tailwind `md`
- * breakpoint). Tapping it opens a left-side Radix Dialog containing
- * the same nav items rendered by the desktop Sidebar, plus an X
- * (rendered by the shared DialogContent close button).
- *
- * The drawer uses two `data-state` transforms defined in globals.css
- * under `@layer components` (`slide-in-from-left` / `slide-out-to-left`)
- * so the panel animates in/out from the left edge without depending on
- * tailwindcss-animate.
- */
+/** Mobile drawer with the same routes and role rules as the desktop menu. */
 export function MobileNav({ user }: { user: MeResponse }) {
   const [open, setOpen] = useState(false);
-  const items: NavItem[] = [
-    { href: '/dashboard', label: 'Inicio', visible: true },
-    { href: '/marbetes', label: 'Marbetes', visible: true },
-    { href: '/asociar', label: 'Asignación de marbetes', visible: true },
-    { href: '/dispositivos', label: 'Dispositivos', visible: true },
-    {
-      href: '/audit',
-      label: 'Auditoría',
-      visible: hasAtLeastRole(user.role, 'auditor'),
-    },
-  ];
+  const contentRef = useRef<HTMLDivElement>(null);
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-md text-text-muted hover:bg-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-text-muted hover:bg-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus lg:hidden"
         aria-label="Abrir menú"
         data-testid="mobile-nav-trigger"
       >
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>
       <DialogContent
+        ref={contentRef}
         aria-modal="true"
-        className="fixed inset-y-0 left-0 right-auto top-0 z-50 w-72 max-w-[85vw] translate-x-0 translate-y-0 gap-0 border-r border-border bg-card p-0 data-[state=closed]:duration-200 data-[state=open]:duration-200 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:rounded-none"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          contentRef.current?.querySelector<HTMLAnchorElement>('nav a[href]')?.focus();
+        }}
+        className="fixed inset-y-0 left-0 right-auto top-0 z-50 flex w-72 max-w-[85vw] translate-x-0 translate-y-0 flex-col gap-0 border-r border-border bg-card p-0 data-[state=closed]:duration-200 data-[state=open]:duration-200 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:rounded-none"
       >
         <DialogTitle className="sr-only">Menú principal</DialogTitle>
-        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 pr-12">
-          <span className="text-sm font-semibold uppercase tracking-wider text-text-muted">
+        <div className="flex items-center gap-2.5 px-5 pb-5 pt-6 pr-12">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center text-text-primary"
+            aria-hidden="true"
+          >
+            <BrandMark size={30} />
+          </span>
+          <span className="text-xs font-bold uppercase tracking-[0.1em] text-text-primary">
             Quorum Backoffice
           </span>
         </div>
-        <nav className="flex flex-col gap-1 p-4" aria-label="Navegación principal">
-          {items
-            .filter((i) => i.visible)
-            .map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  'rounded-md px-3 py-2 text-sm text-text-primary transition-colors',
-                  'hover:bg-muted hover:text-primary-500',
-                )}
-                data-testid={`mobile-nav-link-${item.href.replace('/', '')}`}
-              >
-                {item.label}
-              </Link>
-            ))}
-        </nav>
+        <div className="flex min-h-0 flex-1 flex-col px-4">
+          <NavigationLinks
+            user={user}
+            onNavigate={() => setOpen(false)}
+            testIdPrefix="mobile-nav-link"
+          />
+        </div>
+        <div
+          className={cn(
+            'shrink-0 border-t border-border px-4 pt-3',
+            process.env.NODE_ENV === 'development'
+              ? 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
+              : 'pb-[calc(1rem+env(safe-area-inset-bottom))]',
+          )}
+          data-testid="mobile-nav-footer"
+        >
+          <LogoutButton onLoggedOut={() => setOpen(false)} />
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -8,6 +8,6 @@
     },
     "types": ["node", "jest"], "lib": ["ES2022", "DOM"]
   },
-  "include": ["src/**/*", "migrations/**/*", "test/**/*"],
+  "include": ["src/**/*", "migrations/**/*", "scripts/dev-fixtures.ts", "scripts/mock-canvas-service.ts", "scripts/seed-dev-data.ts", "test/**/*"],
   "exclude": ["node_modules", "dist", "coverage"]
 }

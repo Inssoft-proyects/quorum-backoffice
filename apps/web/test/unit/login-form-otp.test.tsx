@@ -55,7 +55,7 @@ function getOtpBoxes(): HTMLInputElement[] {
  * `{ username, otp }` in one go.
  *
  * Polish: the OTP input is now the shared 6-box OtpInput rendered in
- * `mode="alphanumeric"` (gold focus ring + boxy design), matching
+ * `mode="alphanumeric"` (green focus ring + boxy design), matching
  * `diseno/design/OPT_Dinamico.png`.
  */
 describe('LoginFormOtp (single-step username + OTP, gold-box restyle)', () => {

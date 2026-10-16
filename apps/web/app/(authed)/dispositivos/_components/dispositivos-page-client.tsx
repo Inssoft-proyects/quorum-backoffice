@@ -62,7 +62,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
   }
   const [filter, setFilter] = useState<FilterKey>('all');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<PageSize>(10);
+  const [pageSize, setPageSize] = useState<PageSize>(5);
   const [sort, setSort] = useState<SortState | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<DispositivoDetailResponse | null>(null);
@@ -157,7 +157,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
   }, [sorted, pageSize, safePage, effectiveSize]);
 
   // Donut chart segments: 3 segments for the Total card (active /
-  // revoked / no-brand), 2 segments each for the other three cards
+  // revoked / no-brand), 2 segments each for Activos and Revocados
   // (the metric vs the surface-subtle complement).
   const segmentsTotal: DonutSegment[] = useMemo(() => {
     const t = Math.max(counts.activos + counts.revocados + counts.sinMarca, 1);
@@ -205,20 +205,6 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
     ];
   }, [counts]);
 
-  const segmentsSinMarca: DonutSegment[] = useMemo(() => {
-    const t = Math.max(counts.total, 1);
-    return [
-      {
-        percent: (counts.sinMarca / t) * 100,
-        color: 'var(--color-alert-warning-text)',
-      },
-      {
-        percent: 100 - (counts.sinMarca / t) * 100,
-        color: 'var(--color-surface-subtle)',
-      },
-    ];
-  }, [counts]);
-
   const isAdmin = userRole === 'admin';
 
   // Count label rendered inside the search input shell. When the API
@@ -229,7 +215,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
     total > items.length ? `(${totalForPaging} / ${total})` : `(${totalForPaging})`;
 
   return (
-    <div className="inventory-page">
+    <div className="inventory-page inventory-page--responsive">
       <header className="inventory-header">
         <div className="inventory-header__content">
           <h1>Inventario de dispositivos</h1>
@@ -239,10 +225,11 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
           <div className="inventory-header__actions">
             <Button
               variant="outline"
+              className="inventory-header__action inventory-header__action--secondary"
               onClick={() => setCreating(true)}
               data-testid="open-create"
             >
-              <PlusCircle className="h-4 w-4" aria-hidden />
+              <PlusCircle className="inventory-header__action-icon" aria-hidden />
               Registrar dispositivo
             </Button>
           </div>
@@ -250,7 +237,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
       </header>
 
       <section className="metrics-section" aria-label="Resumen del inventario">
-        <div className="metrics-grid">
+        <div className="metrics-grid gap-4">
           <MetricCard
             label="Total"
             value={counts.total}
@@ -287,7 +274,6 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
             label="Sin marca"
             value={counts.sinMarca}
             meta="Pendiente de inventario"
-            segments={segmentsSinMarca}
             active={filter === 'no-brand'}
             percentageLabel={`${Math.round(
               (counts.sinMarca / Math.max(counts.total, 1)) * 100,
@@ -303,7 +289,11 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
       </section>
 
       <section className="inventory-section--table">
-        <div className="inventory-section__header">
+        <div className="dispositivos-filters__fields" data-testid="dispositivos-filters">
+          <DispositivosFilters isPending={isPending} />
+        </div>
+
+        <div className="inventory-section__header dispositivos-filters__heading">
           <h2>Dispositivos registrados</h2>
           <div className="inventory-search" role="search">
             <span className="inventory-search__icon" aria-hidden />
@@ -322,13 +312,6 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
               {countLabel}
             </span>
           </div>
-        </div>
-
-        <div
-          className="mt-3 flex flex-wrap items-center gap-3"
-          data-testid="dispositivos-filters"
-        >
-          <DispositivosFilters isPending={isPending} />
         </div>
 
         <DispositivosTable

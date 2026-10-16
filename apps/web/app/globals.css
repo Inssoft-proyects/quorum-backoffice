@@ -50,6 +50,7 @@
   --color-alert-warning-text: #723d19;
   --color-focus: #005fcc;
   --color-page: #f6f7f6;
+  --color-nav-active: #e2e9eb;
   --color-surface-subtle: #f1f4f1;
   --color-border-strong: #aeb9ae;
   --color-disabled-bg: #e8e8e8;
@@ -95,6 +96,7 @@
     --color-muted-foreground: #a3a3a3;
     --color-popover: #262626;
     --color-popover-foreground: #f5f5f5;
+    --color-nav-active: #263953;
   }
 }
 
@@ -140,8 +142,45 @@
   }
 }
 
+@layer components {
+  .app-shell {
+    --pagination-main-start: 0px;
+    --pagination-main-gutter: 1rem;
+  }
+
+  @media (min-width: 48rem) {
+    .app-shell { --pagination-main-gutter: 1.5rem; }
+  }
+
+  @media (min-width: 64rem) {
+    .app-shell { --pagination-main-start: 16rem; }
+    .app-shell:has(> aside[data-compact="true"]) { --pagination-main-start: 5rem; }
+  }
+
+  .page-canvas {
+    background: var(--color-page);
+  }
+
+  .app-nav-link {
+    border: 1px solid transparent;
+    color: var(--color-text-primary);
+  }
+
+  .app-nav-link:is(:hover, :focus-visible):not([aria-current="page"]) {
+    background: color-mix(in srgb, var(--color-nav-active) 38.82%, transparent);
+    border-color: color-mix(in srgb, var(--color-border) 36.86%, transparent);
+    font-weight: 600;
+  }
+
+  .app-nav-link[aria-current="page"] {
+    background: var(--color-success-bg);
+    color: var(--color-success-text);
+    font-weight: 600;
+  }
+}
+
 /*
- * Marbetes inventory screen (maqueta v2). Component classes 1:1 from
+ * Shared inventory pages (maqueta v2). Base component classes follow
  * diseno/maqueta_Inec/Inec/css/{components,credential-inventory}.css plus
  * the brand tokens above. Kept in @layer components so Tailwind 4 utility
  * classes still win over these rules when both are present.
@@ -155,14 +194,8 @@
     font-family: var(--font-family-base);
     display: flex;
     flex-direction: column;
-    /* Per the maquette: the inventory page is viewport-bound so the table
-     * scrolls internally while the chrome (header, metrics, pagination)
-     * stays pinned to the visible area. We need a concrete height for
-     * the internal flex children to compute `flex: 1; min-height: 0`;
-     * 100% works against the <main> flex parent (AppShell main is
-     * `flex-1` inside a grid that is `min-h-screen`). */
-    height: 100%;
-    min-height: 0;
+    /* Fill short screens while letting long tables grow and scroll in main. */
+    min-height: 100%;
   }
 
   .inventory-header {
@@ -202,16 +235,14 @@
   }
 
   .metrics-grid {
-    /* Maquette canon: the four metric cards sit flush against each
-     * other on desktop — `grid-template-columns: repeat(4, minmax(0, 1fr))`
-     * with no gap. The card borders (1px var(--color-border)) provide
-     * the only visual separation. The 1rem gap we previously shipped
-     * was a real drift from the maquette that cost several hundred
-     * diff pixels per card row. The mobile breakpoints below add the
-     * `var(--space-2)` (0.5rem) gap that the maquette itself uses at
-     * <64rem viewports. */
+    /* Screens with metric cards add the gap-4 utility for consistent
+     * spacing. This rule defines the shared grid layout. */
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  @media (min-width: 64.001rem) and (max-width: 90rem) {
+    .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   .inventory-section__header {
@@ -348,6 +379,10 @@
   }
 
   .metric-card[aria-pressed="true"] .metric-card__value {
+    color: var(--color-background);
+  }
+
+  .metric-card[aria-pressed="true"] .metric-card__percentage {
     color: var(--color-background);
   }
 
@@ -637,43 +672,28 @@
     overflow: hidden;
     background: var(--color-background);
     box-shadow: 0 0.0625rem 0.125rem rgb(41 41 41 / 8%), 0 0.25rem 1rem rgb(41 41 41 / 6%);
-    /* Allow the shell to host a sticky pagination footer (header +
-     * scrollable body + footer). Without these the internal flex
-     * children collapse to their content height. */
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    flex: 1;
   }
 
   .table-scroll {
     width: 100%;
     overflow-x: auto;
-    /* Vertical scroll lives here so the page-level main scroll is not
-     * affected; the maquette keeps the table body in a fixed-height
-     * scrollable region with the pagination pinned at the bottom. */
-    overflow-y: auto;
     overscroll-behavior-inline: contain;
     -webkit-overflow-scrolling: touch;
-    /* Internal scroll only — shrink-to-fit so the sticky footer below
-     * can claim whatever vertical space it needs. */
-    flex: 1 1 auto;
-    min-height: 0;
   }
 
-  /* Sticky-footer pattern for the table-pagination. The footer sits
-   * at the bottom of .table-shell using `position: sticky` so it stays
-   * pinned to the viewport bottom regardless of scroll position.
-   * `bottom: 0` means the footer is positioned at the bottom of its
-   * containing scroll context. The block-start border keeps the visual
-   * separator. Background prevents the table rows bleeding through. */
+  /* The fixed footer starts at the main column, including when the sidebar
+   * is collapsed. Its inner row follows the inventory page's max width. */
   .table-pagination {
-    position: sticky;
+    position: fixed;
+    inset-inline-start: var(--pagination-main-start);
+    inset-inline-end: 0;
     bottom: 0;
-    z-index: 2;
+    z-index: 20;
     border-block-start: 1px solid var(--color-border);
-    padding: 0.75rem 0;
+    padding-block-end: env(safe-area-inset-bottom);
     background: var(--color-background);
+    box-shadow: 0 -0.25rem 1rem rgb(41 41 41 / 8%);
+    transition: inset-inline-start 200ms ease;
   }
 
   .data-table {
@@ -894,26 +914,27 @@
     transform: translateY(-50%);
   }
 
-  /* ----- Pagination -----
-   * (block + flex-shrink:0 already applied above so the pagination
-   * sticks to the bottom of the .table-shell. See lines 582-589.) */
+  /* ----- Pagination ----- */
 
   .table-pagination__inner {
+    width: min(calc(100% - var(--pagination-main-gutter) - var(--pagination-main-gutter)), 90rem);
+    min-height: 4.25rem;
+    margin-inline: auto;
+    padding: 0.75rem 2rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     font-size: 0.875rem;
-    flex-wrap: wrap;
   }
 
   .table-pagination__panel {
     flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    flex-wrap: wrap;
   }
 
   .table-pagination__summary,
@@ -921,6 +942,44 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+  }
+
+  .table-pagination__navigation[hidden] { display: none; }
+
+  .table-pagination .custom-select { min-width: 6.5rem; }
+
+  .table-pagination .custom-select__trigger,
+  .custom-select--compact .custom-select__trigger {
+    min-height: 2.75rem;
+    border-width: 1px;
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.8rem;
+    font-size: var(--font-size-sm);
+  }
+
+  .table-pagination .custom-select__menu {
+    top: auto;
+    bottom: calc(100% + 0.5rem);
+    z-index: 30;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .table-pagination .row-action {
+    min-height: 2.25rem;
+    border-radius: var(--radius-md);
+    gap: 0.5rem;
+    color: var(--color-text-primary);
+    font-size: 0.875rem;
+  }
+
+  .table-pagination .row-action:disabled,
+  .table-pagination .row-action:disabled:hover {
+    border-color: var(--color-disabled-bg);
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-text);
+    cursor: not-allowed;
+    opacity: 1;
   }
 
   .field-inline {
@@ -995,6 +1054,82 @@
     white-space: nowrap;
   }
 
+  @media (min-width: 64.0625rem) and (max-width: 70rem) {
+    .table-pagination__inner { padding-inline: 1rem; }
+  }
+
+  @media (max-width: 64rem) {
+    .table-pagination {
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(calc(100% + 0.75rem));
+      transition: inset-inline-start 200ms ease, opacity 180ms ease, transform 180ms ease, visibility 180ms ease;
+    }
+
+    .table-pagination.is-visible {
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .table-pagination__inner {
+      min-height: auto;
+      padding: 0.75rem 1rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-content: center;
+      gap: 0.5rem;
+    }
+
+    .table-pagination__toggle { display: flex; }
+
+    .table-pagination__panel {
+      display: none;
+      width: 100%;
+      padding-block-start: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.75rem;
+    }
+
+    .table-pagination__inner.is-expanded .table-pagination__panel { display: flex; }
+    .table-pagination__range, .table-pagination__page { display: none; }
+
+    .table-pagination__summary,
+    .table-pagination__navigation {
+      width: fit-content;
+      justify-content: center;
+      flex-wrap: wrap;
+      text-align: center;
+    }
+  }
+
+  @media (max-width: 45rem) {
+    .table-pagination__inner,
+    .table-pagination__summary,
+    .table-pagination__navigation { width: 100%; }
+
+    .table-pagination__summary {
+      justify-content: center;
+      gap: 0.5rem 1rem;
+    }
+
+    .table-pagination__navigation {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.5rem;
+    }
+
+    .table-pagination__navigation[hidden] { display: none; }
+    .table-pagination__navigation .row-action { width: 100%; min-height: 2.75rem; }
+  }
+
+  @media (max-width: 22rem) {
+    .table-pagination__summary { flex-direction: column; }
+  }
+
   /* ----- Custom select (form-field) ----- */
   .form-field {
     display: grid;
@@ -1027,10 +1162,11 @@
     background: var(--color-surface-subtle);
   }
 
-  .form-field__input {
+  .form-field__input,
+  .otp-input__box {
     width: 100%;
     min-height: 3.5rem;
-    border: 2px solid var(--color-border-strong);
+    border: 0.125rem solid var(--color-border-strong);
     border-radius: var(--radius-md);
     padding: 0.85rem 1.15rem;
     background: var(--color-background);
@@ -1040,6 +1176,30 @@
     transition: border-color 160ms ease, box-shadow 160ms ease;
   }
 
+  .otp-input__group {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    width: 100%;
+    container-type: inline-size;
+  }
+
+  .otp-input__box {
+    min-width: 0;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .otp-input__box:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  @container (max-width: 24rem) {
+    .otp-input__box { padding-inline: 0.25rem; }
+  }
+
   .form-field__input--textarea {
     min-height: 6.75rem;
     border-radius: var(--radius-md);
@@ -1047,10 +1207,11 @@
     font-family: inherit;
   }
 
-  .form-field__input:focus {
+  .form-field__input:focus,
+  .otp-input__box:focus {
     border-color: var(--color-secondary-500);
     outline: none;
-    box-shadow: 0 0 0 4px rgb(53 132 86 / 14%);
+    box-shadow: 0 0 0 0.25rem rgb(53 132 86 / 14%);
   }
 
   .form-field__hint {
@@ -1202,7 +1363,14 @@
     flex-wrap: nowrap;
   }
 
+  .dispositivos-actions .admin-action {
+    width: 3.5rem;
+    min-width: 3.5rem;
+    height: 3.5rem;
+  }
+
   .admin-action--reveal,
+  .admin-action--edit,
   .admin-action--danger {
     min-width: 3.2rem;
     height: 3.2rem;
@@ -1230,12 +1398,14 @@
     color: var(--color-alert-error-text);
   }
 
-  .admin-action--reveal:hover {
+  .admin-action--reveal:hover,
+  .admin-action--edit:hover {
     border-color: var(--color-secondary-500);
     background: var(--color-success-bg);
   }
 
-  .admin-action--reveal:disabled {
+  .admin-action--reveal:disabled,
+  .admin-action--edit:disabled {
     border-color: var(--color-border);
     background: var(--color-disabled-bg);
     color: var(--color-disabled-text);
@@ -1258,6 +1428,7 @@
   }
 
   .admin-action--reveal:active,
+  .admin-action--edit:active,
   .admin-action--danger:active {
     box-shadow: inset 0 0.125rem 0.25rem rgb(41 41 41 / 12%);
   }
@@ -1338,6 +1509,19 @@
     transform: translateY(2px) rotate(225deg);
   }
 
+  .custom-select--compact select.custom-select__trigger {
+    appearance: none;
+    padding-right: 2.5rem;
+  }
+
+  .custom-select--compact > .custom-select__chevron {
+    position: absolute;
+    top: 50%;
+    right: 1rem;
+    pointer-events: none;
+    transform: translateY(-75%) rotate(45deg);
+  }
+
   .custom-select__menu {
     position: absolute;
     z-index: 50;
@@ -1355,6 +1539,8 @@
     max-height: 15rem;
     overflow: auto;
   }
+
+  .custom-select__menu[hidden] { display: none; }
 
   .custom-select__option {
     min-height: 2.5rem;
@@ -1378,6 +1564,111 @@
     background: var(--color-success-bg);
     color: var(--color-success-text);
     font-weight: 700;
+  }
+
+  .dispositivos-filters__fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-block-end: 1.25rem;
+  }
+
+  .dispositivos-filters__field {
+    width: min(100%, 12rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .dispositivos-filters__field .custom-select { width: 100%; }
+
+  /* Audit: structured filters above a separate title and search row. */
+  .audit-filters__fields {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-block-end: 1.25rem;
+  }
+
+  .audit-filters__field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .audit-filters__label,
+  .dispositivos-filters__label {
+    color: var(--color-text-muted-strong);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .audit-filters__field > .custom-select__chevron {
+    top: auto;
+    bottom: 1rem;
+    transform: rotate(45deg);
+  }
+
+  .audit-filters__input {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.75rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.8rem;
+    background: var(--color-background);
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .audit-filters__input::placeholder { color: var(--color-text-muted); }
+  .audit-filters__input:hover:not(:disabled) { border-color: var(--color-secondary-500); }
+  .audit-filters__input:focus-visible {
+    border-color: var(--color-secondary-500);
+    outline: none;
+    box-shadow: 0 0 0 4px rgb(53 132 86 / 14%);
+  }
+
+  .audit-filters__input:disabled,
+  .audit-filters__field select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .inventory-section__header.audit-filters__heading,
+  .inventory-section__header.dispositivos-filters__heading {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .audit-filters__heading .inventory-search,
+  .dispositivos-filters__heading .inventory-search {
+    width: min(100%, 24rem);
+    flex: 0 1 24rem;
+  }
+
+  @media (max-width: 80rem) {
+    .audit-filters__fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 48rem) {
+    .audit-filters__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 40rem) {
+    .audit-filters__fields { grid-template-columns: 1fr; }
+    .dispositivos-filters__field { width: 100%; }
+    .inventory-section__header.audit-filters__heading,
+    .inventory-section__header.dispositivos-filters__heading {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .audit-filters__heading .inventory-search,
+    .dispositivos-filters__heading .inventory-search { width: 100%; flex: none; }
   }
 
   /* ----- Responsive adjustments ----- */
@@ -1503,10 +1794,10 @@
   }
 
   /* Per canon (credential-inventory.css): on very small viewports the
-   * "Solo el " bold prefix is dropped from the attention-card
+   * "Solo el " prefix is dropped from the attention-card
    * percentage to keep the visible copy inside one row. */
   @media (max-width: 30rem) {
-    .metric-card__percentage b { display: none; }
+    .metric-card__percentage-prefix { display: none; }
   }
 
   /* ----- Mobile nav drawer (RESP-001) ----- */
@@ -2388,76 +2679,15 @@
 
   .assignment-page { position: relative; }
 
-  /* The four-card grid: takes the existing 4-col inventory layout
-   * but lets us override it at the assignment-metrics scope without
-   * touching the marbetes / dispositivos variants. */
-  .assignment-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .assignment-metrics .assignment-metric[data-filter-source="metric"] {
-    cursor: pointer;
-    text-align: start;
-  }
-
-  /* Donut variants per canon: the Total card draws available +
-   * assigned halves with white separator bands; available / assigned
-   * cards draw a single segment + remainder. The conic-gradient is
-   * computed in the React component (DonutChart) and applied inline;
-   * these rules add the override surfaces + the white separators
-   * for the `total` variant. */
-  .assignment-metrics .metric-card__chart--total {
-    --available-angle: 180deg;
-    --assigned-angle: 180deg;
-    --chart-background: conic-gradient(
-      from -90deg,
-      var(--color-secondary-500) 0 var(--available-angle),
-      var(--color-background) var(--available-angle) calc(var(--available-angle) + 4deg),
-      var(--color-assigned-text) calc(var(--available-angle) + 4deg) calc(var(--available-angle) + 4deg + var(--assigned-angle)),
-      var(--color-surface-subtle) calc(var(--available-angle) + 4deg + var(--assigned-angle)) 360deg
-    );
-  }
-  .assignment-metrics .metric-card__chart--total::after {
-    background: conic-gradient(
-      from -90deg,
-      var(--color-background) 0 4deg,
-      transparent 4deg calc(var(--available-angle) - 4deg),
-      var(--color-background) calc(var(--available-angle) - 4deg) calc(var(--available-angle) + 4deg),
-      transparent calc(var(--available-angle) + 4deg) calc(var(--available-angle) + var(--assigned-angle)),
-      var(--color-background) calc(var(--available-angle) + var(--assigned-angle)) calc(var(--available-angle) + var(--assigned-angle) + 4deg),
-      transparent calc(var(--available-angle) + var(--assigned-angle) + 4deg) 360deg
-    );
-  }
-  .assignment-metrics .metric-card__chart--available {
-    --progress-angle: 180deg;
-    --chart-background: conic-gradient(
-      from -90deg,
-      var(--color-secondary-500) 0 var(--progress-angle),
-      var(--color-background) var(--progress-angle) calc(var(--progress-angle) + 4deg),
-      var(--color-surface-subtle) calc(var(--progress-angle) + 4deg) 360deg
-    );
-  }
-  .assignment-metrics .metric-card__chart--assigned {
-    --progress-angle: 180deg;
-    --chart-background: conic-gradient(
-      from -90deg,
-      var(--color-assigned-text) 0 var(--progress-angle),
-      var(--color-background) var(--progress-angle) calc(var(--progress-angle) + 4deg),
-      var(--color-surface-subtle) calc(var(--progress-angle) + 4deg) 360deg
-    );
-  }
-
   .assignment-page__header { margin-block-end: var(--space-5); }
 
   .assignment-metric { min-height: 8rem; cursor: default; }
   .assignment-metric:hover { border-color: var(--color-border); transform: none; }
 
-  /* Inventory shortage: the "Marbetes disponibles" card flashes the
-   * alert-warning border when fewer marbetes exist than unassigned
-   * matrículas, so the operator sees the bottleneck before opening
-   * the bulk assign modal. */
-  .assignment-inventory-card.is-inventory-shortage {
-    border-color: var(--color-alert-warning-text);
-  }
+  /* Keep the standard card border and emphasize the shortage in its text. */
   .assignment-inventory-card.is-inventory-shortage .assignment-inventory-status {
     color: var(--color-alert-warning-text);
+    font-weight: 700;
   }
   .assignment-metric--attention {
     border-color: var(--color-primary-500);
@@ -2642,12 +2872,8 @@
   .assignment-review__enrollment { font-weight: 700; }
   .assignment-review__tag { display: grid; gap: var(--space-2); }
 
-  /* The custom-select inside a review row needs to span the whole
-   * tag column. We bump the trigger height a touch to match the
-   * maquette and pin the menu to the trigger via JS (position:fixed)
-   * so it escapes the scrollable review container. */
+  /* Keep the review picker compact; its menu is portalled by Radix. */
   .assignment-review__select { width: 100%; min-width: 0; }
-  .assignment-review__select .custom-select__trigger { min-height: 2.75rem; }
 
   /* Searchable filter input above the option list (revealed when
    * the operator opens a per-row picker). */
@@ -2674,28 +2900,6 @@
     outline: none;
     box-shadow: 0 0 0 0.25rem rgb(53 132 86 / 14%);
   }
-
-  /* Override the menu positioning so the dropdown can use fixed
-   * coordinates (we position it via JS to escape the scrollable
-   * container). */
-  .assignment-review__select .custom-select__menu {
-    top: auto;
-    bottom: auto;
-    z-index: 95;
-    max-height: 13rem;
-    overflow: hidden;
-  }
-  .assignment-review__select .custom-select__options {
-    min-width: 0;
-    max-height: 12rem;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--space-1);
-    overflow-y: auto;
-    list-style: none;
-  }
-  .assignment-review__select .custom-select__option[hidden] { display: none; }
 
   .assignment-option-empty {
     margin: 0;
@@ -2767,11 +2971,9 @@
     border-color: var(--color-disabled-bg);
   }
 
-  /* Responsive: collapses the metrics grid to 2 cols on tablet, the
-   * review rows to 1 col on phone, and flattens the limit message
-   * bar to a stacked layout. Mirrors the canon @media rules. */
+  /* Responsive: stacks review rows on phone and flattens the limit
+   * message bar. The shared metrics grid handles the card columns. */
   @media (max-width: 45rem) {
-    .assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .assignment-metric { min-height: 6.875rem; }
     .assignment-modal { max-height: calc(100dvh - 2rem); }
     .assignment-review { max-height: 38dvh; }
@@ -2798,9 +3000,6 @@
     .assignment-validation { margin-inline-start: 0; }
     .assignment-context { grid-template-columns: 1fr; }
   }
-  @media (min-width: 45.01rem) and (max-width: 64rem) {
-    .assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
   @media (min-width: 64.01rem) {
     #panel-unassigned .assignment-table th:first-child,
     #panel-unassigned .assignment-table td:first-child {
@@ -2825,4 +3024,699 @@
   @media (max-width: 30rem) {
     .assignment-metric { min-height: 5.875rem; }
   }
+}
+
+/* Inventory pages use the reference gutters and responsive header and metrics
+ * layout across all five authenticated screens. */
+@layer utilities {
+  .inventory-page--responsive .inventory-header {
+    flex-wrap: wrap;
+  }
+
+  .inventory-page--responsive .inventory-header__content {
+    min-width: min(100%, 26rem);
+  }
+
+  .inventory-page--responsive .metrics-section {
+    container: inventory-metrics / inline-size;
+  }
+
+  .inventory-page--responsive .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-page--responsive .table-pagination__inner {
+    width: min(100%, 90rem);
+  }
+
+  .inventory-page--responsive .inventory-header__action {
+    height: auto;
+    min-height: 2.75rem;
+    border-radius: var(--radius-md);
+    padding: 0.625rem 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .inventory-page--responsive .inventory-header__action--secondary {
+    border-color: var(--color-border-strong);
+    background: var(--color-background);
+    color: var(--color-text-primary);
+  }
+
+  .inventory-page--responsive .inventory-header__action--secondary:hover {
+    border-color: var(--color-secondary-500);
+    background: var(--color-surface-subtle);
+  }
+
+  .inventory-page--responsive .inventory-header__action--primary {
+    border: 1px solid var(--color-primary-500);
+    background: var(--color-primary-500);
+    color: var(--color-background);
+  }
+
+  .inventory-page--responsive .inventory-header__action--primary:hover {
+    border-color: var(--color-primary-600);
+    background: var(--color-primary-600);
+  }
+
+  .inventory-page--responsive .inventory-header__action-icon {
+    width: 1.375rem;
+    height: 1.375rem;
+    flex: 0 0 auto;
+  }
+
+  @container inventory-metrics (min-width: 63rem) {
+    .inventory-page--responsive .metrics-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 64rem) {
+    .inventory-page--responsive .metric-card__percentage {
+      font-size: 0.75rem;
+      white-space: normal;
+    }
+  }
+
+  @media (max-width: 45rem) {
+    .inventory-page--responsive .inventory-header__actions > .inventory-header__action {
+      flex: 1 1 100%;
+    }
+
+    .inventory-page--responsive .metrics-grid.gap-4 {
+      gap: 0.5rem;
+    }
+
+    .inventory-page--responsive .metric-card__meta {
+      max-width: calc(100% + 2.5rem);
+      padding: 0.125rem 0.5rem;
+      font-size: 0.75rem;
+      line-height: 1.25;
+      white-space: normal;
+    }
+
+    .inventory-page--responsive .metric-card__value-row {
+      margin-top: 0.5rem;
+      gap: 0.5rem;
+    }
+
+    .inventory-page--responsive .metric-card--attention .metric-card__meta {
+      max-width: 100%;
+      gap: 0.25rem;
+    }
+
+    .inventory-page--responsive .metric-card__meta-pill {
+      min-height: 1.5rem;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .inventory-page--responsive .metric-card__chart {
+      width: 3.8rem !important; /* Overrides DonutChart's inline default size. */
+    }
+
+    .inventory-page--responsive .metric-card__chart::before {
+      inset: 0.4375rem;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .inventory-page--responsive .metric-card,
+    .inventory-page--responsive .metric-card[aria-pressed="true"] {
+      min-height: 5.875rem;
+      padding: 0.5rem;
+    }
+
+    .inventory-page--responsive .metric-card--with-chart,
+    .inventory-page--responsive .metric-card--with-chart[aria-pressed="true"] {
+      padding-inline-end: 3.25rem;
+    }
+
+    .inventory-page--responsive .metric-card--attention,
+    .inventory-page--responsive .metric-card--attention[aria-pressed="true"] {
+      padding-inline-end: 0.5rem;
+    }
+
+    .inventory-page--responsive .metric-card__label {
+      max-width: calc(100% - 3.875rem);
+      font-size: 0.75rem;
+    }
+
+    .inventory-page--responsive .metric-card__filter-chip {
+      max-width: 4.125rem;
+      padding-inline: 0.375rem;
+      font-size: 0.625rem;
+    }
+
+    .inventory-page--responsive .metric-card__value {
+      font-size: 1.125rem;
+    }
+
+    .inventory-page--responsive .metric-card__meta {
+      max-width: 95%;
+      display: block;
+      overflow: hidden;
+      padding-inline: 0.5rem;
+      font-size: 0.6875rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .inventory-page--responsive .metric-card--attention .metric-card__meta {
+      max-width: 100%;
+    }
+
+    .inventory-page--responsive .metric-card__meta-pill {
+      min-height: 1.375rem;
+      max-width: 100%;
+      display: block;
+      overflow: hidden;
+      padding-inline: 0.375rem;
+      font-size: 0.625rem;
+      text-align: center;
+      text-overflow: ellipsis;
+    }
+
+    .inventory-page--responsive .metric-card__chart {
+      width: 3.2rem !important;
+      inset-block-end: 0.5rem;
+      border-width: 0.125rem;
+    }
+
+    .inventory-page--responsive .metric-card__chart::before {
+      inset: 0.375rem;
+    }
+
+    .inventory-page--responsive .donut-chart__value {
+      font-size: 0.625rem;
+    }
+  }
+}
+
+/* Shared backoffice dialogs follow the credential modal in the HTML reference.
+ * The mobile navigation drawer intentionally does not use these classes. */
+@layer utilities {
+  .app-modal__overlay {
+    background: rgb(41 41 41 / 42%);
+    backdrop-filter: blur(0.125rem);
+  }
+
+  .app-modal {
+    width: min(calc(100% - 3rem), 42rem);
+    max-width: 42rem;
+    max-height: calc(100dvh - 3rem);
+    display: block;
+    overflow-y: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 1.25rem;
+    padding: var(--space-8);
+    background: var(--color-background);
+    box-shadow: 0 1.5rem 4rem rgb(41 41 41 / 20%);
+  }
+
+  .app-modal--wide { max-width: 58rem; width: min(calc(100% - 3rem), 58rem); }
+  .app-modal--narrow { max-width: 38rem; width: min(calc(100% - 3rem), 38rem); }
+  .app-modal--audit { max-width: 48rem; width: min(calc(100% - 3rem), 48rem); }
+  .app-modal.bulk-upload__dialog {
+    display: grid;
+    overflow: hidden;
+  }
+  .app-modal.bulk-upload__dialog--processing,
+  .app-modal.bulk-upload__dialog--result {
+    display: block;
+    overflow-y: auto;
+  }
+  .app-modal.bulk-upload__dialog .modal-dialog__content { margin-top: 0; }
+  .app-modal.assignment-modal { display: block; overflow-y: auto; }
+  .app-modal.assignment-modal .modal-dialog__content { overflow: visible; }
+  .app-modal__audit-content { min-width: 0; margin-top: var(--space-8); }
+  .app-modal__audit-content > * { min-width: 0; }
+  .app-modal__audit-content pre { max-width: 100%; }
+
+  .app-modal > button {
+    top: var(--space-5);
+    right: var(--space-5);
+    width: 2.75rem;
+    height: 2.75rem;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-muted-strong);
+    opacity: 1;
+  }
+
+  .app-modal > button:hover {
+    border-color: var(--color-border);
+    background: var(--color-surface-subtle);
+    color: var(--color-text-primary);
+  }
+
+  .app-modal > button svg {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  .app-modal .modal-dialog__content {
+    margin-top: var(--space-8);
+  }
+
+  .app-modal__header { gap: 0; }
+  .app-modal__header .modal-dialog__icon { margin-bottom: var(--space-8); }
+  .app-modal__header .modal-dialog__title { margin-bottom: var(--space-2); }
+  .app-modal__header .modal-dialog__description { margin: 0; }
+
+  .app-modal .modal-dialog__title {
+    font-size: var(--font-size-2xl);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: normal;
+  }
+
+  .app-modal .modal-dialog__description {
+    max-width: 92%;
+    font-size: var(--font-size-base);
+    line-height: 1.5;
+  }
+
+  .app-modal .modal-dialog__content label:not(.sr-only) {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-base);
+    font-weight: 700;
+  }
+
+  .app-modal .form-field__input {
+    width: 100%;
+    min-height: 3.5rem;
+    border: 2px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1.15rem;
+    background: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .app-modal .form-field__input--textarea { min-height: 6.75rem; }
+  .app-modal .form-field__input::placeholder {
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+  .app-modal .form-field__input:disabled { cursor: not-allowed; opacity: 0.55; }
+  .app-modal .form-field__input:hover:not(:disabled) {
+    border-color: var(--color-secondary-500);
+  }
+
+  .app-modal .modal-dialog__actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-8);
+  }
+
+  .app-modal .modal-dialog__actions button {
+    height: auto;
+    min-width: 9rem;
+    min-height: 2.75rem;
+    border-radius: var(--radius-md);
+    padding: 0.625rem 1rem;
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .app-modal .modal-dialog__actions button:first-child {
+    border-color: var(--color-border-strong);
+    background: var(--color-background);
+    color: var(--color-text-primary);
+  }
+
+  .app-modal .modal-dialog__actions button:first-child:hover:not(:disabled) {
+    border-color: var(--color-secondary-500);
+    background: var(--color-surface-subtle);
+  }
+
+  .app-modal .modal-dialog__actions button[type="submit"]:not(.app-modal__destructive-action):not(.btn--danger-quiet) {
+    border: 1px solid var(--color-primary-500);
+    background: var(--color-primary-500);
+    color: var(--color-background);
+  }
+
+  .app-modal .modal-dialog__actions button[type="submit"]:not(.app-modal__destructive-action):not(.btn--danger-quiet):hover:not(:disabled) {
+    border-color: var(--color-primary-600);
+    background: var(--color-primary-600);
+  }
+
+  .app-modal .modal-dialog__actions button.app-modal__destructive-action {
+    border: 1px solid var(--color-alert-error-text);
+    background: var(--color-alert-error-text);
+    color: var(--color-background);
+  }
+
+  .app-modal .modal-dialog__actions button[type="submit"]:not(.app-modal__destructive-action):not(.btn--danger-quiet):disabled,
+  .app-modal .modal-dialog__actions button.app-modal__destructive-action:disabled,
+  .app-modal .modal-dialog__actions button:disabled {
+    border-color: var(--color-disabled-bg);
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-text);
+    opacity: 1;
+  }
+
+  @media (max-width: 45rem) {
+    .app-modal {
+      top: auto;
+      right: var(--space-4);
+      bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+      left: var(--space-4);
+      width: calc(100% - 2 * var(--space-4));
+      max-width: none;
+      max-height: calc(100dvh - 2 * var(--space-4) - env(safe-area-inset-bottom));
+      border-radius: 1rem;
+      padding: var(--space-6);
+      transform: none;
+      translate: none !important;
+    }
+
+    .app-modal > button {
+      top: var(--space-4);
+      right: var(--space-4);
+    }
+
+    .app-modal .modal-dialog__icon {
+      width: 3.5rem;
+      height: 3.5rem;
+    }
+
+    .app-modal .modal-dialog__content {
+      margin-top: var(--space-6);
+    }
+
+    .app-modal .modal-dialog__actions {
+      flex-direction: column-reverse;
+    }
+
+    .app-modal .modal-dialog__actions button {
+      width: 100%;
+    }
+
+    .app-modal__header .modal-dialog__icon { margin-bottom: var(--space-6); }
+    .app-modal__field-pair { grid-template-columns: 1fr; }
+    .app-modal__audit-meta { grid-template-columns: 1fr; }
+    .app-modal__audit-meta > .col-span-2 { grid-column: auto; }
+  }
+
+  @media (max-width: 45rem) and (max-height: 43.75rem) {
+    .app-modal.bulk-upload__dialog { padding: var(--space-4); }
+    .app-modal.bulk-upload__dialog .modal-dialog__icon {
+      width: 3rem;
+      height: 3rem;
+    }
+    .app-modal.bulk-upload__dialog .app-modal__header .modal-dialog__icon {
+      margin-bottom: var(--space-4);
+    }
+    .app-modal.bulk-upload__dialog .modal-dialog__title { font-size: 1.5rem; }
+    .app-modal.bulk-upload__dialog .modal-dialog__description {
+      max-width: 100%;
+      font-size: 0.875rem;
+      line-height: 1.35;
+    }
+  }
+}
+
+/* Unlayered focus styles take precedence over the base Input/textarea
+ * Tailwind ring utilities and keep the OTP focus consistent. */
+.app-modal .form-field__input:focus,
+.app-modal .otp-input__box:focus,
+.app-modal .assignment-review__select:focus,
+.app-modal .assignment-review__search:focus {
+  border-color: var(--color-secondary-500);
+  outline: none;
+  box-shadow: 0 0 0 0.25rem rgb(53 132 86 / 14%);
+}
+
+.dialog-select__trigger.custom-select__trigger {
+  width: 100%;
+  min-height: 3.5rem;
+  border: 0.125rem solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.15rem;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.dialog-select__trigger--compact.custom-select__trigger {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.8rem;
+}
+
+.dialog-select__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialog-select__trigger.custom-select__trigger[data-placeholder="true"] {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.dialog-select__trigger.custom-select__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.dialog-select__trigger.custom-select__trigger:hover:not(:disabled),
+.dialog-select__trigger.custom-select__trigger:focus-visible,
+.dialog-select__trigger.custom-select__trigger[data-state="open"] {
+  border-color: var(--color-secondary-500);
+}
+
+.dialog-select__trigger.custom-select__trigger:focus-visible,
+.dialog-select__trigger.custom-select__trigger[data-state="open"] {
+  outline: none;
+  box-shadow: 0 0 0 0.25rem rgb(53 132 86 / 14%);
+}
+
+.dialog-select__trigger[data-state="open"] .custom-select__chevron {
+  transform: translateY(0.125rem) rotate(225deg);
+}
+
+.dialog-select__menu {
+  z-index: 100;
+  width: var(--radix-dropdown-menu-trigger-width);
+  max-height: min(15rem, var(--radix-dropdown-menu-content-available-height));
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  background: var(--color-background);
+  box-shadow: 0 0.5rem 1.5rem rgb(41 41 41 / 16%);
+}
+
+.dialog-select__option {
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.75rem;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.dialog-select__option[data-highlighted],
+.dialog-select__option[data-state="checked"] {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+
+/* Access: open split composition with a real sample inventory preview. */
+.login-page {
+  display: grid;
+  grid-template-columns: minmax(0, 44%) minmax(0, 56%);
+  min-height: 100svh;
+  overflow-x: clip;
+  background: var(--color-background);
+}
+
+.login-page__form-pane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: clamp(2rem, 5vw, 5rem);
+}
+
+.login-page__content {
+  width: min(100%, 31rem);
+}
+
+.login-page__header {
+  margin-bottom: clamp(2rem, 5vh, 3.5rem);
+  text-align: left;
+}
+
+.login-page__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  margin-bottom: 2.25rem;
+  border-radius: 1rem;
+  background: var(--color-primary-500);
+  color: white;
+}
+
+.login-page__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: clamp(2.1rem, 2.65vw, 2.75rem);
+  font-weight: 750;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+}
+
+.login-page__description {
+  margin: 0.65rem 0 0;
+  color: var(--color-text-muted);
+  font-size: clamp(1.15rem, 1.45vw, 1.45rem);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.login-page__form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1.6rem;
+}
+
+.login-page .form-field__label--row {
+  width: 100%;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  font-weight: 700;
+}
+
+.login-page__input {
+  width: 100%;
+  height: 3.5rem;
+  border: 0.125rem solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.15rem;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: 600;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.login-page__input::placeholder {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.login-page__input:hover:not(:disabled) {
+  border-color: var(--color-secondary-500);
+}
+
+.login-page__input:focus,
+.login-page__input:focus-visible {
+  border-color: var(--color-secondary-500);
+  outline: none;
+  box-shadow: 0 0 0 0.25rem rgb(53 132 86 / 14%);
+}
+
+.login-page__otp-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 0.65rem;
+}
+
+.login-page .otp-input__box {
+  border-radius: var(--radius-md);
+  padding-inline: 0.25rem;
+  font-size: var(--font-size-base);
+}
+
+.login-page__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.login-page__submit {
+  width: 100%;
+  min-height: 3.5rem;
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.login-page__visual {
+  min-width: 0;
+  padding: 1.5rem 1.5rem 1.5rem 0;
+}
+
+.login-page__preview {
+  position: sticky;
+  top: 1.5rem;
+  height: calc(100svh - 3rem);
+  min-height: 32rem;
+  overflow: hidden;
+  border-radius: 1.6rem;
+  background: #111214;
+}
+
+.login-page__preview-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(100% - 1.5rem);
+  height: auto;
+  max-width: none;
+  object-fit: fill;
+  object-position: center;
+  transform: translate(-50%, -50%);
+}
+
+@media (min-width: 1025px) and (max-height: 700px) {
+  .login-page__preview-image {
+    top: 1.5rem;
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 1024px) {
+  .login-page { display: block; }
+  .login-page__form-pane { min-height: 100svh; padding: 3rem 2rem; }
+  .login-page__visual { display: none; }
+}
+
+@media (max-width: 480px) {
+  .login-page__form-pane { padding: 2rem 1.25rem; }
+  .login-page__brand-mark { margin-bottom: 1.7rem; }
+  .login-page__header { margin-bottom: 2rem; }
+  .login-page__title { font-size: clamp(1.9rem, 8vw, 2.3rem); }
+  .login-page__description { font-size: 1.1rem; }
+  .login-page .otp-input__group { gap: 0.4rem; }
+  .login-page .otp-input__box { padding-inline: 0; }
 }

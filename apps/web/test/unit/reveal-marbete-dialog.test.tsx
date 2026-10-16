@@ -17,6 +17,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { chooseDialogOption } from './dialog-select-helpers';
 import { RevealMarbeteDialog } from '@/components/inventory/reveal-marbete-dialog';
 
 interface CapturedRequest {
@@ -128,10 +129,7 @@ describe('RevealMarbeteDialog — OTP input is always required (D-4)', () => {
     expect(screen.getByTestId('reveal-marbete-submit')).toBeDisabled();
 
     // Reason only — still disabled.
-    await user.selectOptions(
-      screen.getByTestId('reveal-reason-select'),
-      'auditoria',
-    );
+    await chooseDialogOption(user, 'reveal-reason-select', 'Auditoría interna');
     expect(screen.getByTestId('reveal-marbete-submit')).toBeDisabled();
 
     // Reason + 5 char OTP — still disabled.
@@ -146,6 +144,39 @@ describe('RevealMarbeteDialog — OTP input is always required (D-4)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('reveal-marbete-submit')).not.toBeDisabled();
     });
+  });
+
+  it('opens with the keyboard, closes with Escape and restores focus', async () => {
+    installFetchMock();
+    const user = userEvent.setup();
+    render(
+      <RevealMarbeteDialog
+        marbeteId={1}
+        open
+        onOpenChange={jest.fn()}
+        onRevealed={jest.fn()}
+      />,
+    );
+
+    const trigger = screen.getByTestId('reveal-reason-select');
+    expect(trigger).toHaveAccessibleName(/Motivo/);
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitemradio', { name: 'Auditoría interna' })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menuitemradio')).toBeNull();
+    expect(trigger).toHaveFocus();
+
+    await chooseDialogOption(user, 'reveal-reason-select', 'Reclamo de estudiante');
+    expect(trigger).toHaveTextContent('Reclamo de estudiante');
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    expect(screen.getByRole('menuitemradio', { name: 'Reclamo de estudiante' }))
+      .toHaveAttribute('data-state', 'checked');
+    await user.click(screen.getByTestId('reveal-comment'));
+    expect(screen.queryByRole('menuitemradio')).toBeNull();
   });
 
   it('forwards the OTP on x-otp-code and fires onRevealed with the unmasked code', async () => {
@@ -163,10 +194,7 @@ describe('RevealMarbeteDialog — OTP input is always required (D-4)', () => {
         onRevealed={onRevealed}
       />,
     );
-    await user.selectOptions(
-      screen.getByTestId('reveal-reason-select'),
-      'auditoria',
-    );
+    await chooseDialogOption(user, 'reveal-reason-select', 'Auditoría interna');
     const otpInputs = screen.getAllByRole("textbox", { name: /Digit/i }) as HTMLInputElement[];
     for (let i = 0; i < 'AB12CD'.length; i += 1) {
       await user.type(otpInputs[i]!, 'AB12CD'[i]!);
@@ -202,10 +230,7 @@ describe('RevealMarbeteDialog — OTP input is always required (D-4)', () => {
         onRevealed={onRevealed}
       />,
     );
-    await user.selectOptions(
-      screen.getByTestId('reveal-reason-select'),
-      'auditoria',
-    );
+    await chooseDialogOption(user, 'reveal-reason-select', 'Auditoría interna');
     const otpInputs = screen.getAllByRole("textbox", { name: /Digit/i }) as HTMLInputElement[];
     for (let i = 0; i < 'AB12CD'.length; i += 1) {
       await user.type(otpInputs[i]!, 'AB12CD'[i]!);

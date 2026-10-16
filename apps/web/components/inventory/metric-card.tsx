@@ -96,7 +96,7 @@ export const MetricCard = React.forwardRef<HTMLButtonElement, MetricCardProps>(
               className="metric-card__percentage"
               aria-label={percentageAriaLabel ?? percentageLabel}
             >
-              <b>Solo el </b>
+              <span className="metric-card__percentage-prefix">Solo el </span>
               {percentageLabel}
             </span>
           </span>

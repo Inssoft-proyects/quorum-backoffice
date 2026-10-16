@@ -50,8 +50,8 @@ async function plugin(app: FastifyInstance): Promise<void> {
 
   // Best-effort startup ping; failure does NOT throw.
   try {
-    const probe = await pool.query<{ now: number }>('SELECT now()::int AS now');
-    app.log.info({ now: probe.rows[0]?.now }, 'pg_connected');
+    await pool.query('SELECT 1');
+    app.log.info('pg_connected');
   } catch (err) {
     app.log.warn(
       { err: (err as Error).message },

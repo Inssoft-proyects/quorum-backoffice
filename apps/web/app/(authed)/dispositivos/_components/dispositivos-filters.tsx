@@ -23,10 +23,7 @@ interface Props {
  * shareable / bookmarkable and the server component re-fetches with
  * the new query.
  *
- * Rendered as a child of `DispositivosPageClient`, OUTSIDE the
- * `.inventory-section__header` so the section header keeps the
- * canonical maquette structure (`<h2>` + `.inventory-search` shell
- * only — see `credential-inventory.css`).
+ * Rendered above the title and search row in `DispositivosPageClient`.
  */
 export function DispositivosFilters({ isPending }: Props) {
   const router = useRouter();
@@ -48,25 +45,27 @@ export function DispositivosFilters({ isPending }: Props) {
   }
 
   return (
-    <div className="custom-select" style={{ minWidth: '10rem' }}>
-      <label htmlFor="filter-status" className="sr-only">
+    <div className="dispositivos-filters__field">
+      <label htmlFor="filter-status" className="dispositivos-filters__label">
         Estado
       </label>
-      <select
-        id="filter-status"
-        value={status}
-        onChange={handleStatus}
-        disabled={disabled}
-        className="custom-select__trigger"
-        data-testid="filter-status"
-        aria-label="Estado"
-      >
-        {STATUS_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <div className="custom-select custom-select--compact">
+        <select
+          id="filter-status"
+          value={status}
+          onChange={handleStatus}
+          disabled={disabled}
+          className="custom-select__trigger"
+          data-testid="filter-status"
+        >
+          {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <span className="custom-select__chevron" aria-hidden="true" />
+      </div>
     </div>
   );
 }

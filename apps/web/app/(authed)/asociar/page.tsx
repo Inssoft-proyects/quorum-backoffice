@@ -27,10 +27,9 @@ const VALID_IS_ACTIVE: ReadonlyArray<ListMatriculasIsActive> = ['true', 'false',
  * available-marbetes endpoints so the page can hydrate its
  * selection-state immediately on first render.
  *
- * The page deliberately loads only the unassigned tab on first
- * render (limit 200, the API's hard max) and switches to the
- * assigned tab on-demand via `?status=assigned`. The counters
- * endpoint carries the totals needed by the metric cards.
+ * Both tabs are hydrated on first render (limit 200, the API's hard
+ * max). Switching tabs must never show a false empty state while the
+ * counters already report assigned or unassigned matrículas.
  */
 export default async function AsociarPage({
   searchParams,
@@ -58,19 +57,16 @@ export default async function AsociarPage({
     ? (rawIsActive as ListMatriculasIsActive)
     : 'true';
 
-  // First paint loads whichever tab the URL asks for; the client
-  // triggers a refetch on tab change without remounting.
-  const filter: z.input<typeof ListMatriculasFilter> = {
-    status,
-    search: rawSearch || undefined,
+  const filter: Omit<z.input<typeof ListMatriculasFilter>, 'status'> = {
     isActive,
     limit: 200,
     offset: 0,
   };
 
-  const [counters, matriculas, available] = await Promise.all([
+  const [counters, unassigned, assigned, available] = await Promise.all([
     getMatriculasCounters(cookie),
-    listMatriculas(filter, cookie),
+    listMatriculas({ ...filter, status: 'unassigned' }, cookie),
+    listMatriculas({ ...filter, status: 'assigned' }, cookie),
     // Pull the available marbetes so the bulk-assign review modal
     // can pre-populate its per-row picker on first open without a
     // second network round-trip. 200 matches the API cap.
@@ -79,13 +75,14 @@ export default async function AsociarPage({
 
   return (
     <AsociarPageClient
-      initialMatriculas={matriculas.items}
+      initialMatriculas={status === 'assigned' ? assigned.items : unassigned.items}
+      initialOtherTabMatriculas={status === 'assigned' ? unassigned.items : assigned.items}
       initialCounters={counters}
       initialAvailableMarbetes={available.items.map((m) => ({
         id: m.id,
         maskedCode: m.maskedCode,
       }))}
-      initialStatus={status}
+      initialStatus={status === 'assigned' ? 'assigned' : 'unassigned'}
       initialSearch={rawSearch}
       userRole={user.role}
     />

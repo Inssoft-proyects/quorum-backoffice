@@ -7,8 +7,8 @@ import { loginAs } from './helpers/login';
  * Exercises the MobileNav hamburger trigger + left-side drawer shipped
  * in commit `8d31b0b feat(web): collapse AppShell on mobile + left drawer
  * for nav (RESP-001)`. The desktop sidebar (`<aside>`) is hidden on
- * viewports < 768px (Tailwind `md`); the hamburger trigger lives in the
- * topbar (`md:hidden`) and opens a Radix Dialog drawer with the same
+ * viewports < 1024px (Tailwind `lg`); the hamburger trigger lives in the
+ * topbar (`lg:hidden`) and opens a Radix Dialog drawer with the same
  * nav items as the desktop sidebar.
  *
  * Runs against the LIVE production URL (same pattern as

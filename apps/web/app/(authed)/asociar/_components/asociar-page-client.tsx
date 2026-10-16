@@ -44,6 +44,8 @@ import { UnassignModal } from './unassign-modal';
 interface Props {
   /** First-batch matrículas for the active tab (server-rendered). */
   initialMatriculas: MatriculaListItem[];
+  /** First-batch matrículas for the other tab (server-rendered). */
+  initialOtherTabMatriculas: MatriculaListItem[];
   /** Header counters (server-rendered). */
   initialCounters: MatriculasCountersResponse;
   /** Pre-fetched available marbetes for the review modal. */
@@ -99,6 +101,7 @@ function formatShortDate(iso: string | null): string {
  */
 export function AsociarPageClient({
   initialMatriculas,
+  initialOtherTabMatriculas,
   initialCounters,
   initialAvailableMarbetes,
   initialStatus,
@@ -110,10 +113,10 @@ export function AsociarPageClient({
   // ---- Server-side state (refetched after writes via Promise.all) ----
   const [counters, setCounters] = useState<MatriculasCountersResponse>(initialCounters);
   const [unassignedItems, setUnassignedItems] = useState<MatriculaListItem[]>(
-    initialStatus === 'unassigned' ? initialMatriculas : [],
+    initialStatus === 'assigned' ? initialOtherTabMatriculas : initialMatriculas,
   );
   const [assignedItems, setAssignedItems] = useState<MatriculaListItem[]>(
-    initialStatus === 'assigned' ? initialMatriculas : [],
+    initialStatus === 'assigned' ? initialMatriculas : initialOtherTabMatriculas,
   );
   const [availableMarbetes, setAvailableMarbetes] = useState(initialAvailableMarbetes);
   const [availableMarbetesTotal, setAvailableMarbetesTotal] = useState(
@@ -128,9 +131,9 @@ export function AsociarPageClient({
 
   // ---- Pagination (per tab) ----
   const [unassignedPage, setUnassignedPage] = useState(1);
-  const [unassignedPageSize, setUnassignedPageSize] = useState<PageSize>(10);
+  const [unassignedPageSize, setUnassignedPageSize] = useState<PageSize>(5);
   const [assignedPage, setAssignedPage] = useState(1);
-  const [assignedPageSize, setAssignedPageSize] = useState<PageSize>(10);
+  const [assignedPageSize, setAssignedPageSize] = useState<PageSize>(5);
 
   // ---- Selection (unassigned tab only; bounded by availableMarbetes count) ----
   const [selection, setSelection] = useState<Set<number>>(new Set());
@@ -219,8 +222,7 @@ export function AsociarPageClient({
     return unassignedItems.filter(
       (m) =>
         String(m.canvasUserId).toLowerCase().includes(q) ||
-        m.fullName.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q),
+        m.fullName.toLowerCase().includes(q),
     );
   }, [unassignedItems, search]);
 
@@ -236,7 +238,6 @@ export function AsociarPageClient({
       (m) =>
         String(m.canvasUserId).toLowerCase().includes(q) ||
         m.fullName.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q) ||
         (m.marbete?.maskedCode.toLowerCase().includes(q) ?? false),
     );
   }, [assignedItems, search]);
@@ -485,7 +486,7 @@ export function AsociarPageClient({
     filteredUnassigned.every((m) => selection.has(m.canvasUserId));
 
   return (
-    <div className="inventory-page assignment-page">
+    <div className="inventory-page inventory-page--responsive assignment-page">
       <header className="inventory-header assignment-page__header">
         <div className="inventory-header__content">
           <h1>Asignación de marbetes</h1>
@@ -495,11 +496,12 @@ export function AsociarPageClient({
           <div className="inventory-header__actions">
             <Button
               variant="outline"
+              className="inventory-header__action inventory-header__action--secondary"
               onClick={() => void handleSync()}
               disabled={syncing}
               data-testid="sync-matriculas-trigger"
             >
-              <RefreshCw className="h-4 w-4" aria-hidden />
+              <RefreshCw className="inventory-header__action-icon" aria-hidden />
               {syncing ? 'Sincronizando…' : 'Sincronizar matrículas'}
             </Button>
           </div>
@@ -517,20 +519,22 @@ export function AsociarPageClient({
         </Alert>
       ) : null}
 
-      <section className="metrics-section" aria-labelledby="assignment-metrics-title">
-        <h2 className="sr-only" id="assignment-metrics-title">
+      <section className="metrics-section" aria-labelledby="assignment-summary-title">
+        <h2 className="sr-only" id="assignment-summary-title">
           Resumen de asignación
         </h2>
-        <div className="metrics-grid d-grid gap-4 assignment-metrics">
-          <MetricCard
-            label="Matrículas totales"
-            value={counters.total}
-            meta="Activas"
-            active={false}
-            segments={segmentsTotal}
-            centerLabel="100%"
-            chartVariant="total"
-          />
+        <div className="metrics-grid gap-4 d-grid">
+          <article className="metric-card metric-card--with-chart assignment-metric">
+            <span className="metric-card__label">Matrículas totales</span>
+            <span className="metric-card__value">{counters.total}</span>
+            <span className="metric-card__meta">Activas</span>
+            <DonutChart
+              className="metric-card__chart"
+              segments={segmentsTotal}
+              centerLabel="100%"
+              variant="total"
+            />
+          </article>
           <article
             className={
               'metric-card assignment-metric assignment-inventory-card' +
@@ -657,7 +661,7 @@ export function AsociarPageClient({
                 className="inventory-search__input"
                 type="search"
                 autoComplete="off"
-                placeholder="Buscar por matrícula"
+                placeholder="Buscar matrícula, ej. 1S39YA"
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -775,9 +779,6 @@ export function AsociarPageClient({
                         </td>
                         <td className="data-table__id" data-label="Matrícula">
                           {item.fullName}
-                          <span className="block text-xs font-normal text-text-muted">
-                            {item.email}
-                          </span>
                         </td>
                         <td data-label="Estado">
                           <StatusChip variant="warning" data-testid={`unassigned-status-${item.canvasUserId}`}>
@@ -860,7 +861,7 @@ export function AsociarPageClient({
                 className="inventory-search__input"
                 type="search"
                 autoComplete="off"
-                placeholder="Buscar por matrícula"
+                placeholder="Buscar matrícula, ej. 1S39YA"
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -919,9 +920,6 @@ export function AsociarPageClient({
                     >
                       <td className="data-table__id" data-label="Matrícula">
                         {item.fullName}
-                        <span className="block text-xs font-normal text-text-muted">
-                          {item.email}
-                        </span>
                       </td>
                       <td className="data-table__credential" data-label="Marbete">
                         {item.marbete ? (

@@ -20,8 +20,8 @@ const sample: MarbeteDetailResponse[] = [
     student: {
       id: 10,
       canvasUserId: 100,
-      fullName: 'Ada Lovelace',
-      email: 'ada@quorum.local',
+      fullName: '1S39YA',
+      email: 'matricula01@example.invalid',
     },
   },
   {
@@ -45,11 +45,12 @@ describe('MarbetesTable', () => {
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
   });
 
-  it('renders rows with masked code and student info', () => {
+  it('renders rows with masked code and matrícula', () => {
     render(<MarbetesTable items={sample} userRole="admin" onDelete={() => {}} onEdit={() => {}} />);
     expect(screen.getByText('1***23')).toBeInTheDocument();
-    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
-    expect(screen.getByText('ada@quorum.local')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Matrícula' })).toBeInTheDocument();
+    expect(screen.getByText('1S39YA')).toBeInTheDocument();
+    expect(screen.queryByText('matricula01@example.invalid')).not.toBeInTheDocument();
     expect(screen.getByTestId('marbete-row-1')).toBeInTheDocument();
   });
 

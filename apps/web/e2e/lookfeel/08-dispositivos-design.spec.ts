@@ -15,9 +15,8 @@ import { loginAs } from './helpers/login';
  *        aria-pressed, admin-gated "Registrar dispositivo" button with
  *        data-testid="open-create")
  *   - app/(authed)/dispositivos/_components/dispositivos-filters.tsx
- *       (H2 "Dispositivos registrados" + status <select> with
- *        data-testid="filter-status" but no associated <label> —
- *        accessible via testid, NOT getByLabel)
+ *       (visible "Estado" label associated with the status <select>,
+ *        above the title and search row)
  *   - app/(authed)/dispositivos/_components/create-dialog.tsx
  *       (data-testid="create-dialog" + Label "Serial" attached to
  *        id="create-serial", so getByLabel(/serial/i) works)
@@ -155,10 +154,7 @@ test.describe('T8 — dispositivos design v2', () => {
     // Sanity: clean URL with no status param.
     expect(new URL(page.url()).searchParams.get('status')).toBeNull();
 
-    // The status <select> has NO associated <Label> (verified in
-    // dispositivos-filters.tsx) — getByLabel(/estado/i) cannot find
-    // it, so use the data-testid wired by the component.
-    await expect(page.getByTestId('filter-status')).toBeVisible();
+    await expect(page.getByLabel('Estado', { exact: true })).toBeVisible();
     await page
       .getByTestId('filter-status')
       .selectOption({ label: 'Activos' });

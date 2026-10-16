@@ -2,7 +2,6 @@
 
 import { useState, useTransition, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { KeyRound } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,11 +53,7 @@ export function LoginFormOtp() {
   }
 
   return (
-    <form
-      className="flex flex-col items-stretch gap-5"
-      onSubmit={handleSubmit}
-      noValidate
-    >
+    <form className="login-page__form" onSubmit={handleSubmit} noValidate>
       {error ? (
         <Alert variant="destructive" role="alert" data-testid="login-error">
           {error}
@@ -66,7 +61,10 @@ export function LoginFormOtp() {
       ) : null}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="username">Usuario</Label>
+        <Label htmlFor="username" className="form-field__label--row">
+          <span>Usuario</span>
+          <span className="form-field__required">Obligatorio</span>
+        </Label>
         <Input
           id="username"
           name="username"
@@ -75,7 +73,8 @@ export function LoginFormOtp() {
           required
           minLength={3}
           maxLength={32}
-          placeholder="admin"
+          placeholder="Ej. admin"
+          className="form-field__input login-page__input"
           value={username}
           onChange={(e) => {
             setUsername(e.target.value);
@@ -86,19 +85,10 @@ export function LoginFormOtp() {
         />
       </div>
 
-      {/*
-        OTP zone, matched to `diseno/design/OPT_Dinamico.png`: centered
-        label above the boxes, centered six-box group with gold focus
-        ring, and a muted centered hint underneath. The `login-otp`
-        testid lives on the OtpInput group wrapper so existing
-        Testing Library queries keep working.
-      */}
-      <div className="flex flex-col items-center gap-2">
-        <Label
-          htmlFor="otp-1"
-          className="self-center text-center text-primary-500"
-        >
-          Código de acceso
+      <div className="login-page__otp-field">
+        <Label htmlFor="otp-1" className="form-field__label--row">
+          <span>Código de acceso</span>
+          <span className="form-field__required">Obligatorio</span>
         </Label>
         <OtpInput
           mode="alphanumeric"
@@ -110,7 +100,10 @@ export function LoginFormOtp() {
             // re-normalisation so a future refactor cannot accidentally
             // regress the wire contract (the backend verifies A–Z0–9
             // uppercased only).
-            const safe = next.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            const safe = next
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '')
+              .slice(0, 6);
             setOtp(safe);
             if (error) reset();
           }}
@@ -119,22 +112,18 @@ export function LoginFormOtp() {
           aria-label="Código de acceso de 6 caracteres"
           data-testid="login-otp"
         />
-        <p
-          id="otp-hint"
-          className="text-center text-xs text-text-muted"
-        >
+        <p id="otp-hint" className="login-page__hint">
           Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).
         </p>
       </div>
 
       <Button
         type="submit"
-        className="w-full font-semibold"
+        className="login-page__submit"
         size="lg"
         disabled={loading || !usernameReady || !otpReady}
         data-testid="login-submit"
       >
-        <KeyRound className="h-4 w-4" aria-hidden />
         {loading ? 'Verificando…' : 'Validar código'}
       </Button>
     </form>

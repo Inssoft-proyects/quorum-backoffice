@@ -23,8 +23,7 @@ const OTP_PROBE_TIMEOUT_MS = 2_000;
 
 async function checkPg(app: FastifyInstance): Promise<'ok' | 'down'> {
   try {
-    await app.pg.healthy();
-    return 'ok';
+    return (await app.pg.healthy()) ? 'ok' : 'down';
   } catch {
     return 'down';
   }

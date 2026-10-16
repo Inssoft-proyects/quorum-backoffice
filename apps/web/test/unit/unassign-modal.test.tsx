@@ -12,6 +12,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { chooseDialogOption } from './dialog-select-helpers';
 import { UnassignModal } from '@/app/(authed)/asociar/_components/unassign-modal';
 
 interface FetchHandlers {
@@ -98,10 +99,7 @@ describe('UnassignModal', () => {
       />,
     );
 
-    await user.selectOptions(
-      screen.getByTestId('unassign-reason-select'),
-      'dano-fisico',
-    );
+    await chooseDialogOption(user, 'unassign-reason-select', 'Daño físico');
     await user.type(
       screen.getByTestId('unassign-comment'),
       'Pantalla rota en el taller',
@@ -146,10 +144,7 @@ describe('UnassignModal', () => {
     expect(note).toHaveTextContent(/OTP vigente hasta/);
     expect(screen.queryByTestId('unassign-otp')).toBeNull();
 
-    await user.selectOptions(
-      screen.getByTestId('unassign-reason-select'),
-      'extravio',
-    );
+    await chooseDialogOption(user, 'unassign-reason-select', 'Extravío reportado');
     await user.click(screen.getByTestId('unassign-confirm'));
     await waitFor(() => {
       expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -174,10 +169,7 @@ describe('UnassignModal', () => {
       />,
     );
 
-    await user.selectOptions(
-      screen.getByTestId('unassign-reason-select'),
-      'dano-fisico',
-    );
+    await chooseDialogOption(user, 'unassign-reason-select', 'Daño físico');
     const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i }) as HTMLInputElement[];
     for (let i = 0; i < 'AB12CD'.length; i += 1) {
       await user.type(otpInputs[i]!, 'AB12CD'[i]!);

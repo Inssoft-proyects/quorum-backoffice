@@ -92,7 +92,7 @@ export function StudentLookup({ value, onChange, disabled }: Props) {
           type="number"
           inputMode="numeric"
           min={1}
-          placeholder="12345"
+          placeholder="Ej. 12345"
           value={value === null ? '' : String(value)}
           onChange={(e) => {
             const raw = e.target.value.trim();
@@ -121,12 +121,12 @@ export function StudentLookup({ value, onChange, disabled }: Props) {
       ) : null}
       {state === 'found' && student ? (
         <p className="text-xs text-feedback-success" data-testid="student-state">
-          {student.fullName} ({student.email}) — Activa
+          {student.fullName} — Activa
         </p>
       ) : null}
       {state === 'inactive' && student ? (
         <p className="text-xs text-alert-error-text" data-testid="student-state">
-          {student.fullName} ({student.email}) — Inactiva en Canvas
+          {student.fullName} — Inactiva en Canvas
         </p>
       ) : null}
       {state === 'not_found' ? (

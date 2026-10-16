@@ -127,34 +127,34 @@ export function DispositivosTable({
                   </td>
                   <td
                     data-label="Registrado"
-                    className="data-table__validity-date"
+                    className="data-table__date"
                   >
                     {formatDate(d.createdAt)}
                   </td>
                   <td data-label="Acciones">
                     {canManage && d.status === 'active' ? (
-                      <div className="inline-flex items-center gap-2">
+                      <div className="admin-actions dispositivos-actions">
                         <button
                           type="button"
-                          className="row-action"
+                          className="admin-action admin-action--edit"
                           onClick={() => onEdit(d)}
                           disabled={isPending}
                           data-testid={`edit-${d.id}`}
                           aria-label="Editar"
                         >
-                          <Pencil className="row-action__icon" aria-hidden />
-                          Editar
+                          <Pencil className="admin-action__icon admin-action__icon--stroke" aria-hidden />
+                          <span className="admin-action__label">Editar</span>
                         </button>
                         <button
                           type="button"
-                          className="row-action row-action--danger"
+                          className="admin-action admin-action--danger"
                           onClick={() => onRevoke(d)}
                           disabled={isPending}
                           data-testid={`revoke-${d.id}`}
                           aria-label="Revocar"
                         >
-                          <Ban className="row-action__icon" aria-hidden />
-                          Revocar
+                          <Ban className="admin-action__icon admin-action__icon--stroke" aria-hidden />
+                          <span className="admin-action__label">Revocar</span>
                         </button>
                       </div>
                     ) : null}

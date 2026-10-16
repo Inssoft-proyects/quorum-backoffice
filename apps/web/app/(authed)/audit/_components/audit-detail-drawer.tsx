@@ -1,5 +1,6 @@
 'use client';
 import type { AuditEntry } from '@quorum-backoffice/shared';
+import { ClipboardList } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -42,15 +43,22 @@ export function AuditDetailDrawer({ entry, onClose }: Props) {
   const open = entry !== null;
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="max-w-3xl" data-testid="audit-detail">
-        <DialogHeader>
-          <DialogTitle>
+      <DialogContent
+        className="app-modal app-modal--audit"
+        overlayClassName="app-modal__overlay"
+        data-testid="audit-detail"
+      >
+        <DialogHeader className="app-modal__header">
+          <div className="modal-dialog__icon" aria-hidden>
+            <ClipboardList />
+          </div>
+          <DialogTitle className="modal-dialog__title">
             {entry ? <span>Detalle de auditoría #{entry.id}</span> : null}
           </DialogTitle>
         </DialogHeader>
         {entry ? (
-          <div className="grid gap-4 max-h-[70vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="app-modal__audit-content grid gap-4">
+            <div className="app-modal__audit-meta grid grid-cols-2 gap-3 text-sm">
               <div>
                 <span className="text-text-muted">ID:</span>{' '}
                 <span className="font-mono">{entry.id}</span>
@@ -110,7 +118,7 @@ export function AuditDetailDrawer({ entry, onClose }: Props) {
                 {formatJson(entry.afterJson)}
               </pre>
             </div>
-            <div className="flex justify-end">
+            <div className="modal-dialog__actions">
               <Button variant="outline" onClick={onClose}>
                 Cerrar
               </Button>

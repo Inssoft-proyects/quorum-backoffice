@@ -12,6 +12,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { chooseDialogOption } from './dialog-select-helpers';
 import { AddMarbeteDialog } from '@/components/inventory/add-marbete-dialog';
 import { RevokeMarbeteDialog } from '@/components/inventory/revoke-marbete-dialog';
 
@@ -244,6 +245,32 @@ describe('AddMarbeteDialog — OTP grant window', () => {
     // Without an OTP the submit button must stay disabled.
     expect(screen.getByTestId('add-marbete-submit')).toBeDisabled();
   });
+
+  it('keeps the dialog open and shows the OTP error after a rejected submission', async () => {
+    installGrantAwareFetch({
+      grantActive: false,
+      expiresAt: null,
+      destructiveStatus: 400,
+      destructiveBody: { code: 'otp_invalid', message: 'Código OTP inválido o expirado.' },
+    });
+    const user = userEvent.setup();
+    render(
+      <AddMarbeteDialog open={true} onOpenChange={() => {}} onSaved={() => {}} />,
+    );
+
+    await user.type(screen.getByTestId('credential-number-input'), '91234567');
+    const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i });
+    for (let i = 0; i < 'AB12CD'.length; i += 1) {
+      await user.type(otpInputs[i]!, 'AB12CD'[i]!);
+    }
+    await user.click(screen.getByTestId('add-marbete-submit'));
+
+    expect(await screen.findByTestId('add-marbete-error')).toHaveTextContent(
+      'Código OTP inválido o expirado.',
+    );
+    expect(screen.getByTestId('add-marbete-dialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeVisible();
+  });
 });
 
 describe('RevokeMarbeteDialog — OTP grant window', () => {
@@ -270,7 +297,7 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
     // OTP input is hidden under an active grant.
     expect(screen.queryByTestId('revoke-marbete-otp')).toBeNull();
 
-    await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'danado');
+    await chooseDialogOption(user, 'deactivate-reason-select', 'Marbete dañado');
     await user.click(screen.getByTestId('revoke-marbete-submit'));
 
     await waitFor(() => {
@@ -321,7 +348,7 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
     // Submit is disabled until reason + OTP are both filled.
     expect(screen.getByTestId('revoke-marbete-submit')).toBeDisabled();
 
-    await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'danado');
+    await chooseDialogOption(user, 'deactivate-reason-select', 'Marbete dañado');
     // Still disabled: reason alone is not enough.
     expect(screen.getByTestId('revoke-marbete-submit')).toBeDisabled();
 
@@ -374,7 +401,7 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
     await waitFor(() => {
       expect(screen.getByTestId('revoke-marbete-otp')).toBeInTheDocument();
     });
-    await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'danado');
+    await chooseDialogOption(user, 'deactivate-reason-select', 'Marbete dañado');
     // Without an OTP the submit button must stay disabled.
     expect(screen.getByTestId('revoke-marbete-submit')).toBeDisabled();
   });
@@ -398,7 +425,7 @@ describe('RevokeMarbeteDialog — OTP grant window', () => {
     await waitFor(() => {
       expect(screen.getByTestId('revoke-marbete-otp')).toBeInTheDocument();
     });
-    await user.selectOptions(screen.getByTestId('deactivate-reason-select'), 'extraviado');
+    await chooseDialogOption(user, 'deactivate-reason-select', 'Marbete extraviado');
 
     const firstBox = screen.getAllByRole('textbox', { name: /Digit/i })[0]!;
     await user.click(firstBox);

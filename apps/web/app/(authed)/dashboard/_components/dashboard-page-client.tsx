@@ -156,7 +156,7 @@ export function DashboardPageClient({ data }: Props) {
   }, [attention]);
 
   return (
-    <div className="inventory-page" data-testid="dashboard-page">
+    <div className="inventory-page inventory-page--responsive" data-testid="dashboard-page">
       <header className="inventory-header">
         <div className="inventory-header__content">
           <h1>Inicio</h1>
@@ -167,7 +167,7 @@ export function DashboardPageClient({ data }: Props) {
       </header>
 
       <section className="metrics-section" aria-label="Resumen general">
-        <div className="metrics-grid">
+        <div className="metrics-grid gap-4">
           <MetricCard
             label="Marbetes"
             value={marbetes.error ? '—' : marbetes.total}

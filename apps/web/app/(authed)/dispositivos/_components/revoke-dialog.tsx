@@ -1,5 +1,6 @@
 'use client';
 import { useState, type FormEvent } from 'react';
+import { Ban } from 'lucide-react';
 import type { DispositivoDetailResponse } from '@quorum-backoffice/shared';
 import {
   Dialog,
@@ -95,28 +96,39 @@ export function RevokeDialog({ dispositivo, onClose, onSuccess }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="revoke-dialog">
-        <DialogHeader>
-          <DialogTitle>Revocar dispositivo</DialogTitle>
-          <DialogDescription>
+      <DialogContent
+        className="app-modal"
+        overlayClassName="app-modal__overlay"
+        data-testid="revoke-dialog"
+      >
+        <DialogHeader className="app-modal__header">
+          <div className="modal-dialog__icon modal-dialog__icon--danger" aria-hidden>
+            <Ban />
+          </div>
+          <DialogTitle className="modal-dialog__title">Revocar dispositivo</DialogTitle>
+          <DialogDescription className="modal-dialog__description">
             Vas a revocar el dispositivo <strong>{dispositivo?.serialNumber ?? ''}</strong>.
             Esta operación requiere justificación y un código OTP.
           </DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
+        <form className="modal-dialog__content" onSubmit={handleSubmit} noValidate>
           {error ? (
             <Alert variant="destructive" role="alert" data-testid="revoke-error">
               {error}
             </Alert>
           ) : null}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="revoke-reason">Justificación</Label>
+            <Label htmlFor="revoke-reason" className="form-field__label--row">
+              <span>Justificación</span>
+              <span className="form-field__required">Obligatorio</span>
+            </Label>
             <Input
+              className="form-field__input"
               id="revoke-reason"
               type="text"
               minLength={3}
               maxLength={500}
-              placeholder="Motivo de la revocación"
+              placeholder="Ej. Dispositivo extraviado"
               value={reason}
               onChange={(e) => {
                 setReason(e.target.value);
@@ -128,9 +140,14 @@ export function RevokeDialog({ dispositivo, onClose, onSuccess }: Props) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Código OTP</Label>
+            <Label htmlFor="revoke-otp-1" className="form-field__label--row">
+              <span>Código OTP</span>
+              <span className="form-field__required">Obligatorio</span>
+            </Label>
             <OtpInput
+              id="revoke-otp-1"
               mode="alphanumeric"
+              autoFocus={false}
               value={otp}
               onChange={(v) => {
                 setOtp(v);
@@ -140,7 +157,7 @@ export function RevokeDialog({ dispositivo, onClose, onSuccess }: Props) {
               aria-label="Código OTP"
             />
           </div>
-          <DialogFooter>
+          <DialogFooter className="modal-dialog__actions">
             <Button
               type="button"
               variant="outline"
@@ -152,6 +169,7 @@ export function RevokeDialog({ dispositivo, onClose, onSuccess }: Props) {
             <Button
               type="submit"
               variant="destructive"
+              className="app-modal__destructive-action"
               disabled={!canSubmit}
               data-testid="revoke-submit"
             >

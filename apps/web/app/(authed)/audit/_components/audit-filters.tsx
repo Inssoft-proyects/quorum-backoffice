@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTransition, type ChangeEvent } from 'react';
-import { Input } from '@/components/ui/input';
 
 const ENTITY_TYPES: Array<{ value: string; label: string }> = [
   { value: '', label: 'Todos' },
@@ -50,11 +49,8 @@ interface Props {
 /**
  * The audit log filter shell (v2 — maquette pattern).
  *
- * Composed of two visual blocks:
- *   - `.inventory-search` shell hosts the free-text search input and the
- *     live result count (`audit-filters` testid preserved).
- *   - `.grid` row hosts the five structured filters (entityType, action,
- *     actorId, since, until).
+ * Composed of two rows: structured filters above a heading and search row.
+ * The `audit-filters` test id remains on the search shell.
  *
  * URL-driven via `startTransition` + `router.replace` so filtered views
  * are shareable / bookmarkable and the server component re-fetches with
@@ -80,30 +76,12 @@ export function AuditFilters({ countLabel = '(0)' }: Props) {
 
   return (
     <>
-      <div className="inventory-search" role="search" data-testid="audit-filters">
-        <span className="inventory-search__icon" aria-hidden />
-        <input
-          id="filter-search"
-          className="inventory-search__input"
-          type="search"
-          autoComplete="off"
-          placeholder="entity_id, otp_id, ..."
-          defaultValue={search}
-          onChange={(e) => updateParam('search', e.target.value)}
-          disabled={isPending}
-          data-testid="filter-search"
-          aria-label="Búsqueda libre"
-        />
-        <span className="inventory-search__count" aria-live="polite">
-          {countLabel}
-        </span>
-      </div>
       <div
-        className="mt-3 grid gap-3 md:grid-cols-3 lg:grid-cols-5"
+        className="audit-filters__fields"
         data-testid="audit-filters-extra"
       >
-        <div className="custom-select">
-          <label htmlFor="filter-entity-type" className="sr-only">
+        <div className="audit-filters__field custom-select custom-select--compact">
+          <label htmlFor="filter-entity-type" className="audit-filters__label">
             Tipo de entidad
           </label>
           <select
@@ -123,9 +101,10 @@ export function AuditFilters({ countLabel = '(0)' }: Props) {
               </option>
             ))}
           </select>
+          <span className="custom-select__chevron" aria-hidden="true" />
         </div>
-        <div className="custom-select">
-          <label htmlFor="filter-action" className="sr-only">
+        <div className="audit-filters__field custom-select custom-select--compact">
+          <label htmlFor="filter-action" className="audit-filters__label">
             Acción
           </label>
           <select
@@ -145,46 +124,71 @@ export function AuditFilters({ countLabel = '(0)' }: Props) {
               </option>
             ))}
           </select>
+          <span className="custom-select__chevron" aria-hidden="true" />
         </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-actor" className="text-xs text-text-muted">
+        <div className="audit-filters__field">
+          <label htmlFor="filter-actor" className="audit-filters__label">
             Actor ID
           </label>
-          <Input
+          <input
             id="filter-actor"
             type="text"
-            placeholder="email o user id"
+            className="audit-filters__input"
+            placeholder="Ej. admin"
             defaultValue={actorId}
             onChange={(e) => updateParam('actorId', e.target.value)}
             disabled={isPending}
             data-testid="filter-actor"
           />
         </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-since" className="text-xs text-text-muted">
+        <div className="audit-filters__field">
+          <label htmlFor="filter-since" className="audit-filters__label">
             Desde
           </label>
-          <Input
+          <input
             id="filter-since"
             type="datetime-local"
+            className="audit-filters__input"
             defaultValue={since}
             onChange={(e) => updateParam('since', toIso(e.target.value))}
             disabled={isPending}
             data-testid="filter-since"
           />
         </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-until" className="text-xs text-text-muted">
+        <div className="audit-filters__field">
+          <label htmlFor="filter-until" className="audit-filters__label">
             Hasta
           </label>
-          <Input
+          <input
             id="filter-until"
             type="datetime-local"
+            className="audit-filters__input"
             defaultValue={until}
             onChange={(e) => updateParam('until', toIso(e.target.value))}
             disabled={isPending}
             data-testid="filter-until"
           />
+        </div>
+      </div>
+      <div className="inventory-section__header audit-filters__heading">
+        <h2>Movimientos</h2>
+        <div className="inventory-search" role="search" data-testid="audit-filters">
+          <span className="inventory-search__icon" aria-hidden />
+          <input
+            id="filter-search"
+            className="inventory-search__input"
+            type="search"
+            autoComplete="off"
+            placeholder="Buscar actor, entidad o acción"
+            defaultValue={search}
+            onChange={(e) => updateParam('search', e.target.value)}
+            disabled={isPending}
+            data-testid="filter-search"
+            aria-label="Búsqueda libre"
+          />
+          <span className="inventory-search__count" aria-live="polite">
+            {countLabel}
+          </span>
         </div>
       </div>
     </>

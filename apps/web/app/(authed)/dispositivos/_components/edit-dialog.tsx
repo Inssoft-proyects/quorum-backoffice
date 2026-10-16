@@ -1,5 +1,6 @@
 'use client';
 import { useState, type FormEvent } from 'react';
+import { Pencil } from 'lucide-react';
 import type { DispositivoDetailResponse, UpdateDispositivoRequest } from '@quorum-backoffice/shared';
 import {
   Dialog,
@@ -116,14 +117,21 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="edit-dialog">
-        <DialogHeader>
-          <DialogTitle>Editar dispositivo</DialogTitle>
-          <DialogDescription>
+      <DialogContent
+        className="app-modal"
+        overlayClassName="app-modal__overlay"
+        data-testid="edit-dialog"
+      >
+        <DialogHeader className="app-modal__header">
+          <div className="modal-dialog__icon" aria-hidden>
+            <Pencil />
+          </div>
+          <DialogTitle className="modal-dialog__title">Editar dispositivo</DialogTitle>
+          <DialogDescription className="modal-dialog__description">
             Cambia la marca o el modelo. Requiere código OTP.
           </DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
+        <form className="modal-dialog__content" onSubmit={handleSubmit} noValidate>
           {error ? (
             <Alert variant="destructive" role="alert" data-testid="edit-error">
               {error}
@@ -132,6 +140,7 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="edit-serial">Serial</Label>
             <Input
+              className="form-field__input"
               id="edit-serial"
               type="text"
               value={dispositivo?.serialNumber ?? ''}
@@ -139,13 +148,15 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
               data-testid="edit-serial"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="app-modal__field-pair grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-brand">Marca</Label>
               <Input
+                className="form-field__input"
                 id="edit-brand"
                 type="text"
                 maxLength={64}
+                placeholder="Ej. Apple"
                 value={brand}
                 onChange={(e) => {
                   setBrand(e.target.value);
@@ -158,9 +169,11 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-model">Modelo</Label>
               <Input
+                className="form-field__input"
                 id="edit-model"
                 type="text"
                 maxLength={128}
+                placeholder="Ej. iPad Pro"
                 value={model}
                 onChange={(e) => {
                   setModel(e.target.value);
@@ -172,9 +185,14 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Código OTP</Label>
+            <Label htmlFor="edit-otp-1" className="form-field__label--row">
+              <span>Código OTP</span>
+              <span className="form-field__required">Obligatorio</span>
+            </Label>
             <OtpInput
+              id="edit-otp-1"
               mode="alphanumeric"
+              autoFocus={false}
               value={otp}
               onChange={(v) => {
                 setOtp(v);
@@ -184,7 +202,7 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
               aria-label="Código OTP"
             />
           </div>
-          <DialogFooter>
+          <DialogFooter className="modal-dialog__actions">
             <Button
               type="button"
               variant="outline"

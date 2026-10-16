@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { MarbeteDetailResponse, UserRole } from '@quorum-backoffice/shared';
-import { PlusCircle, Upload } from 'lucide-react';
+import { PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AddMarbeteDialog,
@@ -49,7 +49,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'available' | 'assigned' | 'attention'>('all');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<PageSize>(10);
+  const [pageSize, setPageSize] = useState<PageSize>(5);
   const [adding, setAdding] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [revealing, setRevealing] = useState<MarbeteDetailResponse | null>(null);
@@ -64,6 +64,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
       const matchesSearch =
         q.length === 0 ||
         m.maskedCode.toLowerCase().includes(q) ||
+        m.publicUid.toLowerCase().includes(q) ||
         String(m.id).includes(q);
       if (!matchesSearch) return false;
       if (filter === 'available')
@@ -222,24 +223,29 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   };
 
   return (
-    <div className="inventory-page">
+    <div className="inventory-page inventory-page--responsive">
       <header className="inventory-header">
         <div className="inventory-header__content">
           <h1>Inventario de marbetes</h1>
           <p>Consulta la disponibilidad y vigencia de los marbetes físicos.</p>
         </div>
         {userRole === 'admin' || userRole === 'operator' ? (
-          <div className="inventory-header__actions">
+          <div className="inventory-header__actions" aria-label="Acciones del inventario">
             <Button
               variant="outline"
+              className="inventory-header__action inventory-header__action--secondary"
               onClick={handleAddClick}
               data-testid="add-marbete-trigger"
             >
-              <PlusCircle className="h-4 w-4" aria-hidden />
+              <PlusCircle className="inventory-header__action-icon" aria-hidden />
               Agregar marbete
             </Button>
-            <Button variant="default" onClick={handleUploadClick} data-testid="upload-marbetes-trigger">
-              <Upload className="h-4 w-4" aria-hidden />
+            <Button
+              variant="default"
+              className="inventory-header__action inventory-header__action--primary"
+              onClick={handleUploadClick}
+              data-testid="upload-marbetes-trigger"
+            >
               Cargar marbetes
             </Button>
           </div>
@@ -250,7 +256,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
         <h2 className="sr-only" id="metrics-title">
           Indicadores del inventario
         </h2>
-        <div className="metrics-grid">
+        <div className="metrics-grid gap-4">
           <MetricCard
             label="Total"
             value={counts.total}
@@ -308,7 +314,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
               className="inventory-search__input"
               type="search"
               autoComplete="off"
-              placeholder="Buscar por ID o no. marbete"
+              placeholder="Buscar ID o número parcial"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);

@@ -269,13 +269,10 @@ test.describe('T13 — /asociar design v3', () => {
     // The 5 canon motivos (asignacion-marbetes.html):
     //   extravio | dano-fisico | reposicion | baja-administrativa | duplicada
     const reasonSelect = page.getByTestId('unassign-reason-select');
-    const optionValues = await reasonSelect
-      .locator('option')
-      .evaluateAll((opts) =>
-          (opts as HTMLOptionElement[])
-            .map((o) => o.value)
-            .filter((v) => v.length > 0),
-        );
+    await reasonSelect.click();
+    const optionValues = await page.getByRole('menuitemradio').evaluateAll((options) =>
+      options.map((option) => option.getAttribute('data-value')),
+    );
     expect(optionValues).toEqual([
       'extravio',
       'dano-fisico',
@@ -283,6 +280,7 @@ test.describe('T13 — /asociar design v3', () => {
       'baja-administrativa',
       'duplicada',
     ]);
+    await page.keyboard.press('Escape');
 
     // Confirm is disabled until a reason is picked.
     await expect(page.getByTestId('unassign-confirm')).toBeDisabled();

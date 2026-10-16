@@ -17,6 +17,7 @@
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { chooseDialogOption } from './dialog-select-helpers';
 import type { ListMatriculasStatus, MatriculaListItem } from '@quorum-backoffice/shared';
 import { AsociarPageClient } from '@/app/(authed)/asociar/_components/asociar-page-client';
 
@@ -241,6 +242,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -257,6 +259,24 @@ describe('AsociarPageClient', () => {
     expect(within(metricsSection).getByText('Asignados')).toBeInTheDocument();
     expect(screen.getByTestId('tab-unassigned')).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('tab-assigned')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByTestId('unassigned-body')).not.toHaveTextContent('@example.com');
+  });
+
+  it('shows assigned matrícula without its email', () => {
+    installFetchMock();
+    render(
+      <AsociarPageClient
+        initialMatriculas={defaultAssigned()}
+        initialOtherTabMatriculas={[]}
+        initialCounters={baseCounters}
+        initialAvailableMarbetes={defaultAvailable()}
+        initialStatus="assigned"
+        initialSearch=""
+        userRole="admin"
+      />,
+    );
+    expect(screen.getByTestId('assigned-row-101')).toHaveTextContent('Ana López');
+    expect(screen.getByTestId('assigned-body')).not.toHaveTextContent('ana@example.com');
   });
 
   it('keeps the success banner hidden on initial render', () => {
@@ -264,6 +284,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -280,6 +301,7 @@ describe('AsociarPageClient', () => {
     const { container } = render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={{ ...baseCounters, availableMarbetes: 2, unassigned: 5 }}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -300,6 +322,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -318,14 +341,8 @@ describe('AsociarPageClient', () => {
     expect(screen.getByTestId('assign-review-row-2')).toBeInTheDocument();
 
     // Select the first available marbete for each row.
-    await user.selectOptions(
-      screen.getByTestId('assign-review-select-1'),
-      '1',
-    );
-    await user.selectOptions(
-      screen.getByTestId('assign-review-select-2'),
-      '2',
-    );
+    await chooseDialogOption(user, 'assign-review-select-1', '3***0001');
+    await chooseDialogOption(user, 'assign-review-select-2', '3***0002');
 
     // OTP input is required (no grant active).
     const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i });
@@ -352,6 +369,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -378,6 +396,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -400,6 +419,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -416,6 +436,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -428,12 +449,34 @@ describe('AsociarPageClient', () => {
     expect(screen.getByTestId('tab-unassigned')).toHaveAttribute('aria-selected', 'false');
   });
 
+  it('shows assigned rows after switching tabs when the counter reports assignments', async () => {
+    installFetchMock();
+    const user = userEvent.setup();
+    render(
+      <AsociarPageClient
+        initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={defaultAssigned()}
+        initialCounters={{ ...baseCounters, assigned: 2 }}
+        initialAvailableMarbetes={defaultAvailable()}
+        initialStatus="unassigned"
+        initialSearch=""
+        userRole="admin"
+      />,
+    );
+
+    await user.click(screen.getByTestId('tab-assigned'));
+    expect(screen.getByTestId('assigned-row-101')).toBeInTheDocument();
+    expect(screen.getByTestId('assigned-row-102')).toBeInTheDocument();
+    expect(screen.queryByTestId('assigned-empty')).toBeNull();
+  });
+
   it('opens the unassign modal from an assigned row', async () => {
     const counts = installFetchMock();
     const user = userEvent.setup();
     render(
       <AsociarPageClient
         initialMatriculas={defaultAssigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="assigned"
@@ -445,10 +488,7 @@ describe('AsociarPageClient', () => {
     expect(await screen.findByTestId('unassign-modal')).toBeInTheDocument();
     expect(screen.getByTestId('unassign-enrollment')).toHaveTextContent('Ana López');
 
-    await user.selectOptions(
-      screen.getByTestId('unassign-reason-select'),
-      'dano-fisico',
-    );
+    await chooseDialogOption(user, 'unassign-reason-select', 'Daño físico');
     const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i });
     for (const input of otpInputs) {
       await user.type(input, '1');
@@ -468,6 +508,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={{ ...baseCounters, availableMarbetes: 0 }}
         initialAvailableMarbetes={[]}
         initialStatus="unassigned"
@@ -485,6 +526,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"
@@ -503,21 +545,23 @@ describe('AsociarPageClient', () => {
    * G5 verification follow-up: the assigned-tab search used to match
    * the marbete's secret publicUid (the full credential code) which
    * leaks credentials through the search autocomplete. After the
-   * G5 fix the search only matches VISIBLE fields — canvasUserId,
-   * fullName, email, and the masked code (X***NN).
+   * G5 fix the search only matches visible identifiers — canvasUserId,
+   * fullName, and the masked code (X***NN).
    *
    * We assert:
    *   1. Searching by the marbete's publicUid does NOT match the
    *      assigned row (filter is hidden, count is empty).
    *   2. Searching by the masked code DOES match (the visible
    *      "X***NN" string is allowed).
-   *   3. Searching by matricula fullName still matches.
+   *   3. Hidden email does not match.
+   *   4. Searching by matricula fullName still matches.
    */
   it('G5: assigned search excludes marbete.publicUid (visible fields only)', () => {
     installFetchMock();
     render(
       <AsociarPageClient
         initialMatriculas={defaultAssigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="assigned"
@@ -541,7 +585,11 @@ describe('AsociarPageClient', () => {
       screen.getByTestId('assigned-search-count'),
     ).toHaveTextContent(/\(1\)/);
 
-    // 3) fullName fragment still matches.
+    // 3) The email is no longer shown or searchable.
+    fireEvent.change(search, { target: { value: 'ana@example.com' } });
+    expect(screen.getByTestId('assigned-empty')).toBeInTheDocument();
+
+    // 4) fullName fragment still matches.
     fireEvent.change(search, { target: { value: 'Ana' } });
     expect(screen.queryByTestId('assigned-empty')).toBeNull();
     expect(
@@ -555,6 +603,7 @@ describe('AsociarPageClient', () => {
     render(
       <AsociarPageClient
         initialMatriculas={defaultUnassigned()}
+        initialOtherTabMatriculas={[]}
         initialCounters={baseCounters}
         initialAvailableMarbetes={defaultAvailable()}
         initialStatus="unassigned"

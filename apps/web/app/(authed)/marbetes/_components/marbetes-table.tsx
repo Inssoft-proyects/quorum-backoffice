@@ -52,10 +52,9 @@ function statusChip(status: MarbeteDetailResponse['status'], assignedStudentId: 
 /**
  * Redesigned marbetes list (maquette v2).
  *
- * Renders ID / No. Marbete / Estado / Estudiante / Fecha de carga /
- * Vigencia / Acciones. The student column is preserved (the maquette
- * omits it but the existing unit test requires the student full name and
- * email to be in the DOM). Action column shows "Revelar" and "Baja"
+ * Renders ID / No. Marbete / Estado / Matrícula / Fecha de carga /
+ * Vigencia / Acciones. The matrícula column displays the assigned code.
+ * Action column shows "Revelar" and "Baja"
  * using the canon `.admin-action` icon+label pills and an inline SVG
  * sprite that defines the `icon-reveal` and `icon-deactivate`
  * `<symbol>` blocks (verbatim copies from
@@ -147,7 +146,7 @@ export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, no
                 ariaLabel="Ordenar No. Marbete ascendente"
               />
               <th scope="col">Estado</th>
-              <th scope="col">Estudiante</th>
+              <th scope="col">Matrícula</th>
               <SortHeader
                 label="Fecha de carga"
                 sortKey="loadDate"
@@ -182,14 +181,11 @@ export function MarbetesTable({ items, userRole, onDelete, onEdit, isPending, no
                   <td data-label="Estado">
                     <StatusChip variant={chip.variant}>{chip.label}</StatusChip>
                   </td>
-                  <td data-label="Estudiante">
+                  <td data-label="Matrícula">
                     {m.student ? (
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-text-primary">
-                          {m.student.fullName}
-                        </span>
-                        <span className="text-xs text-text-muted">{m.student.email}</span>
-                      </div>
+                      <span className="text-sm font-semibold text-text-primary">
+                        {m.student.fullName}
+                      </span>
                     ) : (
                       <span className="text-text-muted">—</span>
                     )}

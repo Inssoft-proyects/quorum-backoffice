@@ -140,6 +140,7 @@ describe('PgMatriculasRepo.upsertMany', () => {
     expect(captured).toHaveLength(1);
     const sql = captured[0]!.sql;
     expect(sql).toMatch(/INSERT INTO students_cache/i);
+    expect(sql).toMatch(/INSERT INTO students_cache \(canvas_user_id, full_name, email, is_active\)/i);
     expect(sql).toMatch(
       /UNNEST\(\$1::bigint\[\],\s*\$2::text\[\],\s*\$3::text\[\],\s*\$4::boolean\[\]\)/,
     );

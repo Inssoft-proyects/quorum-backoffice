@@ -1,5 +1,6 @@
 'use client';
 import { useState, type FormEvent } from 'react';
+import { PlusCircle } from 'lucide-react';
 import type { CreateDispositivoRequest, DispositivoDetailResponse } from '@quorum-backoffice/shared';
 import {
   Dialog,
@@ -99,27 +100,38 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="create-dialog">
-        <DialogHeader>
-          <DialogTitle>Registrar dispositivo</DialogTitle>
-          <DialogDescription>
+      <DialogContent
+        className="app-modal"
+        overlayClassName="app-modal__overlay"
+        data-testid="create-dialog"
+      >
+        <DialogHeader className="app-modal__header">
+          <div className="modal-dialog__icon" aria-hidden>
+            <PlusCircle />
+          </div>
+          <DialogTitle className="modal-dialog__title">Registrar dispositivo</DialogTitle>
+          <DialogDescription className="modal-dialog__description">
             Asocia un nuevo dispositivo autorizado. Requiere código OTP.
           </DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
+        <form className="modal-dialog__content" onSubmit={handleSubmit} noValidate>
           {error ? (
             <Alert variant="destructive" role="alert" data-testid="create-error">
               {error}
             </Alert>
           ) : null}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="create-serial">Serial</Label>
+            <Label htmlFor="create-serial" className="form-field__label--row">
+              <span>Serial</span>
+              <span className="form-field__required">Obligatorio</span>
+            </Label>
             <Input
+              className="form-field__input"
               id="create-serial"
               type="text"
               minLength={3}
               maxLength={128}
-              placeholder="SN-XXXX-1234"
+              placeholder="Ej. SN-2026-001"
               value={serial}
               onChange={(e) => {
                 setSerial(e.target.value);
@@ -130,14 +142,17 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
               data-testid="create-serial"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="app-modal__field-pair grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="create-brand">Marca (opcional)</Label>
+              <Label htmlFor="create-brand">
+                Marca <span className="form-field__optional">(opcional)</span>
+              </Label>
               <Input
+                className="form-field__input"
                 id="create-brand"
                 type="text"
                 maxLength={64}
-                placeholder="Apple"
+                placeholder="Ej. Apple"
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
                 disabled={loading}
@@ -145,12 +160,15 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="create-model">Modelo (opcional)</Label>
+              <Label htmlFor="create-model">
+                Modelo <span className="form-field__optional">(opcional)</span>
+              </Label>
               <Input
+                className="form-field__input"
                 id="create-model"
                 type="text"
                 maxLength={128}
-                placeholder="iPad Pro"
+                placeholder="Ej. iPad Pro"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 disabled={loading}
@@ -159,9 +177,14 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Código OTP</Label>
+            <Label htmlFor="create-otp-1" className="form-field__label--row">
+              <span>Código OTP</span>
+              <span className="form-field__required">Obligatorio</span>
+            </Label>
             <OtpInput
+              id="create-otp-1"
               mode="alphanumeric"
+              autoFocus={false}
               value={otp}
               onChange={(v) => {
                 setOtp(v);
@@ -171,7 +194,7 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
               aria-label="Código OTP"
             />
           </div>
-          <DialogFooter>
+          <DialogFooter className="modal-dialog__actions">
             <Button
               type="button"
               variant="outline"

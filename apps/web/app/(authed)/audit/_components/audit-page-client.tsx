@@ -41,7 +41,7 @@ export function AuditPageClient({ items, total }: Props) {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [sort, setSort] = useState<SortState | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<PageSize>(10);
+  const [pageSize, setPageSize] = useState<PageSize>(5);
   const [selected, setSelected] = useState<AuditEntry | null>(null);
 
   // Counts for the metric cards (computed from the source list, not
@@ -184,7 +184,7 @@ export function AuditPageClient({ items, total }: Props) {
     total > items.length ? `(${totalForPaging} / ${total})` : `(${totalForPaging})`;
 
   return (
-    <div className="inventory-page">
+    <div className="inventory-page inventory-page--responsive">
       <header className="inventory-header">
         <div className="inventory-header__content">
           <h1>Auditoría</h1>
@@ -195,7 +195,7 @@ export function AuditPageClient({ items, total }: Props) {
       </header>
 
       <section className="metrics-section" aria-label="Resumen de actividad">
-        <div className="metrics-grid">
+        <div className="metrics-grid gap-4">
           <MetricCard
             label="Total"
             value={counts.total}
@@ -234,9 +234,6 @@ export function AuditPageClient({ items, total }: Props) {
             meta="Sesión"
             segments={segmentsAuth}
             active={filter === 'auth'}
-            percentageLabel={`${Math.round(
-              (counts.auth / Math.max(counts.total, 1)) * 100,
-            )}% del total`}
             pills={
               counts.failed > 0
                 ? [{ label: `${counts.failed} login fallido`, variant: 'danger' }]
@@ -248,10 +245,7 @@ export function AuditPageClient({ items, total }: Props) {
       </section>
 
       <section className="inventory-section--table">
-        <div className="inventory-section__header">
-          <h2>Movimientos</h2>
-          <AuditFilters countLabel={countLabel} />
-        </div>
+        <AuditFilters countLabel={countLabel} />
 
         <AuditTable
           items={pagedItems}
