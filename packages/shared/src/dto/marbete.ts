@@ -87,12 +87,21 @@ export interface MarbeteDetailResponse extends MarbeteResponse {
    * Never expose the full code or its hash via the public API.
    */
   maskedCode: string;
-  /** Resolved student from students_cache, if assigned. */
+  /**
+   * Resolved student from students_cache, if assigned. All PII fields
+   * are nullable since migration 0020: a synthetic high-privacy row
+   * (sis_id + canvas_user_id only) legitimately has `fullName: null`
+   * and `email: null`. `sisId` is the new matrícula column (NULL for
+   * legacy rows inserted before 0020). The shape stays backward
+   * compatible: legacy rows still produce non-null name/email and
+   * `sisId: null`.
+   */
   student: {
     id: number;
     canvasUserId: number;
-    fullName: string;
-    email: string;
+    sisId: string | null;
+    fullName: string | null;
+    email: string | null;
   } | null;
 }
 

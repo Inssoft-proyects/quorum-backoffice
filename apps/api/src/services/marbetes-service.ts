@@ -485,6 +485,7 @@ export class MarbetesService {
         student = {
           id: s.id,
           canvasUserId: s.canvas_user_id,
+          sisId: s.sis_id,
           fullName: s.full_name,
           email: s.email,
         };

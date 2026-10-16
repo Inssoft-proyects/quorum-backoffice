@@ -126,6 +126,15 @@ export type MfaAuthenticateRequest = z.infer<typeof MfaAuthenticateRequest>;
 //   - student_name   : denormalized for the first response so the
 //                      client can render the success screen without
 //                      a follow-up `GET /api/v1/mfa/session` call.
+//                      Nullable since migration 0020: a synthetic
+//                      high-privacy students_cache row (sis_id +
+//                      canvas_user_id only) legitimately has
+//                      `full_name = NULL` and surfaces as `null`
+//                      here. The MFA policy itself still requires
+//                      an active student record; the nullable
+//                      surface is purely a forward-compatible
+//                      loosening of the DTO for the synthetic
+//                      test-data case.
 //   - student_email  : same rationale as student_name.
 //   - role           : always 'student' for the MFA session (the
 //                      other 'user' role is reserved for BackOffice
@@ -137,8 +146,8 @@ export type MfaAuthenticateRequest = z.infer<typeof MfaAuthenticateRequest>;
 //   - expires_at     : ISO 8601 timestamp of the session expiry.
 export const MfaAuthenticateResponse = z.object({
   canvas_user_id: z.number().int().positive(),
-  student_name: z.string().min(1),
-  student_email: z.string().email(),
+  student_name: z.string().nullable(),
+  student_email: z.string().email().nullable(),
   role: z.literal('student'),
   session_id: z.string().min(16).max(128),
   expires_at: z.string().datetime(),

@@ -146,14 +146,25 @@ interface AuditEntry {
   userAgent?: string | null;
 }
 
+interface LogCall {
+  level: 'info' | 'warn' | 'error';
+  bindings: unknown;
+  msg?: string;
+}
+
 interface ServiceBuildResult {
   service: MfaAuthenticateService;
   otp: ReturnType<typeof makeOtpFake>;
   audit: AuditEntry[];
+  logCalls: LogCall[];
   repo: {
     setMarbete: (row: MfaMarbeteRow | null) => void;
     setStudent: (row: MfaStudentRow | null) => void;
     setDevice: (row: MfaDeviceRow | null) => void;
+    setMarbeteThrow: (err: Error | null) => void;
+    setAuditQueryImpl: (
+      impl: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>,
+    ) => void;
     sessionInserts: Array<{
       id: string;
       canvasUserId: number;
@@ -171,14 +182,22 @@ function buildService(opts: {
 } = {}): ServiceBuildResult {
   const otp = makeOtpFake();
   const audit: AuditEntry[] = [];
+  const logCalls: LogCall[] = [];
 
   let marbeteNext: MfaMarbeteRow | null = opts.marbete !== undefined ? opts.marbete : makeMarbeteRow();
   let studentNext: MfaStudentRow | null = opts.student !== undefined ? opts.student : makeStudentRow();
   let deviceNext: MfaDeviceRow | null = opts.device !== undefined ? opts.device : makeDeviceRow();
+  // The marbete lookup can be switched from "return a row" to
+  // "throw an error" via setMarbeteThrow. Used by the new
+  // dependency-fail tests to assert the catch-block behavior.
+  let marbeteThrow: Error | null = null;
   const sessionInserts: ServiceBuildResult['repo']['sessionInserts'] = [];
 
   const fakeRepo: MfaRepoLike = {
-    findMarbeteByCodeHash: jest.fn(async () => marbeteNext),
+    findMarbeteByCodeHash: jest.fn(async () => {
+      if (marbeteThrow) throw marbeteThrow;
+      return marbeteNext;
+    }),
     findStudentById: jest.fn(async () => studentNext),
     findDeviceBySerialNumber: jest.fn(async () => deviceNext),
     insertStudentSession: jest.fn(async (args) => {
@@ -194,63 +213,84 @@ function buildService(opts: {
   // The service's `AuditService` writes go through a real
   // `pg.Pool`-shaped fake. The audit service is constructed with
   // `new AuditService(this.pool)`; the only method it calls on
-  // the pool is `query()`. Stub it so each write pushes onto
-  // the `audit` array.
-  const fakePool = {
-    query: jest.fn(async (_sql: string, params?: unknown[]) => {
-      // The audit service writes use a parameterized query with
-      // 10 placeholders; we capture the actorId, action,
-      // entityType, entityId, and the JSONB metadata (slot 7
-      // per the audit-service INSERT).
-      const [
-        actorId,
-        _actorEmail,
-        action,
-        entityType,
-        entityId,
-        _beforeJsonb,
-        afterJsonbStr,
-        otpId,
-        ip,
-        userAgent,
-      ] = (params ?? []) as [string, unknown, string, string | null, string | null, unknown, string | null, string | null, string | null, string | null];
-      let metadata: Record<string, unknown> | undefined;
-      if (typeof afterJsonbStr === 'string' && afterJsonbStr.length > 0) {
-        try {
-          metadata = JSON.parse(afterJsonbStr) as Record<string, unknown>;
-        } catch {
-          // leave metadata undefined on a parse failure
-        }
+  // the pool is `query()`. The default impl pushes each write
+  // onto the `audit` array; the new dependency-fail tests
+  // override the impl via setAuditQueryImpl to inject rejections
+  // (simulating an audit-write failure).
+  let auditQueryImpl: (
+    sql: string,
+    params?: unknown[],
+  ) => Promise<{ rows: unknown[]; rowCount: number }> = async (
+    _sql: string,
+    params?: unknown[],
+  ) => {
+    // The audit service writes use a parameterized query with
+    // 10 placeholders; we capture the actorId, action,
+    // entityType, entityId, and the JSONB metadata (slot 7
+    // per the audit-service INSERT).
+    const [
+      actorId,
+      _actorEmail,
+      action,
+      entityType,
+      entityId,
+      _beforeJsonb,
+      afterJsonbStr,
+      otpId,
+      ip,
+      userAgent,
+    ] = (params ?? []) as [string, unknown, string, string | null, string | null, unknown, string | null, string | null, string | null, string | null];
+    let metadata: Record<string, unknown> | undefined;
+    if (typeof afterJsonbStr === 'string' && afterJsonbStr.length > 0) {
+      try {
+        metadata = JSON.parse(afterJsonbStr) as Record<string, unknown>;
+      } catch {
+        // leave metadata undefined on a parse failure
       }
-      audit.push({
-        actorId,
-        action,
-        entityType,
-        entityId,
-        metadata,
-        otpId,
-        ip,
-        userAgent,
-      });
-      return { rows: [], rowCount: 1 } as never;
-    }),
+    }
+    audit.push({
+      actorId,
+      action,
+      entityType,
+      entityId,
+      metadata,
+      otpId,
+      ip,
+      userAgent,
+    });
+    return { rows: [], rowCount: 1 } as never;
+  };
+
+  const fakePool = {
+    query: jest.fn((sql: string, params?: unknown[]) => auditQueryImpl(sql, params)),
+  };
+
+  // The fake logger captures every info/warn/error call. The
+  // happy-path best-effort audit test asserts that a swallowed
+  // audit failure produces an `error`-level log line; the other
+  // tests don't care about log content but the stub must NOT
+  // throw (the service calls `log.warn` / `log.error` on every
+  // deny and dependency-fail path).
+  const fakeLog = {
+    info: (bindings: unknown, msg?: string) => {
+      logCalls.push({ level: 'info', bindings, msg });
+    },
+    warn: (bindings: unknown, msg?: string) => {
+      logCalls.push({ level: 'warn', bindings, msg });
+    },
+    error: (bindings: unknown, msg?: string) => {
+      logCalls.push({ level: 'error', bindings, msg });
+    },
+    debug: () => undefined,
+    trace: () => undefined,
+    fatal: () => undefined,
+    child: () => fakeLog as never,
+    level: 'silent',
   };
 
   const service = new MfaAuthenticateService({
     pool: fakePool as never,
-    // The service logs at info/warn/error; the smoke tests don't
-    // assert on log content but the logger MUST expose the three
-    // methods the service touches.
-    log: {
-      info: () => undefined,
-      warn: () => undefined,
-      error: () => undefined,
-      debug: () => undefined,
-      trace: () => undefined,
-      fatal: () => undefined,
-      child: () => ({}) as never,
-      level: 'silent',
-    } as never,
+    log: fakeLog as never,
     otp: otp as unknown as MfaOtpLike,
     sessionTtlSeconds: 3600,
     repoFactory: () => fakeRepo,
@@ -260,6 +300,7 @@ function buildService(opts: {
     service,
     otp,
     audit,
+    logCalls,
     repo: {
       setMarbete: (row) => {
         marbeteNext = row;
@@ -269,6 +310,12 @@ function buildService(opts: {
       },
       setDevice: (row) => {
         deviceNext = row;
+      },
+      setMarbeteThrow: (err) => {
+        marbeteThrow = err;
+      },
+      setAuditQueryImpl: (impl) => {
+        auditQueryImpl = impl;
       },
       sessionInserts,
     },
@@ -607,5 +654,108 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
     expect(row.entityType).toBe('student');
     expect(row.entityId).toBe('unknown');
     expect(row.metadata?.['outcome']).toBe('deny.marbete_unknown');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reliability follow-ups: dependency-fail mapping, deny-path audit failure,
+// and best-effort audit on the happy path.
+//
+// These tests exercise the failure modes that motivated the deny-path
+// `return await this.deny(...)` change and the happy-path
+// best-effort try/catch around the post-session `audit.write(...)`:
+//
+//   4a. A repo throw (findMarbeteByCodeHash rejecting) maps to
+//       deny.dependency_fail — the service's outer try/catch must
+//       catch it and emit the deny envelope (not the raw DB error
+//       escaping as an unhandled rejection).
+//
+//   4b. An audit.write rejection on the DENY path still yields
+//       deny.dependency_fail. Before the `return await this.deny(...)`
+//       change, `deny()`'s rejection escaped the outer try/catch
+//       because the outer `return` was a non-awaited promise; the
+//       caller would see the raw audit error, not the deny envelope.
+//
+//   4c. An audit.write rejection on the HAPPY path still yields a
+//       successful authenticate (session issued) and logs the
+//       failure. The post-session audit must be best-effort: the
+//       session row is the user-visible side effect, so an audit
+//       outage must not delete the session or fail the request.
+// ---------------------------------------------------------------------------
+
+describe('MfaAuthenticateService.authenticate — reliability follow-ups', () => {
+  it('4a) findMarbeteByCodeHash rejection maps to deny.dependency_fail, NOT an unhandled rejection', async () => {
+    const built = buildService();
+    // Inject a throw at the marbete lookup. The throw happens
+    // inside the outer try block (under `await ...`), so the
+    // service's catch block must catch it and remap to
+    // deny.dependency_fail. Any raw error escaping (no
+    // MfaAuthenticateError, no deny.dependency_fail code) would
+    // fail this test.
+    built.repo.setMarbeteThrow(new Error('db connection lost'));
+    const caught = built.service.authenticate(baseInput(), META);
+    await expect(caught).rejects.toBeInstanceOf(MfaAuthenticateError);
+    await expect(caught).rejects.toMatchObject({ code: 'deny.dependency_fail' });
+  });
+
+  it('4b) audit.write rejection on the deny path still yields deny.dependency_fail (not a 500 / raw error)', async () => {
+    const built = buildService();
+    // Force a deny path (marbete unknown → deny() is called →
+    // audit.write is called). The audit query throws to
+    // simulate an audit-table outage mid-flight.
+    built.repo.setMarbete(null);
+    built.repo.setAuditQueryImpl(async () => {
+      throw new Error('audit_log write failed');
+    });
+    const caught = built.service.authenticate(baseInput(), META);
+    // The caller must see the deny envelope, NOT the raw
+    // "audit_log write failed" Error. The deny envelope's
+    // `deny.dependency_fail` code is the only signal a route
+    // layer can branch on.
+    await expect(caught).rejects.toBeInstanceOf(MfaAuthenticateError);
+    await expect(caught).rejects.toMatchObject({ code: 'deny.dependency_fail' });
+  });
+
+  it('4c) audit.write rejection on the happy path still yields a successful authenticate and logs the failure', async () => {
+    const built = buildService();
+    built.otp.setNext({ ok: true, otpId: 'otp-mfa-happy-audit-fail' });
+    let auditAttempts = 0;
+    built.repo.setAuditQueryImpl(async () => {
+      auditAttempts += 1;
+      // Every audit.write in this test goes through the
+      // post-session happy-path; we want every attempt to
+      // throw to exercise the best-effort try/catch.
+      throw new Error('audit_log write failed on happy path');
+    });
+
+    // The service MUST resolve (NOT reject) because the
+    // session was already issued; the post-session audit is
+    // best-effort.
+    const result = await built.service.authenticate(baseInput(), META);
+    expect(result.canvasUserId).toBe(7001);
+    expect(result.studentName).toBe('Marie Curie');
+    expect(result.studentEmail).toBe('marie@example.test');
+    expect(result.sessionToken).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+    expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(result.session).toBeDefined();
+    expect(result.session.kind).toBe('student');
+
+    // The session row was inserted exactly once.
+    expect(built.repo.sessionInserts).toHaveLength(1);
+
+    // The audit write was attempted at least once and failed.
+    expect(auditAttempts).toBeGreaterThanOrEqual(1);
+
+    // The swallowed audit failure MUST be logged at error
+    // level so an operator can correlate a session without
+    // an audit row to an outage.
+    const errorCalls = built.logCalls.filter((c) => c.level === 'error');
+    expect(errorCalls.length).toBeGreaterThanOrEqual(1);
+    const auditErrLog = errorCalls.find((c) => c.msg === 'mfa_authenticate_audit_write_failed');
+    expect(auditErrLog).toBeDefined();
+
+    // The deny envelope MUST NOT have been raised (no
+    // audit row written, no MfaAuthenticateError thrown).
+    expect(built.audit).toHaveLength(0);
   });
 });

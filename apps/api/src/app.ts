@@ -28,6 +28,7 @@ import pgPlugin from './plugins/pg';
 import redisPlugin from './plugins/redis';
 import metricsPlugin from './plugins/metrics';
 import sessionPlugin from './plugins/session';
+import swaggerPlugin from './plugins/swagger';
 import { registerHealthRoutes } from './routes/health';
 import { registerMarbetesRoutes } from './routes/marbetes';
 import { registerDispositivosRoutes } from './routes/dispositivos';
@@ -80,6 +81,15 @@ export async function buildApp(
 
   // Domain plugins
   await app.register(metricsPlugin);
+  // OpenAPI doc + Swagger UI. Must register BEFORE the route
+  // plugins so each route's `schema` is captured by the swagger
+  // registry at registration time. The plugin installs no-op
+  // validator / serializer compilers so the Zod instances in
+  // the route `schema` options are ignored by the request
+  // pipeline (the route handlers keep their imperative
+  // `ZodSchema.parse()` calls for the documented
+  // `validation_error` envelope).
+  await app.register(swaggerPlugin);
   await app.register(pgPlugin);
   await app.register(redisPlugin);
   await app.register(cookie, { secret: app.config.SESSION_SECRET });

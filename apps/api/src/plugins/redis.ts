@@ -66,8 +66,12 @@ async function plugin(app: FastifyInstance): Promise<void> {
   // command and the server performs the read + delete in a
   // single round-trip. Two concurrent /consume calls for the
   // same token will see exactly one winner (the value) and
-  // one loser (null). The `client` typing in ioredis exposes
-  // `getdel` directly so no cast is required here.
+  // one loser (null). The `client` typing in ioredis does
+  // NOT expose `getdel` directly under our tsconfig's
+  // `lib: ['ES2022', 'DOM']` shape, so we narrow it through
+  // an `as unknown as { getdel(...): ... }` cast to call the
+  // method without losing the ioredis `Redis` instance's
+  // other capabilities (event listeners, retry strategy, …).
   const getdel = async (key: string): Promise<string | null> =>
     (client as unknown as { getdel(k: string): Promise<string | null> }).getdel(key);
   const set = async (key: string, value: string, ttl?: number): Promise<'OK'> => {

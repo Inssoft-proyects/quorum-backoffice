@@ -11,6 +11,16 @@
  * Auth (WU6) replaces `x-test-actor` shim with the session user; the
  * preHandler (requireRole('admin')) mirrors the marbetes POST/PATCH
  * permission level — students lookup is needed to assign a marbete.
+ *
+ * Since migration 0020_students_sis_id.sql the response shape
+ * (`StudentDetailResponse` in `students-service.ts`) carries the
+ * new `sisId` matrícula and treats `fullName` / `email` as
+ * nullable strings. Synthetic high-privacy rows (sis_id +
+ * canvas_user_id only) round-trip cleanly with `fullName: null`
+ * and `email: null` on the wire. The route adds no extra
+ * validation here — the service is the source of truth for the
+ * DTO shape, and the response is serialized through Fastify's
+ * default JSON serializer.
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
