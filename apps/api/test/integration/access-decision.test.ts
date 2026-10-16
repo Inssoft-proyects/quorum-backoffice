@@ -403,11 +403,10 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     }
   });
 
-  it('(b5a) device_unknown (uniform) for an UNASSIGNED device', async () => {
+  it('(b5a) UNASSIGNED device → allow (shared device allowlist)', async () => {
     const studentId = await seedStudent(pool, 70_200, 'Unassigned Device Student', true);
     const serial = 'SN-B-UNASSIGNED';
     await seedDevice(pool, { serial, assignedStudentId: null });
-    expect(studentId).toBeGreaterThan(0); // referenced by the seed
     const body = JSON.stringify({
       device_id: serial,
       otp_proof: VALID_OTP,
@@ -415,9 +414,10 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     });
     const r = await postSigned(app, '/api/v1/access-decisions', { body });
     expect(r.statusCode).toBe(200);
-    const j = r.json() as { decision: string; denial: string | null };
-    expect(j.decision).toBe('deny');
-    expect(j.denial).toBe('deny.device_unknown');
+    const j = r.json() as { decision: string; student_id: number | null; denial: string | null };
+    expect(j.decision).toBe('allow');
+    expect(j.student_id).toBe(studentId);
+    expect(j.denial).toBeNull();
     expect(JSON.stringify(j)).not.toContain(serial);
   });
 
@@ -438,21 +438,22 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     expect(JSON.stringify(j)).not.toContain(serial);
   });
 
-  it('(b5c) device_unknown (uniform) for a WRONG canvas_user_id', async () => {
-    const studentId = await seedStudent(pool, 70_220, 'Right Owner', true);
-    await seedStudent(pool, 70_221, 'Other Owner', true);
+  it('(b5c) device assigned to a DIFFERENT student → allow (binding not enforced)', async () => {
+    const rightId = await seedStudent(pool, 70_220, 'Right Owner', true);
+    const otherId = await seedStudent(pool, 70_221, 'Other Owner', true);
     const serial = 'SN-B-WRONG-OWNER';
-    await seedDevice(pool, { serial, assignedStudentId: studentId });
+    await seedDevice(pool, { serial, assignedStudentId: rightId });
     const body = JSON.stringify({
       device_id: serial,
       otp_proof: VALID_OTP,
-      canvas_user_id: 70_221, // different from the assigned student
+      canvas_user_id: 70_221, // a different, active student
     });
     const r = await postSigned(app, '/api/v1/access-decisions', { body });
     expect(r.statusCode).toBe(200);
-    const j = r.json() as { decision: string; denial: string | null };
-    expect(j.decision).toBe('deny');
-    expect(j.denial).toBe('deny.device_unknown');
+    const j = r.json() as { decision: string; student_id: number | null; denial: string | null };
+    expect(j.decision).toBe('allow');
+    expect(j.student_id).toBe(otherId);
+    expect(j.denial).toBeNull();
     expect(JSON.stringify(j)).not.toContain(serial);
   });
 
@@ -549,15 +550,6 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
         studentActive: true,
         otp: 'bad',
         expectDenial: 'deny.otp_invalid',
-      },
-      // device_unknown — unassigned device
-      {
-        label: 'device_unknown_unassigned',
-        deviceStatus: 'active',
-        assignedStudentId: null,
-        studentActive: true,
-        otp: VALID_OTP,
-        expectDenial: 'deny.device_unknown',
       },
       // device_unknown — revoked device
       {

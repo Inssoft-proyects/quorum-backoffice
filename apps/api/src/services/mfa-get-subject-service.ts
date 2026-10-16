@@ -1,12 +1,11 @@
 /**
  * MFA `get-subject` service — S2S identity resolution.
  *
- * Given a marbete code + the device serial bound to the same
- * student, resolve the student's `canvas_user_id` (the OTP
- * subject) and SIS matrícula. This is the read-only half of the
- * MFA chain: it walks the SAME lookups the MFA authenticate flow
- * walks (steps 1–4 of `MfaAuthenticateService`) but stops BEFORE
- * the OTP verification and the session issuance.
+ * Given a marbete code + an approved device serial, resolve the
+ * student's `canvas_user_id` (the OTP subject) and SIS matrícula.
+ * This is the read-only half of the MFA chain: it walks the SAME
+ * lookups the MFA authenticate flow walks but stops BEFORE the OTP
+ * verification and the session issuance.
  *
  * Policy order (mirrors `MfaAuthenticateService`):
  *
@@ -17,17 +16,17 @@
  *   3. `assigned_student_id IS NULL` → `deny.student_inactive`.
  *   4. Student lookup (`is_active = false` or missing) →
  *      `deny.student_inactive`.
- *   5. Device lookup by `serial_number`: unknown / revoked /
- *      unassigned → `deny.device_unknown`.
- *   6. Device assigned to a DIFFERENT student than the marbete →
- *      `deny.device_not_bound_to_student`.
- *   7. Return `{ canvasUserId, matricula }`.
+ *   5. Device lookup by `serial_number`: unknown / revoked →
+ *      `deny.device_unknown`.
+ *   6. Return `{ canvasUserId, matricula }`.
  *
- * Why both factors (marbete + serial) even though there is NO OTP:
- * resolving a marbete to a student identity from the marbete code
- * ALONE would let a caller enumerate which student owns a marbete.
- * The paired device serial keeps the privacy posture of the full
- * MFA flow while dropping the OTP from this lookup.
+ * The device is an AUTHORIZATION factor, not an identity factor: a
+ * shared classroom device must be active + non-revoked (a member of
+ * the approved-device allowlist), but it is NOT bound to a specific
+ * student. Identity comes from the marbete (which student) and, in
+ * the full MFA flow, the OTP (proof of that student). Keeping the
+ * serial as a required input preserves the privacy posture: a caller
+ * cannot resolve a marbete to a student with the marbete code ALONE.
  *
  * Side contracts:
  *
@@ -146,25 +145,15 @@ export class MfaGetSubjectService {
       });
     }
 
-    // (4) Device lookup + same-student binding. Unknown / revoked /
-    // unbound collapses to `deny.device_unknown`; a device owned by
-    // a different student is `deny.device_not_bound_to_student`.
+    // (4) Device lookup. The device is an authorization factor (a
+    // shared "approved device" allowlist), not an identity factor:
+    // active + non-revoked is enough, regardless of any student
+    // assignment (shared classroom pool).
     const device = await repo.findDeviceBySerialNumber(input.serialNumber);
-    if (
-      !device ||
-      device.status !== 'active' ||
-      device.revoked_at !== null ||
-      device.assigned_student_id === null
-    ) {
+    if (!device || device.status !== 'active' || device.revoked_at !== null) {
       throw new MfaAuthenticateError({
         code: 'deny.device_unknown',
-        message: 'device is unknown, revoked, or unbound',
-      });
-    }
-    if (device.assigned_student_id !== student.id) {
-      throw new MfaAuthenticateError({
-        code: 'deny.device_not_bound_to_student',
-        message: 'device is bound to a different student than the marbete',
+        message: 'device is unknown or revoked',
       });
     }
 

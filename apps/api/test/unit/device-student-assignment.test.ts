@@ -79,13 +79,13 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (unit, mocked pg)
     const repo = new PgDispositivoRepo(client);
     await repo.findActiveOwnerBySerialAndCanvasId('SN-UNIT-6', 6006);
     const sql = calls[0]?.sql ?? '';
-    // All four guards must appear in the single SQL — any omission
-    // would be a security regression for B1.
+    // Every fail-closed guard must appear in the single SQL — any
+    // omission would be a security regression.
     expect(sql).toMatch(/FROM\s+dispositivos\s+d/i);
-    expect(sql).toMatch(/JOIN\s+students_cache\s+s\s+ON\s+s\.id\s*=\s*d\.assigned_student_id/i);
+    expect(sql).toMatch(/JOIN\s+students_cache\s+s\s+ON\s+s\.canvas_user_id\s*=\s*\$2/i);
     expect(sql).toMatch(/d\.serial_number\s*=\s*\$1/);
     expect(sql).toMatch(/d\.status\s*=\s*'active'/i);
-    expect(sql).toMatch(/s\.canvas_user_id\s*=\s*\$2/);
+    expect(sql).toMatch(/d\.revoked_at\s+IS\s+NULL/i);
     expect(sql).toMatch(/s\.is_active\s*=\s*TRUE/i);
   });
 });

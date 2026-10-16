@@ -12,9 +12,8 @@
  *     audit row, session row with kind='student' + canvas_user_id
  *   - denial taxonomy: marbete_unknown (not found / revoked /
  *     deleted), student_inactive (no owner / is_active=false),
- *     device_unknown (not found / revoked / unassigned),
- *     device_not_bound_to_student, otp_invalid, dependency_fail
- *     (OTP 5xx + thrown)
+ *     device_unknown (not found / revoked), otp_invalid,
+ *     dependency_fail (OTP 5xx + thrown)
  *   - body validation: empty marbete_code / missing otp / short otp
  *     → 400 `validation_error`
  *   - session cookie attributes: HttpOnly, Secure, SameSite=Lax,
@@ -698,7 +697,7 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
     expect(r.json()).toMatchObject({ code: 'deny.device_unknown' });
   });
 
-  it('device_unknown (unassigned): 401 with deny.device_unknown when the device has no assigned_student_id', async () => {
+  it('device (unassigned): 201 — unassigned device passes (shared device allowlist)', async () => {
     await seedDevice(pool, {
       serial: 'SN-MFA-UNASSIGNED',
       assignedStudentId: null,
@@ -711,21 +710,19 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
         happyBody({ serial_number: 'SN-MFA-UNASSIGNED' }),
       ),
     });
-    expect(r.statusCode).toBe(401);
-    expect(r.json()).toMatchObject({ code: 'deny.device_unknown' });
+    expect(r.statusCode).toBe(201);
+    expect((r.json() as { canvas_user_id: number }).canvas_user_id).toBe(CANVAS_HAPPY);
   });
 
-  it('device_not_bound_to_student: 401 with deny.device_not_bound_to_student when the device is bound to a different student', async () => {
+  it('device bound to a different student: 201 — binding is not enforced (device is an allowlist)', async () => {
     const r = await app.inject({
       method: 'POST',
       url: '/api/v1/mfa/authenticate',
       headers: { 'content-type': 'application/json' },
       payload: JSON.stringify(happyBody({ serial_number: SERIAL_OTHER })),
     });
-    expect(r.statusCode).toBe(401);
-    expect(r.json()).toMatchObject({
-      code: 'deny.device_not_bound_to_student',
-    });
+    expect(r.statusCode).toBe(201);
+    expect((r.json() as { canvas_user_id: number }).canvas_user_id).toBe(CANVAS_HAPPY);
   });
 
   // -----------------------------------------------------------------

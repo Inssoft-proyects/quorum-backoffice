@@ -279,6 +279,13 @@ Content-Type: application/json
 
 ### Assign a device to a Canvas student (admin + OTP)
 
+> **Deprecated (2026-10-16).** El modelo de dispositivos compartidos (pool de
+> aula) elimina el vínculo 1:1 dispositivo→alumno. Los endpoints `assign` /
+> `unassign` siguen presentes pero ya NO se consultan en la cadena MFA
+> (`get-subject` / `authenticate` / `access-decisions`); la columna
+> `dispositivos.assigned_student_id` queda ignorada y se eliminará en una fase
+> posterior. Véase `odd/tasks/mfa-shared-device-allowlist.md`.
+
 Admin-only, OTP-gated ownership of devices (B2). Both routes require an
 admin session and a single-use OTP in `X-OTP-Code`:
 

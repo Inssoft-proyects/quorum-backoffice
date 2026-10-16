@@ -1,22 +1,23 @@
 /**
- * B1 / Canvas-bound device authorization — fail-closed owner lookup.
+ * B1 / Shared-device authorization — fail-closed resolution lookup.
  *
- * Exercises the new `PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId`
- * read model against a real PostgreSQL connection. The migration runner
- * applies 0015_device_student_assignment.sql so the nullable FK on
- * `dispositivos.assigned_student_id` is in place.
+ * Exercises `PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId`
+ * against a real PostgreSQL connection. The device is an authorization
+ * factor (an approved-device allowlist), NOT an identity factor: it is
+ * resolved by `canvas_user_id` (parameter $2), never by the nullable
+ * `dispositivos.assigned_student_id` FK (which is kept but not consulted).
  *
  * Each test seeds its own devices and students so the suite is order-
  * independent. The fail-closed contract requires a single negative
- * answer for every non-owner case; we triangulate:
+ * answer for every non-approvable case; we triangulate:
  *
- *   - happy path     : active device + active student + same canvas_user_id → owner
- *   - unassigned     : device exists with assigned_student_id NULL → not owner
- *   - revoked        : device exists with status='revoked'  → not owner
- *   - other user     : device assigned to another canvas_user_id → not owner
- *   - inactive       : device assigned to a student whose is_active=false → not owner
- *   - missing        : canvas_user_id not present in students_cache → not owner
- *   - missing device : serial that was never registered → not owner
+ *   - happy path     : active device + active student + matching canvas_user_id → resolved
+ *   - unassigned     : active device with assigned_student_id NULL + active student → resolved
+ *   - revoked        : device exists with status='revoked'  → not resolved
+ *   - other user     : active device assigned to another student, queried with an active canvas_user_id → resolved
+ *   - inactive       : queried canvas_user_id has is_active=false → not resolved
+ *   - missing        : canvas_user_id not present in students_cache → not resolved
+ *   - missing device : serial that was never registered → not resolved
  *
  * The repository method is the only public surface introduced in B1.
  * No route, no service, no access decision is wired here — that is
@@ -132,7 +133,8 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
     expect(result).toEqual({ owner: true, studentId });
   });
 
-  it('returns owner=false (studentId=null) when the device is unassigned (inventory only)', async () => {
+  it('returns owner=true for an UNASSIGNED device + active student (shared device allowlist)', async () => {
+    const studentId = await seedStudent(pool, 50_002, 'Shared Device User', true);
     await seedDevice(pool, {
       serial: 'SN-B1-UNASSIGNED-1',
       status: 'active',
@@ -143,7 +145,7 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
       'SN-B1-UNASSIGNED-1',
       50_002,
     );
-    expect(result).toEqual({ owner: false, studentId: null });
+    expect(result).toEqual({ owner: true, studentId });
   });
 
   it('returns owner=false when the device is revoked (fail-closed)', async () => {
@@ -161,9 +163,9 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
     expect(result).toEqual({ owner: false, studentId: null });
   });
 
-  it('returns owner=false when the device is assigned to a different active student', async () => {
+  it('returns owner=true when the device is assigned to a DIFFERENT student (binding not enforced)', async () => {
     const ownerId = await seedStudent(pool, 50_004, 'Real Owner', true);
-    await seedStudent(pool, 50_005, 'Impostor', true);
+    const impostorId = await seedStudent(pool, 50_005, 'Impostor', true);
     await seedDevice(pool, {
       serial: 'SN-B1-OTHER-USER-1',
       status: 'active',
@@ -174,7 +176,7 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
       'SN-B1-OTHER-USER-1',
       50_005,
     );
-    expect(result).toEqual({ owner: false, studentId: null });
+    expect(result).toEqual({ owner: true, studentId: impostorId });
   });
 
   it('returns owner=false when the assigned student is inactive (graduated/withdrawn)', async () => {

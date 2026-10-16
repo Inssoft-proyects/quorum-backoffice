@@ -14,9 +14,8 @@
  *       `access-decision.test.ts` (same preHandler).
  *   (b) deny matrix over seeded fixtures — deny.marbete_unknown
  *       (unknown AND revoked marbete, indistinguishable),
- *       deny.student_inactive, deny.device_unknown,
- *       deny.device_not_bound_to_student.
- *   (c) happy path — active marbete + active student + matching
+ *       deny.student_inactive, deny.device_unknown.
+ *   (c) happy path — active marbete + active student + approved
  *       active device → 200 { canvas_user_id, matricula }.
  *   (d) body validation — short marbete_code → 400 validation_error.
  *   (e) leak guard — the response body never contains the raw
@@ -352,10 +351,13 @@ describe('POST /api/v1/mfa/get-subject — S2S identity resolution (integration,
     expect(res.json()).toMatchObject({ code: 'deny.device_unknown' });
   });
 
-  it('(b5) device bound to a different student → 401 deny.device_not_bound_to_student', async () => {
+  it('(b5) device bound to a different student → 200 (device is an allowlist, not an identity factor)', async () => {
     const res = await inject({ marbete_code: CODE_HAPPY, serial_number: SERIAL_OTHER });
-    expect(res.statusCode).toBe(401);
-    expect(res.json()).toMatchObject({ code: 'deny.device_not_bound_to_student' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      canvas_user_id: CANVAS_HAPPY,
+      matricula: MATRICULA_HAPPY,
+    });
   });
 
   // (d) validation ------------------------------------------------------------

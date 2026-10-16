@@ -10,8 +10,7 @@
  *   1. marbete not found / revoked / deleted         → deny.marbete_unknown
  *   2. marbete.assigned_student_id IS NULL          → deny.student_inactive
  *   3. student.is_active = false                    → deny.student_inactive
- *   4. device not found / revoked / unassigned      → deny.device_unknown
- *   5. device assigned to a DIFFERENT student       → deny.device_not_bound_to_student
+ *   4. device not found / revoked                   → deny.device_unknown
  *   6. OTP verify {ok:false, reason:'invalid'}      → deny.otp_invalid
  *   7. OTP verify {ok:false, reason:'locked'}       → deny.dependency_fail
  *   8. OTP verify {ok:false, reason:'unknown'}      → deny.dependency_fail
@@ -427,22 +426,24 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
     expect(built.otp.calls).toHaveLength(0);
   });
 
-  it('3c) deny.device_unknown when the device is unassigned (assigned_student_id IS NULL)', async () => {
+  it('3c) unassigned device (assigned_student_id IS NULL) passes the device check (shared allowlist)', async () => {
     built.repo.setDevice(makeDeviceRow({ assigned_student_id: null }));
+    built.otp.setNext({ ok: false, reason: 'invalid' });
     await expect(built.service.authenticate(baseInput(), META)).rejects.toMatchObject({
-      code: 'deny.device_unknown',
+      code: 'deny.otp_invalid',
     });
-    expect(built.otp.calls).toHaveLength(0);
+    expect(built.otp.calls).toHaveLength(1);
   });
 
-  // ---- (5) device_not_bound_to_student ----
+  // ---- (5) device binding is no longer enforced ----
 
-  it('4) deny.device_not_bound_to_student when the device is bound to a different student', async () => {
+  it('4) device bound to a DIFFERENT student passes the device check (binding is not enforced)', async () => {
     built.repo.setDevice(makeDeviceRow({ assigned_student_id: 999 }));
+    built.otp.setNext({ ok: false, reason: 'invalid' });
     await expect(built.service.authenticate(baseInput(), META)).rejects.toMatchObject({
-      code: 'deny.device_not_bound_to_student',
+      code: 'deny.otp_invalid',
     });
-    expect(built.otp.calls).toHaveLength(0);
+    expect(built.otp.calls).toHaveLength(1);
   });
 
   // ---- (6..9) OTP outcomes ----
@@ -598,7 +599,7 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
       { label: 'student_inactive_no_owner', marbete: makeMarbeteRow({ assigned_student_id: null }) },
       { label: 'student_inactive_inactive', student: makeStudentRow({ is_active: false }) },
       { label: 'device_unknown', device: null },
-      { label: 'device_not_bound', device: makeDeviceRow({ assigned_student_id: 999 }) },
+      { label: 'device_revoked', device: makeDeviceRow({ status: 'revoked', revoked_at: new Date() }) },
       { label: 'otp_invalid', otpProgram: { ok: false, reason: 'invalid' } },
       { label: 'dependency_fail_throw', otpProgram: { throw: true, error: new Error('boom') } },
     ];

@@ -31,28 +31,28 @@ export interface DispositivoRow {
 }
 
 /**
- * Result of a Canvas-bound device owner check.
+ * Result of a shared-device resolution check.
  *
  * `owner` is the only field the caller's access decision consumes. It is
  * `true` ONLY when every fail-closed predicate holds:
  *
  *   - the device row exists for the supplied serial_number,
- *   - the device status is `active` (i.e. not soft-revoked),
- *   - the device is assigned (`assigned_student_id IS NOT NULL`),
- *   - the assigned student is active in `students_cache` (`is_active = TRUE`),
- *   - the assigned student's `canvas_user_id` matches the supplied id.
+ *   - the device status is `active` and not soft-revoked,
+ *   - the student with the supplied `canvas_user_id` is active in
+ *     `students_cache` (`is_active = TRUE`).
  *
- * `studentId` is the internal `students_cache.id` (NOT the canvas user id,
- * NOT the serial number) and is returned only when the caller IS the
- * owner. It is intentionally a bare numeric id so it can be logged or
- * audited without leaking the device serial into a denial log line.
- * The serial is never echoed in the result on purpose: a denied caller
- * must not be able to enumerate devices they do not own.
+ * The device is an authorization factor (approved allowlist), NOT bound
+ * to a student — `assigned_student_id` is intentionally not consulted.
+ * `studentId` is the internal `students_cache.id` (NOT the canvas user
+ * id, NOT the serial) resolved from the supplied canvas_user_id, returned
+ * only on success. It is a bare numeric id so it can be logged or audited
+ * without leaking the device serial. The serial is never echoed on purpose:
+ * a denied caller must not be able to enumerate devices.
  *
  * Negative answers are uniformly `{ owner: false, studentId: null }` —
  * the repository does not distinguish "device does not exist" from
- * "device revoked" from "wrong student", because the caller should
- * treat all three identically (deny).
+ * "device revoked" from "student missing/inactive", because the caller
+ * should treat all identically (deny).
  */
 export interface DeviceOwnerCheck {
   owner: boolean;
@@ -225,29 +225,31 @@ export class PgDispositivoRepo {
   }
 
   /**
-   * B1 / Canvas-bound device authorization: read-only owner check.
+   * B1 / Shared-device authorization: read-only resolution check.
    *
    * Single SQL join that covers every fail-closed predicate in one
-   * round-trip. The WHERE clause encodes:
+   * round-trip. The device is an AUTHORIZATION factor (a shared
+   * "approved device" allowlist), NOT an identity factor — it is not
+   * bound to a student. The WHERE clause encodes:
    *
    *   - serial match (parameter $1)
    *   - device status = 'active' (revoked devices cannot authenticate)
-   *   - assigned_student_id IS NOT NULL (unassigned = inventory only)
+   *   - device revoked_at IS NULL (soft-revoked devices deny)
    *   - students_cache.is_active = TRUE (graduated/withdrawn deny)
-   *   - canvas_user_id match (parameter $2, prevents cross-student replay)
+   *   - canvas_user_id match (parameter $2, resolves the student id)
    *
-   * The INNER JOIN drops rows that fail any of the FK / status
-   * predicates, so a missing student, a revoked device, an unassigned
-   * device, and a mismatched canvas_user_id all collapse into the same
-   * "no row" outcome. Returning a single boolean (plus owner student id)
-   * keeps the surface area minimal: callers either get `{ owner: true,
-   * studentId }` or `{ owner: false, studentId: null }` — no enum of
+   * The INNER JOIN drops rows that fail any status predicate, so a
+   * missing student, a revoked device, and a mismatched canvas_user_id
+   * all collapse into the same "no row" outcome. The device is never
+   * required to be assigned to that student (shared classroom pool).
+   *
+   * The returned `owner` field is historical: it now means "the device
+   * is approved and the student resolved"; phase 2 renames this surface
+   * when `dispositivos.assigned_student_id` is dropped. Returning a
+   * single boolean (plus the resolved student id) keeps the surface
+   * minimal: callers get `{ owner: true, studentId }` on success or
+   * `{ owner: false, studentId: null }` on any deny — no enum of
    * failure modes to leak, and no serial in the result.
-   *
-   * B1 scope: this is the only public surface added for owner lookup.
-   * No route, no service, and no access-decision wiring exist yet —
-   * those are explicitly deferred to B2 (admin assignment) and B3
-   * (authenticated service-to-service access decision).
    */
   async findActiveOwnerBySerialAndCanvasId(
     serialNumber: string,
@@ -256,10 +258,10 @@ export class PgDispositivoRepo {
     const r = await this.client.query<{ student_id: string }>(
       `SELECT s.id AS student_id
          FROM dispositivos d
-         JOIN students_cache s ON s.id = d.assigned_student_id
+         JOIN students_cache s ON s.canvas_user_id = $2
         WHERE d.serial_number = $1
           AND d.status        = 'active'
-          AND s.canvas_user_id = $2
+          AND d.revoked_at    IS NULL
           AND s.is_active     = TRUE`,
       [serialNumber, canvasUserId],
     );

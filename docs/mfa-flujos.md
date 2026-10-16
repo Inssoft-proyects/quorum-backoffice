@@ -148,7 +148,10 @@ Resuelve `marbete + serial` → `canvas_user_id` + matrícula SIS.
 - **Request:** `{"marbete_code":"…","serial_number":"…"}`
 - **Response (200):** `{"canvas_user_id":13,"matricula":"TOPGR4"}`
 - **Denegaciones (401):** `deny.marbete_unknown`, `deny.student_inactive`,
-  `deny.device_unknown`, `deny.device_not_bound_to_student`, `deny.idp_untrusted`.
+  `deny.device_unknown`, `deny.idp_untrusted`.
+  > El dispositivo es un factor de **autorización** (lista blanca de equipos
+  > aprobados), no de identidad: basta con que esté `active` y no revocado.
+  > No se requiere asociarlo a un alumno (pool compartido de aula).
 
 ---
 
