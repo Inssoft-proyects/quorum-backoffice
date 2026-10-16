@@ -141,15 +141,20 @@ async function seedDevice(
   args: {
     serial: string;
     status?: 'active' | 'revoked';
-    assignedStudentId?: number | null;
+    // Fase 2 retired `dispositivos.assigned_student_id`; the
+    // seed helper keeps the optional parameter for backward-
+    // compatible call sites but ignores it. The shared-device
+    // allowlist model binds the device to nothing — the access
+    // decision resolves the device by `canvas_user_id` via
+    // `findActiveOwnerBySerialAndCanvasId`.
   },
 ): Promise<number> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO dispositivos
-       (serial_number, brand, model, status, created_by, assigned_student_id, revoked_at)
-     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3, $4)
+       (serial_number, brand, model, status, created_by, revoked_at)
+     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', NULL)
      RETURNING id`,
-    [args.serial, args.status ?? 'active', args.assignedStudentId ?? null, null],
+    [args.serial, args.status ?? 'active'],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('device_seed_failed');
@@ -311,7 +316,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
   it('(b1) 200 {decision:deny, denial:deny.otp_missing} when otp_proof is empty', async () => {
     const studentId = await seedStudent(pool, 70_100, 'OTP Missing Student', true);
     const serial = 'SN-B-OTP-MISSING';
-    await seedDevice(pool, { serial, assignedStudentId: studentId });
+    await seedDevice(pool, { serial });
     const body = JSON.stringify({ device_id: serial, otp_proof: '', canvas_user_id: 70_100 });
     const r = await postSigned(app, '/api/v1/access-decisions', { body });
     expect(r.statusCode).toBe(200);
@@ -325,7 +330,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
   it('(b2) 200 {denial:deny.otp_invalid} when the OTP verify provider returns 409', async () => {
     const studentId = await seedStudent(pool, 70_110, 'OTP Invalid Student', true);
     const serial = 'SN-B-OTP-INVALID';
-    await seedDevice(pool, { serial, assignedStudentId: studentId });
+    await seedDevice(pool, { serial });
     // Default fetch: anything that isn't the right token returns 409.
     const body = JSON.stringify({
       device_id: serial,
@@ -350,7 +355,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     try {
       const studentId = await seedStudent(pool, 70_120, 'Lockout Student', true);
       const serial = 'SN-B-LOCKOUT';
-      await seedDevice(pool, { serial, assignedStudentId: studentId });
+      await seedDevice(pool, { serial });
       const body = JSON.stringify({
         device_id: serial,
         otp_proof: VALID_OTP,
@@ -381,7 +386,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     try {
       const studentId = await seedStudent(pool, 70_130, 'Dependency Fail Student', true);
       const serial = 'SN-B-DEP-FAIL';
-      await seedDevice(pool, { serial, assignedStudentId: studentId });
+      await seedDevice(pool, { serial });
       const body = JSON.stringify({
         device_id: serial,
         otp_proof: VALID_OTP,
@@ -406,7 +411,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
   it('(b5a) UNASSIGNED device → allow (shared device allowlist)', async () => {
     const studentId = await seedStudent(pool, 70_200, 'Unassigned Device Student', true);
     const serial = 'SN-B-UNASSIGNED';
-    await seedDevice(pool, { serial, assignedStudentId: null });
+    await seedDevice(pool, { serial });
     const body = JSON.stringify({
       device_id: serial,
       otp_proof: VALID_OTP,
@@ -424,7 +429,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
   it('(b5b) device_unknown (uniform) for a REVOKED device', async () => {
     const studentId = await seedStudent(pool, 70_210, 'Revoked Device Student', true);
     const serial = 'SN-B-REVOKED';
-    await seedDevice(pool, { serial, status: 'revoked', assignedStudentId: studentId });
+    await seedDevice(pool, { serial, status: 'revoked' });
     const body = JSON.stringify({
       device_id: serial,
       otp_proof: VALID_OTP,
@@ -442,7 +447,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     const rightId = await seedStudent(pool, 70_220, 'Right Owner', true);
     const otherId = await seedStudent(pool, 70_221, 'Other Owner', true);
     const serial = 'SN-B-WRONG-OWNER';
-    await seedDevice(pool, { serial, assignedStudentId: rightId });
+    await seedDevice(pool, { serial });
     const body = JSON.stringify({
       device_id: serial,
       otp_proof: VALID_OTP,
@@ -460,7 +465,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
   it('(b5d) device_unknown (uniform) for an INACTIVE student', async () => {
     const studentId = await seedStudent(pool, 70_230, 'Inactive Owner', false);
     const serial = 'SN-B-INACTIVE';
-    await seedDevice(pool, { serial, assignedStudentId: studentId });
+    await seedDevice(pool, { serial });
     const body = JSON.stringify({
       device_id: serial,
       otp_proof: VALID_OTP,
@@ -496,7 +501,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
   it('(c1) 200 {decision:allow, student_id} for active student + assigned active device + valid OTP', async () => {
     const studentId = await seedStudent(pool, 70_300, 'Happy Path Student', true);
     const serial = 'SN-C-HAPPY';
-    await seedDevice(pool, { serial, assignedStudentId: studentId });
+    await seedDevice(pool, { serial });
     const body = JSON.stringify({
       device_id: serial,
       otp_proof: VALID_OTP,
@@ -528,7 +533,6 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     const scenarios: Array<{
       label: string;
       deviceStatus?: 'active' | 'revoked';
-      assignedStudentId?: number | null;
       studentActive?: boolean;
       otp?: string;
       expectDenial: string;
@@ -537,7 +541,6 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
       {
         label: 'otp_missing',
         deviceStatus: 'active',
-        assignedStudentId: null,
         studentActive: true,
         otp: '',
         expectDenial: 'deny.otp_missing',
@@ -546,7 +549,6 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
       {
         label: 'otp_invalid',
         deviceStatus: 'active',
-        assignedStudentId: null,
         studentActive: true,
         otp: 'bad',
         expectDenial: 'deny.otp_invalid',
@@ -555,7 +557,6 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
       {
         label: 'device_unknown_revoked',
         deviceStatus: 'revoked',
-        assignedStudentId: null,
         studentActive: true,
         otp: VALID_OTP,
         expectDenial: 'deny.device_unknown',
@@ -564,7 +565,6 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
       {
         label: 'device_unknown_inactive',
         deviceStatus: 'active',
-        assignedStudentId: null,
         studentActive: false,
         otp: VALID_OTP,
         expectDenial: 'deny.device_unknown',
@@ -573,7 +573,6 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
       {
         label: 'device_unknown_missing',
         deviceStatus: undefined,
-        assignedStudentId: undefined,
         studentActive: true,
         otp: VALID_OTP,
         expectDenial: 'deny.device_unknown',
@@ -582,7 +581,7 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
     for (const sc of scenarios) {
       // Fresh student + serial per scenario so the leak guard is tight.
       const canvasId = 70_400 + scenarios.indexOf(sc);
-      const studentId = await seedStudent(
+      await seedStudent(
         pool,
         canvasId,
         `Leak-${sc.label}`,
@@ -590,18 +589,12 @@ describe('POST /api/v1/access-decisions — B3.2 endpoint (integration, real PG)
       );
       const serial = `SN-D-LEAK-${sc.label.toUpperCase()}`;
       if (sc.deviceStatus !== undefined) {
+        // Fase 2 retired `dispositivos.assigned_student_id`; the
+        // device is a shared approved-allowlist factor, NOT bound
+        // to a student, so the seed helper drops the field.
         await seedDevice(pool, {
           serial,
           status: sc.deviceStatus,
-          // Explicit assignment takes precedence (a `null` in the
-          // scenario means "force unassigned"); otherwise bind to
-          // the fresh student when the scenario needs a valid owner.
-          assignedStudentId:
-            sc.assignedStudentId !== undefined
-              ? sc.assignedStudentId
-              : sc.studentActive
-                ? studentId
-                : null,
         });
       }
       const body = JSON.stringify({

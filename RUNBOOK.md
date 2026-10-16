@@ -277,59 +277,14 @@ Content-Type: application/json
   mailer logs the OTP at `warn` level. Look for
   `smtp_dev_mode_otp_logged` in the logs to recover it locally.
 
-### Assign a device to a Canvas student (admin + OTP)
+### Device assignment (admin + OTP)
 
-> **Deprecated (2026-10-16).** El modelo de dispositivos compartidos (pool de
-> aula) elimina el vínculo 1:1 dispositivo→alumno. Los endpoints `assign` /
-> `unassign` siguen presentes pero ya NO se consultan en la cadena MFA
-> (`get-subject` / `authenticate` / `access-decisions`); la columna
-> `dispositivos.assigned_student_id` queda ignorada y se eliminará en una fase
-> posterior. Véase `odd/tasks/mfa-shared-device-allowlist.md`.
-
-Admin-only, OTP-gated ownership of devices (B2). Both routes require an
-admin session and a single-use OTP in `X-OTP-Code`:
-
-```http
-POST /api/v1/dispositivos/:id/assign
-X-OTP-Code: K7QM3X
-Content-Type: application/json
-{ "canvasUserId": 9001 }
-
-→ 200 { ...device, "assignedStudentId": 4242 }
-
-POST /api/v1/dispositivos/:id/unassign
-X-OTP-Code: K7QM3X
-
-→ 200 { ...device, "assignedStudentId": null }
-```
-
-- OTP scopes are `dispositivo.assign` and `dispositivo.unassign`
-  (issued by the sibling `quorum-otp` service like every destructive
-  action). `assignedStudentId` is the internal `students_cache.id`,
-  not the Canvas user id.
-- Fail-closed rejections leave the owner unchanged and write **no**
-  audit row:
-  - `404 not_found` — unknown device.
-  - `409 conflict` — assigning to a revoked device (a revoked device
-    must never gain an owner).
-  - `422 student_not_found` / `422 student_not_active` — only an
-    existing ACTIVE `students_cache` row may own a device.
-  - `409 device_not_assigned` — no-op unassign (avoids burning an OTP
-    without a state change).
-- Unassign is allowed even on revoked devices: removing rights can
-  never grant access.
-- Reassignment replaces the owner and is audited with both states.
-  Audit actions `dispositivo.assign` / `dispositivo.unassign`
-  (migration `0016`) carry before/after snapshots including
-  `assignedStudentId` and the verifying `otp_id`.
-- An assignment grants **no** Canvas or Jitsi access by itself: the
-  access decision additionally requires an active device, an active
-  student and a matching Canvas SIS identity, fail-closed.
-- Dev test-runner note: app-booting Jest suites need `--forceExit` and
-  `NODE_OPTIONS=--experimental-vm-modules`, wrapped in `timeout`.
-  The `test:integration` script uses the Jest-30-removed
-  `--testPathPattern` flag; invoke jest directly with
-  `--testPathPatterns`.
+> **Retired (fase 2 / dispositivos-assignment-retirement, 2026-10-16).**
+> El modelo de dispositivos compartidos (pool de aula) eliminó el vínculo
+> 1:1 dispositivo→alumno. Los endpoints `POST /api/v1/dispositivos/:id/assign`
+> y `:id/unassign` se retiraron junto con la columna
+> `dispositivos.assigned_student_id` (migration `0022`). Véase
+> `odd/tasks/dispositivos-assignment-retirement.md`.
 
 ### Access-decision API (machine-to-machine, B3)
 
@@ -371,13 +326,13 @@ tested but **not deployed**; no live caller exists yet.
   (`deny.dependency_fail` wherever a matrícula would be required) is
   the correct production behavior.
 
-### Manual smoke: device assignment + access decision (B2/B3)
+### Manual smoke: access decision (B3)
 
-Local-only acceptance smoke for the two new surfaces. Nothing here
-touches production. Prereqs: local Postgres + Redis, `npm run migrate`
-and `npm run seed:e2e` from `apps/api`, and env `DATABASE_URL`,
-`REDIS_URL`, `OTP_SERVICE_URL`/`OTP_SERVICE_TOKEN` (a running
-`quorum-otp`, e.g. its local docker-compose),
+Local-only acceptance smoke for the access-decision surface. Nothing
+here touches production. Prereqs: local Postgres + Redis, `npm run
+migrate` and `npm run seed:e2e` from `apps/api`, and env
+`DATABASE_URL`, `REDIS_URL`, `OTP_SERVICE_URL`/`OTP_SERVICE_TOKEN`
+(a running `quorum-otp`, e.g. its local docker-compose),
 `CANVAS_PORTAL_API_URL`/`CANVAS_PORTAL_API_TOKEN` (unused by these
 flows — placeholder is fine), `SESSION_SECRET`, and
 `BACKOFFICE_SERVICE_TOKENS='demo-caller:demo-secret'`. API dev port:
@@ -392,21 +347,16 @@ VALUES (9001, 'Smoke Student', 'smoke@quorum.local', TRUE);
 
 Every destructive call needs a single-use OTP issued by `quorum-otp`
 (`POST /v1/otps`, HMAC-signed) with the exact scope of the operation:
-`dispositivo.create`, `dispositivo.assign`, `dispositivo.unassign`,
-and `access.decision` (subject = `String(canvas_user_id)`). Send it as
-`X-OTP-Code` (admin routes) or as `otp_proof` (access decision).
+`dispositivo.create`, `dispositivo.update`, `dispositivo.revoke`,
+`dispositivo.reactivate`, and `access.decision` (subject =
+`String(canvas_user_id)`). Send it as `X-OTP-Code` (admin routes) or
+as `otp_proof` (access decision).
 
-**Flow A — audited assignment (B2).** Log in (two-step OTP) →
-`POST /api/v1/dispositivos` (create) → `POST /api/v1/dispositivos/:id/assign`
-`{"canvasUserId": 9001}` → 200 with `assignedStudentId`. Reassign to a
-second student → 200 (audit holds both states). `POST .../unassign` →
-200 `assignedStudentId: null`; repeat → 409 `device_not_assigned`.
-Negatives: missing `X-OTP-Code` → 401 `otp_required`; wrong code → 401
-`otp_invalid`; operator/auditor role → 403. Finish with
-`GET /api/v1/audit`: expect `dispositivo.assign` / `dispositivo.unassign`
-rows carrying `otp_id` and before/after snapshots.
+> Device assignment (`dispositivo.assign` / `dispositivo.unassign`) was
+> retired in fase 2 along with `dispositivos.assigned_student_id`;
+> the remaining admin device ops are pure CRUD + audit.
 
-**Flow B — machine access decision (B3).** Sign and send:
+**Flow A — machine access decision (B3).** Sign and send:
 
 ```bash
 node -e '
@@ -423,13 +373,12 @@ curl -s -X POST localhost:3100/api/v1/access-decisions \
   -H "content-type: application/json" -H "authorization: $AUTH" -d "$BODY"
 ```
 
-Expected: valid OTP + assigned active device →
-`{"decision":"allow","student_id":...}`; unassigned, revoked, wrong
-owner or inactive-student device → `deny.device_unknown` (identical by
-design); empty `otp_proof` → `deny.otp_missing`; rejected OTP →
-`deny.otp_invalid`; OTP service down → `deny.dependency_fail`; bad or
-missing signature → 401 `deny.idp_untrusted`. No `deny.*` body ever
-contains the serial.
+Expected: valid OTP + active device + active student →
+`{"decision":"allow","student_id":...}`; revoked or inactive-student
+device → `deny.device_unknown` (identical by design); empty
+`otp_proof` → `deny.otp_missing`; rejected OTP → `deny.otp_invalid`;
+OTP service down → `deny.dependency_fail`; bad or missing signature →
+401 `deny.idp_untrusted`. No `deny.*` body ever contains the serial.
 
 **Out of scope for this smoke**: real Canvas/Jitsi entry, Keycloak SSO
 and SIS lookups — those stay behind the operator gates.

@@ -114,23 +114,6 @@ async function seedAdmin(pool: Pool): Promise<{ username: string; email: string 
   return { username: tag, email: `${tag}@example.test` };
 }
 
-async function seedDevice(pool: Pool, serial: string): Promise<number> {
-  const r = await pool.query<{ id: number }>(
-    `INSERT INTO dispositivos (serial_number, brand, model, status, created_by)
-     VALUES ($1, 'TestBrand', 'TestModel', 'active'::dispositivo_status, 'tester') RETURNING id`,
-    [serial],
-  );
-  return r.rows[0]!.id;
-}
-
-async function seedStudent(pool: Pool, canvasId: number): Promise<void> {
-  await pool.query(
-    `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
-     VALUES ($1, 'B7A Student', $2, TRUE)`,
-    [canvasId, `b7a-${canvasId}@example.test`],
-  );
-}
-
 describe('B7a — destructive route HMAC serviceName propagation', () => {
   let pool: Pool;
   let savedFetch: typeof fetch;
@@ -181,24 +164,28 @@ describe('B7a — destructive route HMAC serviceName propagation', () => {
     return { app, calls };
   }
 
-  it('dispositivos assign signs the HMAC header with the configured OTP_SERVICE_NAME', async () => {
+  it('dispositivos create signs the HMAC header with the configured OTP_SERVICE_NAME', async () => {
+    // Fase 2 retired the assign / unassign destructive surfaces;
+    // `dispositivo.create` is the representative destructive
+    // surface that still exercises the OtpClient inside the
+    // dispositivos routes (the serviceName propagation bug
+    // surfaced on this route family originally).
     const { app, calls } = await buildAppWithServiceName('backoffice-dispositivos');
     try {
       const admin = await seedAdmin(pool);
-      const deviceId = await seedDevice(pool, `SN-B7A-DISP-${Date.now()}`);
-      await seedStudent(pool, 80_900);
+      const serial = `SN-B7A-DISP-${Date.now()}`;
 
       const r = await app.inject({
         method: 'POST',
-        url: `/api/v1/dispositivos/${deviceId}/assign`,
+        url: '/api/v1/dispositivos',
         headers: {
           'x-test-actor': admin.username,
           'x-otp-code': VALID_OTP,
           'content-type': 'application/json',
         },
-        payload: JSON.stringify({ canvasUserId: 80_900 }),
+        payload: JSON.stringify({ serialNumber: serial, brand: 'B7A', model: 'Test' }),
       });
-      expect(r.statusCode).toBe(200);
+      expect(r.statusCode).toBe(201);
 
       const verifyCall = calls.find((c) => c.url.includes('/v1/otps/verify'));
       expect(verifyCall).toBeDefined(); // destructive route must call /v1/otps/verify

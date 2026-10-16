@@ -67,12 +67,14 @@ function makeStudentRow(overrides: Partial<MfaStudentRow> = {}): MfaStudentRow {
 }
 
 function makeDeviceRow(overrides: Partial<MfaDeviceRow> = {}): MfaDeviceRow {
+  // Fase 2 retired `dispositivos.assigned_student_id`; the
+  // device is now a shared approved allowlist (no per-row owner
+  // column). The default row mirrors the original "happy" path.
   return {
     id: 200,
     serial_number: RAW_SERIAL,
     status: 'active',
     revoked_at: null,
-    assigned_student_id: 100,
     ...overrides,
   };
 }
@@ -256,11 +258,14 @@ describe('MfaGetSubjectService.resolve — policy order', () => {
     expect(code).toBe('deny.device_unknown');
   });
 
-  it('device with assigned_student_id = null → resolves (shared device allowlist)', async () => {
+  it('device with active + non-revoked → resolves (shared device allowlist; fase 2 retired the per-row owner column)', async () => {
+    // The previous contract tested `device.assigned_student_id = null`;
+    // fase 2 retired the column. Any active, non-revoked device now
+    // resolves the same way.
     const { repo } = makeRepo({
       marbete: makeMarbeteRow(),
       student: makeStudentRow(),
-      device: makeDeviceRow({ assigned_student_id: null }),
+      device: makeDeviceRow(),
     });
     const result = await makeService(repo).resolve({
       marbeteCode: RAW_CODE,
@@ -269,11 +274,14 @@ describe('MfaGetSubjectService.resolve — policy order', () => {
     expect(result).toEqual({ canvasUserId: 7001, matricula: 'A00001' });
   });
 
-  it('device bound to a DIFFERENT student → resolves (binding is not enforced)', async () => {
+  it('device with active + non-revoked → resolves regardless of (now-absent) owner (binding not enforced)', async () => {
+    // The previous contract tested `device.assigned_student_id = 999`;
+    // fase 2 retired the column. Any active, non-revoked device now
+    // resolves regardless of any (now-absent) owner column.
     const { repo } = makeRepo({
       marbete: makeMarbeteRow(),
       student: makeStudentRow({ id: 100 }),
-      device: makeDeviceRow({ assigned_student_id: 999 }),
+      device: makeDeviceRow(),
     });
     const result = await makeService(repo).resolve({
       marbeteCode: RAW_CODE,

@@ -8,8 +8,9 @@
  *
  *   1. **Marbete code** — physical security token bound to a student
  *      via `marbetes.assigned_student_id`.
- *   2. **Device serial** — the device the student is using, bound to
- *      the same student via `dispositivos.assigned_student_id`.
+ *   2. **Device serial** — the device the student is using (fase 2
+ *      retired `dispositivos.assigned_student_id`; the device is a
+ *      shared approved allowlist, NOT bound to a student).
  *   3. **Dynamic OTP** — a pre-issued code from the operator
  *      (the `POST /v1/operator/otps` flow in `quorum-otp`), scoped
  *      to `mfa.access` under the F4 allow-list.
@@ -23,10 +24,10 @@
  *     policy lookup;
  *   - the MFA denial taxonomy is a small superset of the
  *     `access-decision` deny.* codes (it adds
- *     `deny.student_inactive` and `deny.device_not_bound_to_student`
- *     because the MFA flow binds the marbete → device → student
- *     chain in a single transaction and surfaces each step of
- *     the chain as a distinct denial reason).
+ *     `deny.student_inactive` because the MFA flow binds the
+ *     marbete → student chain in a single transaction and
+ *     surfaces the inactive-student branch as a distinct
+ *     denial reason).
  *
  * The shared denial taxonomy is the single source of truth for
  * "why was this access denied" across the canvas + jitsi
@@ -34,7 +35,9 @@
  * `DenialCode` enum in `access-decision.ts` so dashboards and
  * incident response can rely on the wire codes without consulting
  * the source. Adding a new value is a breaking change and must
- * ship with a companion migration.
+ * ship with a companion migration. Fase 2 retired
+ * `deny.device_not_bound_to_student` alongside
+ * `dispositivos.assigned_student_id`.
  */
 import { z } from 'zod';
 

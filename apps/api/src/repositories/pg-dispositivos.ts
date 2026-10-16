@@ -7,6 +7,15 @@
  * The `status` column is mirrored to a dedicated enum at the DB layer; the
  * repository translates between snake_case columns and camelCase response
  * fields so the DTO contract stays the only public surface.
+ *
+ * Fase 2 / dispositivos-assignment-retirement:
+ *   - The `assigned_student_id` column was dropped by migration 0022; this
+ *     module no longer reads or writes it.
+ *   - The previous `assignStudent()` write method is retired (the assign /
+ *     unassign routes are gone with it).
+ *   - `findActiveOwnerBySerialAndCanvasId` is INTENTIONALLY preserved: the
+ *     shared-device allowlist model resolves the device by
+ *     `s.canvas_user_id=$2`, never by the (now-gone) device→student FK.
  */
 import type pg from 'pg';
 import type {
@@ -27,7 +36,6 @@ export interface DispositivoRow {
   created_by: string;
   revoked_at: Date | null;
   revoked_reason: string | null;
-  assigned_student_id: number | null;
 }
 
 /**
@@ -42,7 +50,8 @@ export interface DispositivoRow {
  *     `students_cache` (`is_active = TRUE`).
  *
  * The device is an authorization factor (approved allowlist), NOT bound
- * to a student — `assigned_student_id` is intentionally not consulted.
+ * to a student — phase 2 retired `dispositivos.assigned_student_id` and
+ * the column is no longer consulted (or even present) in this query.
  * `studentId` is the internal `students_cache.id` (NOT the canvas user
  * id, NOT the serial) resolved from the supplied canvas_user_id, returned
  * only on success. It is a bare numeric id so it can be logged or audited
@@ -79,7 +88,7 @@ export class PgDispositivoRepo {
   async findById(id: number): Promise<DispositivoRow | null> {
     const r = await this.client.query<DispositivoRow>(
       `SELECT id, serial_number, brand, model, status, created_at, created_by,
-              revoked_at, revoked_reason, assigned_student_id
+              revoked_at, revoked_reason
          FROM dispositivos
         WHERE id = $1`,
       [id],
@@ -90,7 +99,7 @@ export class PgDispositivoRepo {
   async findBySerialNumber(serialNumber: string): Promise<DispositivoRow | null> {
     const r = await this.client.query<DispositivoRow>(
       `SELECT id, serial_number, brand, model, status, created_at, created_by,
-              revoked_at, revoked_reason, assigned_student_id
+              revoked_at, revoked_reason
          FROM dispositivos
         WHERE serial_number = $1`,
       [serialNumber],
@@ -115,7 +124,7 @@ export class PgDispositivoRepo {
     const countResult = await this.client.query<{ total: number }>(countSql, params);
     const total = countResult.rows[0]?.total ?? 0;
     const listSql = `SELECT id, serial_number, brand, model, status, created_at, created_by,
-                            revoked_at, revoked_reason, assigned_student_id
+                            revoked_at, revoked_reason
                        FROM dispositivos ${whereSql}
                        ORDER BY created_at DESC
                        LIMIT $${p++} OFFSET $${p++}`;
@@ -156,7 +165,7 @@ export class PgDispositivoRepo {
               model = COALESCE($3, model)
         WHERE id = $1
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason, assigned_student_id`,
+                  revoked_at, revoked_reason`,
       [id, args.brand ?? null, args.model ?? null],
     );
     return r.rows[0] ?? null;
@@ -170,7 +179,7 @@ export class PgDispositivoRepo {
               status = 'revoked'
         WHERE id = $1 AND status = 'active'
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason, assigned_student_id`,
+                  revoked_at, revoked_reason`,
       [id, reason],
     );
     return r.rows[0] ?? null;
@@ -180,9 +189,8 @@ export class PgDispositivoRepo {
    * Logical-delete model: reactivate a revoked device (un-revoke / re-register
    * over the same row). Only `status`, `revoked_at`, `revoked_reason`, and the
    * optional brand/model are touched — `created_at`/`created_by` (first
-   * registration identity) and `assigned_student_id` are intentionally left
-   * untouched, so the physical device keeps one stable row and the audit trail
-   * never dangles.
+   * registration identity) are intentionally left untouched, so the
+   * physical device keeps one stable row and the audit trail never dangles.
    */
   async reactivate(
     id: number,
@@ -197,29 +205,8 @@ export class PgDispositivoRepo {
               model = COALESCE($3, model)
         WHERE id = $1 AND status = 'revoked'
         RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason, assigned_student_id`,
+                  revoked_at, revoked_reason`,
       [id, args.brand ?? null, args.model ?? null],
-    );
-    return r.rows[0] ?? null;
-  }
-
-  /**
-   * B2b / Canvas-bound device assignment: write side.
-   *
-   * Sets (or clears, when `studentId` is NULL) the device owner. This is a
-   * pure write: every fail-closed predicate (active device, active student,
-   * existing student) is enforced by the service before calling this method.
-   * Passing NULL always succeeds for an existing row because removing an
-   * owner can never grant access.
-   */
-  async assignStudent(id: number, studentId: number | null): Promise<DispositivoRow | null> {
-    const r = await this.client.query<DispositivoRow>(
-      `UPDATE dispositivos
-          SET assigned_student_id = $2
-        WHERE id = $1
-        RETURNING id, serial_number, brand, model, status, created_at, created_by,
-                  revoked_at, revoked_reason, assigned_student_id`,
-      [id, studentId],
     );
     return r.rows[0] ?? null;
   }
@@ -243,13 +230,10 @@ export class PgDispositivoRepo {
    * all collapse into the same "no row" outcome. The device is never
    * required to be assigned to that student (shared classroom pool).
    *
-   * The returned `owner` field is historical: it now means "the device
-   * is approved and the student resolved"; phase 2 renames this surface
-   * when `dispositivos.assigned_student_id` is dropped. Returning a
-   * single boolean (plus the resolved student id) keeps the surface
-   * minimal: callers get `{ owner: true, studentId }` on success or
-   * `{ owner: false, studentId: null }` on any deny — no enum of
-   * failure modes to leak, and no serial in the result.
+   * Returning a single boolean (plus the resolved student id) keeps
+   * the surface minimal: callers get `{ owner: true, studentId }` on
+   * success or `{ owner: false, studentId: null }` on any deny — no
+   * enum of failure modes to leak, and no serial in the result.
    */
   async findActiveOwnerBySerialAndCanvasId(
     serialNumber: string,

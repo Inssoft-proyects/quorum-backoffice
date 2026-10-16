@@ -34,7 +34,10 @@
  *   4. Look up the device by `serial_number`. If not found, status
  *      != 'active', or `revoked_at IS NOT NULL` → `deny.device_unknown`.
  *      The device is an authorization factor (approved allowlist),
- *      not an identity factor. NEVER log the serial.
+ *      not an identity factor; the marbete → device → student binding
+ *      is no longer enforced (fase 2 retired
+ *      `dispositivos.assigned_student_id` and
+ *      `deny.device_not_bound_to_student`). NEVER log the serial.
  *   5. Call `OtpClient.verify` with
  *      `subject = String(canvas_user_id)` and
  *      `scope = 'mfa.access'`. Map: `ok=true` → continue;
@@ -189,7 +192,6 @@ export interface MfaDeny {
     | 'deny.marbete_unknown'
     | 'deny.student_inactive'
     | 'deny.device_unknown'
-    | 'deny.device_not_bound_to_student'
     | 'deny.otp_invalid'
     | 'deny.dependency_fail';
   message: string;

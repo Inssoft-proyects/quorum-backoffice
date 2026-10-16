@@ -8,8 +8,9 @@
  *                          students_cache.id + is_active
  *                            ↓
  *                          dispositivos.serial_number
- *                            ↓
- *                          dispositivos.assigned_student_id
+ *                            ↓ (shared approved-device allowlist — see
+ *                               `findActiveOwnerBySerialAndCanvasId` in
+ *                               `pg-dispositivos.ts`)
  *
  * plus the student-session INSERT and the `student.mfa_authenticate`
  * audit row. It is intentionally separate from `pg-marbetes.ts` and
@@ -29,6 +30,16 @@
  *      accepts a typed `MfaRepoLike` interface (see below) so the
  *      unit suite can exercise the policy order with deterministic
  *      fakes without ever hitting a real database.
+ *
+ * Fase 2 / dispositivos-assignment-retirement:
+ *   - `dispositivos.assigned_student_id` was dropped by migration 0022;
+ *     `MfaDeviceRow` no longer carries the column and
+ *     `findDeviceBySerialNumber` does not SELECT it. The device is an
+ *     authorization factor (shared approved allowlist), not an identity
+ *     factor, so the service stops comparing the device owner to the
+ *     marbete's owner.
+ *   - `marbetes.assigned_student_id` is INTENTIONALLY preserved (the
+ *     marbete → student FK is the spine of the MFA chain).
  *
  * Mirrors the snake_case-at-SQL-boundary / camelCase-response shape
  * used by `pg-marbetes.ts` and `pg-dispositivos.ts` so the row
@@ -85,18 +96,18 @@ export interface MfaStudentRow {
 
 /**
  * The device row the MFA service hydrates from
- * `dispositivos.serial_number`. `assigned_student_id` is the internal
- * `students_cache.id` (NOT the canvas_user_id, NOT the marbete's
- * student id). The MFA service rejects the request with
- * `deny.device_not_bound_to_student` when this value does not match
- * the student the marbete points to.
+ * `dispositivos.serial_number`. Fase 2 retired
+ * `dispositivos.assigned_student_id`; the device is now an
+ * authorization factor (shared approved allowlist), not an identity
+ * factor, so the MFA service no longer compares the device owner to
+ * the marbete's student. The row carries only the columns that the
+ * fail-closed active + non-revoked check consults.
  */
 export interface MfaDeviceRow {
   id: number;
   serial_number: string;
   status: 'active' | 'revoked';
   revoked_at: Date | null;
-  assigned_student_id: number | null;
 }
 
 /**
@@ -176,14 +187,18 @@ export class PgMfaRepo {
 
   /**
    * Look up a device by its `serial_number`. The MFA service checks
-   * the returned row against the marbete's `assigned_student_id`:
+   * the returned row's status + soft-revoked flag only:
    *
-   *   - row not found                       → `deny.device_unknown`
-   *   - row found, status != 'active'       → `deny.device_unknown`
-   *   - row found, status = 'active',
-   *     assigned_student_id IS NULL         → `deny.device_unknown`
-   *   - row found, status = 'active',
-   *     assigned_student_id != student.id   → `deny.device_not_bound_to_student`
+   *   - row not found                  → `deny.device_unknown`
+   *   - row found, status != 'active'  → `deny.device_unknown`
+   *   - row found, revoked_at != NULL  → `deny.device_unknown`
+   *
+   * Fase 2 retired `dispositivos.assigned_student_id`; the device is
+   * a shared approved-allowlist factor, NOT an identity factor, so
+   * the service no longer compares the device owner to the marbete's
+   * student. Any device row that is `status='active'` and not
+   * soft-revoked is accepted (the access decision is gated by the
+   * marbete's student lookup, not by device ownership).
    *
    * The serial is returned for the audit row's denormalized context
    * (so the operator can correlate the MFA event with a device
@@ -191,7 +206,7 @@ export class PgMfaRepo {
    */
   async findDeviceBySerialNumber(serialNumber: string): Promise<MfaDeviceRow | null> {
     const r = await this.client.query<MfaDeviceRow>(
-      `SELECT id, serial_number, status, revoked_at, assigned_student_id
+      `SELECT id, serial_number, status, revoked_at
          FROM dispositivos
         WHERE serial_number = $1`,
       [serialNumber],

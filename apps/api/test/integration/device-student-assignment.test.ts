@@ -4,17 +4,18 @@
  * Exercises `PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId`
  * against a real PostgreSQL connection. The device is an authorization
  * factor (an approved-device allowlist), NOT an identity factor: it is
- * resolved by `canvas_user_id` (parameter $2), never by the nullable
- * `dispositivos.assigned_student_id` FK (which is kept but not consulted).
+ * resolved by `canvas_user_id` (parameter $2). Fase 2 retired the
+ * `dispositivos.assigned_student_id` FK column outright (migration
+ * 0022); this repository method was always canvas_user_id-driven and
+ * is INTENTIONALLY preserved.
  *
  * Each test seeds its own devices and students so the suite is order-
  * independent. The fail-closed contract requires a single negative
  * answer for every non-approvable case; we triangulate:
  *
  *   - happy path     : active device + active student + matching canvas_user_id → resolved
- *   - unassigned     : active device with assigned_student_id NULL + active student → resolved
  *   - revoked        : device exists with status='revoked'  → not resolved
- *   - other user     : active device assigned to another student, queried with an active canvas_user_id → resolved
+ *   - other user     : active device, queried with an active canvas_user_id → resolved
  *   - inactive       : queried canvas_user_id has is_active=false → not resolved
  *   - missing        : canvas_user_id not present in students_cache → not resolved
  *   - missing device : serial that was never registered → not resolved
@@ -64,15 +65,21 @@ async function seedDevice(
   args: {
     serial: string;
     status?: 'active' | 'revoked';
-    assignedStudentId?: number | null;
+    // Fase 2 retired `dispositivos.assigned_student_id`; the seed
+    // helper keeps the optional parameter for backward-compatible
+    // call sites but ignores it. The shared-device allowlist model
+    // binds the device to nothing — the read-path resolves the
+    // device by `canvas_user_id` via
+    // `findActiveOwnerBySerialAndCanvasId`, NOT by any (now-absent)
+    // device→student FK.
   },
 ): Promise<number> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO dispositivos
-       (serial_number, brand, model, status, created_by, assigned_student_id, revoked_at)
-     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3, $4)
+       (serial_number, brand, model, status, created_by, revoked_at)
+     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', NULL)
      RETURNING id`,
-    [args.serial, args.status ?? 'active', args.assignedStudentId ?? null, null],
+    [args.serial, args.status ?? 'active'],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('device_seed_failed');
@@ -118,12 +125,11 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
     await pool.end();
   });
 
-  it('returns owner=true for active device assigned to active student with matching canvas_user_id', async () => {
+  it('returns owner=true for active device with matching canvas_user_id (fase 2 ignores the retired device→student FK)', async () => {
     const studentId = await seedStudent(pool, 50_001, 'Marie Curie', true);
     await seedDevice(pool, {
       serial: 'SN-B1-HAPPY-1',
       status: 'active',
-      assignedStudentId: studentId,
     });
 
     const result: DeviceOwnerCheck = await repo.findActiveOwnerBySerialAndCanvasId(
@@ -138,7 +144,6 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
     await seedDevice(pool, {
       serial: 'SN-B1-UNASSIGNED-1',
       status: 'active',
-      assignedStudentId: null,
     });
 
     const result = await repo.findActiveOwnerBySerialAndCanvasId(
@@ -149,11 +154,10 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
   });
 
   it('returns owner=false when the device is revoked (fail-closed)', async () => {
-    const studentId = await seedStudent(pool, 50_003, 'Revoked Owner', true);
+    await seedStudent(pool, 50_003, 'Revoked Owner', true);
     await seedDevice(pool, {
       serial: 'SN-B1-REVOKED-1',
       status: 'revoked',
-      assignedStudentId: studentId,
     });
 
     const result = await repo.findActiveOwnerBySerialAndCanvasId(
@@ -163,13 +167,12 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
     expect(result).toEqual({ owner: false, studentId: null });
   });
 
-  it('returns owner=true when the device is assigned to a DIFFERENT student (binding not enforced)', async () => {
-    const ownerId = await seedStudent(pool, 50_004, 'Real Owner', true);
+  it('returns owner=true when the device was previously owned by a DIFFERENT student (binding not enforced)', async () => {
+    await seedStudent(pool, 50_004, 'Real Owner', true);
     const impostorId = await seedStudent(pool, 50_005, 'Impostor', true);
     await seedDevice(pool, {
       serial: 'SN-B1-OTHER-USER-1',
       status: 'active',
-      assignedStudentId: ownerId,
     });
 
     const result = await repo.findActiveOwnerBySerialAndCanvasId(
@@ -179,12 +182,11 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
     expect(result).toEqual({ owner: true, studentId: impostorId });
   });
 
-  it('returns owner=false when the assigned student is inactive (graduated/withdrawn)', async () => {
-    const inactiveId = await seedStudent(pool, 50_006, 'Withdrawn Student', false);
+  it('returns owner=false when the canvas_user_id is inactive (graduated/withdrawn)', async () => {
+    await seedStudent(pool, 50_006, 'Withdrawn Student', false);
     await seedDevice(pool, {
       serial: 'SN-B1-INACTIVE-STUDENT-1',
       status: 'active',
-      assignedStudentId: inactiveId,
     });
 
     const result = await repo.findActiveOwnerBySerialAndCanvasId(
@@ -195,11 +197,10 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
   });
 
   it('returns owner=false when the canvas_user_id does not exist in students_cache', async () => {
-    const studentId = await seedStudent(pool, 50_007, 'Real Owner', true);
+    await seedStudent(pool, 50_007, 'Real Owner', true);
     await seedDevice(pool, {
       serial: 'SN-B1-MISSING-USER-1',
       status: 'active',
-      assignedStudentId: studentId,
     });
 
     const result = await repo.findActiveOwnerBySerialAndCanvasId(
@@ -222,7 +223,6 @@ describe('PgDispositivoRepo.findActiveOwnerBySerialAndCanvasId (integration, rea
     await seedDevice(pool, {
       serial: 'SN-B1-IDEMPOTENT-1',
       status: 'active',
-      assignedStudentId: studentId,
     });
     const a = await repo.findActiveOwnerBySerialAndCanvasId('SN-B1-IDEMPOTENT-1', 50_009);
     const b = await repo.findActiveOwnerBySerialAndCanvasId('SN-B1-IDEMPOTENT-1', 50_009);

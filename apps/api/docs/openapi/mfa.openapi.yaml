@@ -16,7 +16,7 @@ info:
     un servicio de confianza necesita para emitir un OTP (`subject = canvas_user_id`).
 
     Taxonomía de denegación (`code`): `deny.marbete_unknown`, `deny.student_inactive`,
-    `deny.device_unknown`, `deny.device_not_bound_to_student`, `deny.otp_invalid`,
+    `deny.device_unknown`, `deny.otp_invalid`,
     `deny.otp_missing`, `deny.dependency_fail`. Errores de forma del request devuelven
     `validation_error` (400).
 servers:
@@ -189,8 +189,7 @@ paths:
         '401':
           description: |
             Fallo de autenticación de servicio (`deny.idp_untrusted`) o denegación de
-            política (`deny.marbete_unknown`, `deny.student_inactive`, `deny.device_unknown`,
-            `deny.device_not_bound_to_student`).
+            política (`deny.marbete_unknown`, `deny.student_inactive`, `deny.device_unknown`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DenyEnvelope' }
@@ -299,7 +298,6 @@ components:
             - deny.marbete_unknown
             - deny.student_inactive
             - deny.device_unknown
-            - deny.device_not_bound_to_student
             - deny.otp_invalid
             - deny.otp_missing
             - deny.dependency_fail

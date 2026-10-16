@@ -70,6 +70,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0019_audit_action_mfa_consume.sql',
       '0020_students_sis_id.sql',
       '0021_audit_action_device_reactivate.sql',
+      '0022_drop_device_assignment.sql',
     ]);
     expect(result.skipped).toEqual([]);
   });
@@ -99,6 +100,7 @@ describe('migrations runner (integration, real PG)', () => {
       '0019_audit_action_mfa_consume.sql',
       '0020_students_sis_id.sql',
       '0021_audit_action_device_reactivate.sql',
+      '0022_drop_device_assignment.sql',
     ]);
   });
 
@@ -123,6 +125,34 @@ describe('migrations runner (integration, real PG)', () => {
     );
     const labels = r.rows.map((row) => row.enum_label);
     expect(labels).toContain('dispositivo.reactivate');
+  });
+
+  it('0022_drop_device_assignment drops the dispositivos.assigned_student_id column and its index', async () => {
+    // Fase 2 / dispositivos-assignment-retirement. The migration
+    // drops the FK column and the partial index added by 0015; the
+    // marbete → student FK is INTENTIONALLY preserved.
+    const col = await pool.query<{ column_name: string }>(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_name = 'dispositivos' AND column_name = 'assigned_student_id'`,
+    );
+    expect(col.rows).toHaveLength(0);
+
+    const idx = await pool.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public' AND indexname = 'idx_dispositivos_assigned_student_id'`,
+    );
+    expect(idx.rows).toHaveLength(0);
+
+    // The marbete → student FK is INTENTIONALLY kept (it is the
+    // spine of the MFA chain and is unrelated to the device
+    // allowlist model).
+    const marbeteCol = await pool.query<{ column_name: string }>(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_name = 'marbetes' AND column_name = 'assigned_student_id'`,
+    );
+    expect(marbeteCol.rows).toHaveLength(1);
   });
 
   it('0011_backoffice_username adds a nullable unique users.username column without backfill', async () => {

@@ -95,7 +95,6 @@ export const DenyEnvelope = z.object({
     'deny.marbete_unknown',
     'deny.student_inactive',
     'deny.device_unknown',
-    'deny.device_not_bound_to_student',
     'deny.otp_missing',
     'deny.otp_invalid',
     'deny.dependency_fail',

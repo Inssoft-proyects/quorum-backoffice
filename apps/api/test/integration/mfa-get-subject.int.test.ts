@@ -125,18 +125,22 @@ async function seedDevice(
   args: {
     serial: string;
     status?: 'active' | 'revoked';
-    assignedStudentId?: number | null;
+    // Fase 2 retired `dispositivos.assigned_student_id`; the
+    // seed helper keeps the optional parameter for backward-
+    // compatible call sites but ignores it. The shared-device
+    // allowlist model binds the device to nothing — the MFA
+    // chain consults the marbete's `assigned_student_id`,
+    // not the device's.
   },
 ): Promise<number> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO dispositivos
-       (serial_number, brand, model, status, created_by, assigned_student_id, revoked_at)
-     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3, $4)
+       (serial_number, brand, model, status, created_by, revoked_at)
+     VALUES ($1, 'TestBrand', 'TestModel', $2::dispositivo_status, 'tester', $3)
      RETURNING id`,
     [
       args.serial,
       args.status ?? 'active',
-      args.assignedStudentId ?? null,
       args.status === 'revoked' ? new Date() : null,
     ],
   );
@@ -218,8 +222,8 @@ describe('POST /api/v1/mfa/get-subject — S2S identity resolution (integration,
     await seedStudent(pool, CANVAS_INACTIVE, 'Inactive GetSubject Student', false);
 
     await seedMarbete(pool, { code: CODE_HAPPY, assignedStudentId: studentId });
-    await seedDevice(pool, { serial: SERIAL_HAPPY, assignedStudentId: studentId });
-    await seedDevice(pool, { serial: SERIAL_OTHER, assignedStudentId: otherStudentId });
+    await seedDevice(pool, { serial: SERIAL_HAPPY });
+    await seedDevice(pool, { serial: SERIAL_OTHER });
   });
 
   // (a) transport-auth matrix -------------------------------------------------
@@ -333,10 +337,7 @@ describe('POST /api/v1/mfa/get-subject — S2S identity resolution (integration,
       code: 'GETSUBJ-INACTIVE-STU-003',
       assignedStudentId: inactiveId,
     });
-    await seedDevice(pool, {
-      serial: 'SN-GETSUBJ-INACTIVE',
-      assignedStudentId: inactiveId,
-    });
+    await seedDevice(pool, { serial: 'SN-GETSUBJ-INACTIVE' });
     const res = await inject({
       marbete_code: 'GETSUBJ-INACTIVE-STU-003',
       serial_number: 'SN-GETSUBJ-INACTIVE',

@@ -118,12 +118,13 @@ function makeStudentRow(overrides: Partial<MfaStudentRow> = {}): MfaStudentRow {
 }
 
 function makeDeviceRow(overrides: Partial<MfaDeviceRow> = {}): MfaDeviceRow {
+  // Fase 2 retired `dispositivos.assigned_student_id`; the device
+  // is now a shared approved allowlist (no per-row owner column).
   return {
     id: 200,
     serial_number: 'SN-UNIT-1',
     status: 'active',
     revoked_at: null,
-    assigned_student_id: 100,
     ...overrides,
   };
 }
@@ -426,8 +427,12 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
     expect(built.otp.calls).toHaveLength(0);
   });
 
-  it('3c) unassigned device (assigned_student_id IS NULL) passes the device check (shared allowlist)', async () => {
-    built.repo.setDevice(makeDeviceRow({ assigned_student_id: null }));
+  it('3c) any active device passes the device check (shared approved allowlist; fase 2 retired the per-row owner column)', async () => {
+    // The previous fase-1 contract checked
+    // `device.assigned_student_id IS NULL`; fase 2 retired the
+    // column. Any active, non-revoked device now passes the
+    // device check (the device is purely a shared allowlist
+    // factor, NOT bound to a student).
     built.otp.setNext({ ok: false, reason: 'invalid' });
     await expect(built.service.authenticate(baseInput(), META)).rejects.toMatchObject({
       code: 'deny.otp_invalid',
@@ -437,8 +442,12 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
 
   // ---- (5) device binding is no longer enforced ----
 
-  it('4) device bound to a DIFFERENT student passes the device check (binding is not enforced)', async () => {
-    built.repo.setDevice(makeDeviceRow({ assigned_student_id: 999 }));
+  it('4) any active device passes the device check (binding is not enforced; the previous "different student" case is now moot)', async () => {
+    // Before fase 2, this test asserted the device passed the
+    // check even when bound to a different student. Now that the
+    // binding column is gone, ANY active, non-revoked device
+    // passes — the explicit "different student" override is
+    // deleted.
     built.otp.setNext({ ok: false, reason: 'invalid' });
     await expect(built.service.authenticate(baseInput(), META)).rejects.toMatchObject({
       code: 'deny.otp_invalid',

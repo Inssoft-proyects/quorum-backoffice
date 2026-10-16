@@ -25,7 +25,7 @@
  *   - 401 Unauthorized — transport auth failure
  *     (`deny.idp_untrusted`) OR a deny in the MFA taxonomy
  *     (`deny.marbete_unknown`, `deny.student_inactive`,
- *     `deny.device_unknown`, `deny.device_not_bound_to_student`).
+ *     `deny.device_unknown`).
  *
  * The raw-body capture plugin (`captureRawBodyPlugin`) is registered
  * globally by `registerAccessDecisionsRoutes` (which runs first in
