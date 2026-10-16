@@ -170,16 +170,22 @@ export class PgMarbeteRepo {
   async studentOf(studentId: number): Promise<{
     id: number;
     canvas_user_id: number;
-    full_name: string;
-    email: string;
+    sis_id: string | null;
+    full_name: string | null;
+    email: string | null;
   } | null> {
+    // Includes sis_id (added in 0020) and treats full_name / email
+    // as nullable (NOT NULL was dropped in 0020). The marbetes
+    // service maps the row into the MarbeteDetailResponse.student
+    // projection whose wire shape is now `sisId + nullable PII`.
     const r = await this.client.query<{
       id: number;
       canvas_user_id: number;
-      full_name: string;
-      email: string;
+      sis_id: string | null;
+      full_name: string | null;
+      email: string | null;
     }>(
-      `SELECT id, canvas_user_id, full_name, email
+      `SELECT id, canvas_user_id, sis_id, full_name, email
          FROM students_cache WHERE id = $1`,
       [studentId],
     );

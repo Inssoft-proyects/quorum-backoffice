@@ -60,3 +60,7 @@ next-env.d.ts
 /blob-report/
 /playwright/.cache/
 apps/*/test-results/
+
+# Synthetic seeder outputs (mapping JSON, etc.) — operator-local, may
+# contain real Canvas user ids from the target environment.
+apps/api/scripts/synthetic/out/
