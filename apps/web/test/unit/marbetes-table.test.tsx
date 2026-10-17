@@ -20,6 +20,7 @@ const sample: MarbeteDetailResponse[] = [
     student: {
       id: 10,
       canvasUserId: 100,
+      sisId: null,
       fullName: 'Ada Lovelace',
       email: 'ada@quorum.local',
     },
