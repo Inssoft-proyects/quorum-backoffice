@@ -659,27 +659,69 @@ describe('MfaAuthenticateService.authenticate — policy order (unit, mocked OTP
     expect(ins.userAgent).toBe('jest-unit/1.0');
   });
 
-  it('7) success path with sis_id IS NULL surfaces `matricula: null` on the wire result (legacy / synthetic row)', async () => {
-    // A legacy / synthetic high-privacy row carries
-    // `students_cache.sis_id = NULL`. The service must NOT
-    // coerce the NULL to '' (the Jitsi proxy MUST see
-    // `null` so it can branch on "we still don't know the
-    // matrícula" vs. "we have one"). The DTO accepts a
-    // null value; the route echoes it verbatim.
+  it('7) sis_id IS NULL → deny.dependency_fail, NO OTP burned, NO session issued (B5 S5 fail-closed gate)', async () => {
+    // B5 / S5 contract change: a student whose
+    // `students_cache.sis_id` is NULL (legacy / synthetic
+    // row whose matrícula was never back-filled) is denied
+    // with `deny.dependency_fail`. The gate runs AFTER the
+    // student + device checks and BEFORE the OTP
+    // verification, so the OTP MUST NOT be consumed and
+    // NO session row MUST be issued. The previous
+    // pre-S5 contract (asserting that the success path
+    // returned `matricula: null` and issued a session)
+    // is the conversion this test now supersedes.
     built.repo.setStudent(makeStudentRow({ sis_id: null }));
-    built.otp.setNext({ ok: true, otpId: 'otp-mfa-unit-null-matricula' });
-    const result = await built.service.authenticate(baseInput(), META);
-    expect(result.canvasUserId).toBe(7001);
-    expect(result.matricula).toBeNull();
-    // The deny-path invariants still hold: PII leakage
-    // guards (no code/serial/OTP in any output) and the
-    // session insert is still issued.
-    expect(built.repo.sessionInserts).toHaveLength(1);
+    const otpCallsBefore = built.otp.calls.length;
+    let caught: unknown;
+    try {
+      await built.service.authenticate(baseInput(), META);
+      throw new Error('expected_MfaAuthenticateError');
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(MfaAuthenticateError);
+    expect(caught).toMatchObject({ code: 'deny.dependency_fail' });
+    // Gate runs BEFORE OTP → no verify call fired.
+    expect(built.otp.calls).toHaveLength(otpCallsBefore);
+    // Gate runs BEFORE session insert → no row created.
+    expect(built.repo.sessionInserts).toHaveLength(0);
+    // The deny audit row was still written so the
+    // operator can pivot the log by student; it uses the
+    // canvas_user_id (the student IS resolved, the gate
+    // fires AFTER), NOT 'unknown'.
     expect(built.audit).toHaveLength(1);
-    const auditJson = JSON.stringify(built.audit[0]);
+    const row = built.audit[0]!;
+    expect(row.entityId).toBe('7001');
+    expect(row.metadata?.['outcome']).toBe('deny.dependency_fail');
+    expect(row.metadata?.['student_name']).toBe('Marie Curie');
+    // The deny envelope MUST NOT leak the raw code /
+    // serial / OTP.
+    const deny = caught as MfaAuthenticateError;
+    const serialized = JSON.stringify({
+      code: deny.code,
+      message: deny.message,
+      details: deny.details,
+    });
+    expect(serialized).not.toContain('PLAINTEXT-CODE-12345');
+    expect(serialized).not.toContain('SN-UNIT-1');
+    expect(serialized).not.toContain('123456');
+    const auditJson = JSON.stringify(row);
     expect(auditJson).not.toContain('PLAINTEXT-CODE-12345');
     expect(auditJson).not.toContain('SN-UNIT-1');
     expect(auditJson).not.toContain('123456');
+  });
+
+  it('7-bis) non-null sis_id → happy path remains unchanged (matrícula round-trips into result)', async () => {
+    // Inverse of the S5 gate: a student with a real SIS
+    // matrícula (the default seed carries `sis_id:
+    // 'A00001'`) completes the MFA chain and the
+    // response carries the same value.
+    built.otp.setNext({ ok: true, otpId: 'otp-mfa-s5-happy' });
+    const result = await built.service.authenticate(baseInput(), META);
+    expect(result.canvasUserId).toBe(7001);
+    expect(result.matricula).toBe('A00001');
+    expect(built.repo.sessionInserts).toHaveLength(1);
+    expect(built.audit).toHaveLength(1);
   });
 
   it('8) the matrícula on the wire result matches the value the repo SELECTed (no coercion / transformation)', async () => {

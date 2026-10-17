@@ -17,8 +17,11 @@ info:
 
     Taxonomía de denegación (`code`): `deny.marbete_unknown`, `deny.student_inactive`,
     `deny.device_unknown`, `deny.otp_invalid`,
-    `deny.otp_missing`, `deny.dependency_fail`. Errores de forma del request devuelven
-    `validation_error` (400).
+    `deny.otp_missing`, `deny.dependency_fail`. `deny.dependency_fail` también se emite
+    cuando el `sis_id` del estudiante resuelto es NULL (B5 S5: la matrícula aún no fue
+    hidratada desde Canvas); el gate corre después del estudiante + dispositivo y antes del
+    OTP, así que no se quema OTP ni se emite sesión. Errores de forma del request
+    devuelven `validation_error` (400).
 servers:
   - url: /
     description: Relativo al host que sirve la documentación (backend.* o backoffice.*)
@@ -189,7 +192,8 @@ paths:
         '401':
           description: |
             Fallo de autenticación de servicio (`deny.idp_untrusted`) o denegación de
-            política (`deny.marbete_unknown`, `deny.student_inactive`, `deny.device_unknown`).
+            política (`deny.marbete_unknown`, `deny.student_inactive`,
+            `deny.device_unknown`, `deny.dependency_fail` cuando `sis_id IS NULL`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DenyEnvelope' }

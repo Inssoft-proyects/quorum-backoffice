@@ -319,12 +319,14 @@ tested but **not deployed**; no live caller exists yet.
   any device detail (enforced by a parametric leak-guard test).
 - **OTP scope**: `access.decision` (`ACCESS_DECISION_OTP_SCOPE`); the
   OTP subject is `String(canvas_user_id)`.
-- **Deferred**: audit rows for decision outcomes and the true Canvas
-  SIS lookup (`students_cache.matricula`, migration `0017`) are
-  contract-defined but not implemented — the SIS source endpoint is an
-  operator decision; until then the fail-closed default
-  (`deny.dependency_fail` wherever a matrícula would be required) is
-  the correct production behavior.
+- **Implemented (B5)**: Canvas SIS lookup is the authoritative
+  matrícula source. `students_cache.sis_id` (migration `0020`) is
+  hydrated from `sis_user_id` on the Canvas portal-api
+  `/v1/students` payload; rows whose `sis_id` is NULL when the MFA
+  chain resolves them are denied with `deny.dependency_fail` (no
+  OTP burned, no session issued). The earlier "Deferred: true Canvas
+  SIS lookup" line is retired — see `odd/tasks/canvas-sis-lookup-b5.md`
+  for the cross-repo contract.
 
 ### Manual smoke: access decision (B3)
 

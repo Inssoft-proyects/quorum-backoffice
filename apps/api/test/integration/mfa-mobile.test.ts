@@ -118,11 +118,19 @@ async function seedStudent(
   canvasId: number,
   name: string,
   active: boolean,
+  sisId: string | null = null,
 ): Promise<number> {
+  // B5 / S5: the MFA chain fails closed when the
+  // resolved student's `sis_id IS NULL`. The mobile suite
+  // seeds every student with a SIS id so the contract
+  // change does not flip a happy-path test into a deny.
+  // Tests that exercise the null branch override via the
+  // 5th argument (kept nullable so the same call sites
+  // work for both branches).
   const r = await pool.query<{ id: number }>(
-    `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [canvasId, name, `student-${canvasId}@quorum.local`, active],
+    `INSERT INTO students_cache (canvas_user_id, full_name, email, sis_id, is_active)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [canvasId, name, `student-${canvasId}@quorum.local`, sisId, active],
   );
   const id = r.rows[0]?.id;
   if (!id) throw new Error('student_seed_failed');
@@ -282,8 +290,8 @@ describe('M5 / Mobile contract for POST /api/v1/mfa/authenticate', () => {
     await pool.query(`DELETE FROM marbetes`);
     await pool.query(`DELETE FROM students_cache`);
 
-    studentAId = await seedStudent(pool, CANVAS_A, 'Mobile Student A', true);
-    studentBId = await seedStudent(pool, CANVAS_B, 'Mobile Student B', true);
+    studentAId = await seedStudent(pool, CANVAS_A, 'Mobile Student A', true, 'MOBILAA');
+    studentBId = await seedStudent(pool, CANVAS_B, 'Mobile Student B', true, 'MOBILBB');
     await seedMarbete(pool, {
       code: CODE_A,
       publicUid: 'm-MOBILE-A',
@@ -404,10 +412,11 @@ describe('M5 / Mobile contract for POST /api/v1/mfa/authenticate', () => {
     expect(body['student_name']).toBe('Mobile Student A');
     expect(typeof body['student_email']).toBe('string');
     expect(body['student_email']).toBe(`student-${CANVAS_A}@quorum.local`);
-    // matricula mirrors students_cache.sis_id; the seeded mobile
-    // student carries no SIS id, so it surfaces as null (the DTO
-    // makes it nullable for legacy / synthetic rows).
-    expect(body['matricula']).toBeNull();
+    // matricula mirrors students_cache.sis_id; the seeded
+    // mobile student carries `MOBILAA` (set in beforeEach so
+    // the B5 S5 fail-closed gate does not reject the
+    // authenticate).
+    expect(body['matricula']).toBe('MOBILAA');
     expect(body['role']).toBe('student');
     expect(typeof body['session_id']).toBe('string');
     // The session_id is the same opaque base64url string the

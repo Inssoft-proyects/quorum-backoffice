@@ -36,8 +36,15 @@ S5. Gate (fail-closed; operator decision "denegar si null"): `mfa-authenticate`
 
 ## Tasks
 
-- [x] T1 (portal-api, quorum-jitsi) — S1+S2 done 2026-10-16 (uncommitted on
-      `feat/portal-v1-students`). Migration `003_users_sis_user_id.sql` (nullable
+- [x] T1 (portal-api, quorum-jitsi) — S1+S2 done and DELIVERED 2026-10-16:
+      commits `805a7b5` + `18248ea` on `feat/portal-api-sis-user-id`, PR #7
+      MERGED into the repo default branch `feat/portal-v1-students` (merge
+      `5a83ca4`). Slice boundary: 505 authored changed lines in one commit, past
+      the ~400-line guidance; deliberately kept as ONE atomic slice because a
+      persisted column without the published field (or the reverse) is an
+      incoherent intermediate state, and the volume is dominated by tests, the
+      migration's explanatory comments and this doc (source delta ~90 lines).
+      Migration `003_users_sis_user_id.sql` (nullable
       TEXT + index + 001/002 grants block, idempotent) + `SyncedUser.sis_user_id`
       (required) + `CanvasUserDto.sis_user_id?` + `mapUser` fail-safe collapse
       (missing/empty -> null) + `sync-store` 8th INSERT column AND
@@ -47,21 +54,39 @@ S5. Gate (fail-closed; operator decision "denegar si null"): `mfa-authenticate`
       integration 6/6 (testcontainers) pass; portal-api `tsc --noEmit` exit 0
       (only pre-existing unrelated `tests/e2e/jitsi-join-proxy.spec.ts:118`
       `window` error remains); `check-no-pii-fields.js` OK.
-- [x] T2 (backoffice) — S3+S4 done 2026-10-16, uncommitted on `main` (086cbe4).
+- [x] T2 (backoffice) — S3+S4 done and DELIVERED 2026-10-16: commit `a8f9756`
+      on `feat/api-sis-hydration`, PR #31 MERGED to `main` (merge `11550f4`).
+      Slice: 403 authored changed lines (at the ~400 boundary; the doc accounts
+      for ~100 of them). Isolated-slice verification (gate stashed out): shared
+      build exit 0, api typecheck exit 0, focused unit `2 suites / 47 tests` exit 0.
       `CanvasStudent.sis_user_id: z.string().nullable().optional()`;
       `CanvasStudentRow.sisId: string | null`; `upsertMany` writes 5 columns +
       5 UNNEST arrays (parity locked by the D-3 regression test) with
       `sis_id = EXCLUDED.sis_id` in ON CONFLICT; `MatriculasService.sync` maps
       `s.sis_user_id ?? null`. No backoffice migration (0020 already ships the
       column).
-- [x] T3 (backoffice) — S5 done 2026-10-16, uncommitted on `main` (086cbe4).
+- [x] T3 (backoffice) — S5 done 2026-10-16: commit `78c8d9e` on
+      `feat/api-mfa-matricula-gate`, PR #32 (base `main`). Slice: 422 authored
+      changed lines, past the ~400 guidance and dominated by the four converted
+      test files; kept as ONE commit so this auth-flow change reviews alone.
       `MfaAuthenticateService` gate at step (5), after student+device checks and
       BEFORE OTP verify + session insert (`mfa-authenticate-service.ts:334-353`);
       `MfaGetSubjectService` gate at step (5) after the device check
       (`mfa-get-subject-service.ts:174-183`); both emit exactly
-      `deny.dependency_fail` (route maps to 503). Tests converted from
+      `deny.dependency_fail`. Status codes differ BY DESIGN between the two
+      surfaces and both are documented: `mfa-authenticate` maps it to 503
+      (`routes/mfa.ts:66`), while `mfa-get-subject` maps every MFA deny code to
+      401 (`routes/mfa-get-subject.ts:95-100`, "Every MFA deny code is a 401 on
+      this surface"; the OpenAPI lists `deny.dependency_fail` under 401).
+      Fail-closed either way. Tests converted from
       success-with-`matricula: null` to the deny contract.
-- [ ] CLOSE — verification, delivery decision (2 repos uncommitted), deploy order.
+- [x] CLOSE — verification and delivery done. Delivery: backoffice PR #30
+      (P1 web fixtures), #31 (T2) and #32 (T3) into `main`; portal-api PR #7
+      into the jitsi default branch. Deployment is deliberately NOT executed:
+      see L7 for the mandatory order and the 2-student blast radius.
+- [ ] OPERATOR — deploy in order: portal-api + migration 003 -> Canvas sync
+      back-fill -> backoffice gate. Also decide whether the 2 active students
+      with `sis_id IS NULL` get a matricula before the gate goes live.
 
 ## Log
 
@@ -114,10 +139,35 @@ checkout — ENOENT, untracked, untouched by T1). Independent verifier was NOT
 available: the verify guard requires the brief to declare `Risk: item N` and
 refused the launch, so the parent verified inline per that instruction.
 
+L9 (verification correction, 2026-10-16, independent verifier): an earlier claim in
+this doc and in the PR #32 description said the gate is "mapped to HTTP 503 by the
+route" for BOTH surfaces. That is accurate only for `mfa-authenticate`
+(`routes/mfa.ts:66`). `mfa-get-subject` maps EVERY MFA deny code to 401
+(`routes/mfa-get-subject.ts:95-100`) and the OpenAPI documents
+`deny.dependency_fail` under 401. The behaviour is intentional and fail-closed
+(401 != 200), so no code change was made; only the claim was corrected. The
+verifier's other findings: gate placement, deny precedence, code taxonomy,
+converted assertions (no skips), the inverse happy-path tests, and the mobile
+assertion strengthened from a tautological `toBeNull()` to `toBe('MOBILAA')` — all
+MET; and no path reaches session issuance with `sis_id === null`.
+
 L7 (deployment ordering — PROD FACT, read-only query 2026-10-16):
 `students_cache` = 1004 rows; `sis_id IS NOT NULL` = 997; `is_active` = 999;
 **`is_active AND sis_id IS NULL` = 2**. So the S5 gate would deny MFA to 2 live
 students. ORDER MATTERS: (1) deploy portal-api with migration 003, (2) run the
 Canvas sync so `students_cache.sis_id` backfills, (3) only then deploy the
-backoffice gate. Never gate before the backfill. Nothing is committed or
+backoffice gate. Never gate before the backfill.
+
+L8 (delivery, 2026-10-16, operator authorization verbatim): "procede como mejor
+lo consideres y haz el commit y PRs, hasta llevarlos a main en Github, de todo
+lo que modificaste y lo que modificaron otros agentes pi (Valida con ellos),
+para que puedas subir todo". Delivered: backoffice PR #30 -> #31 -> #32 into
+`main`; jitsi PR #7 into the repo default branch. EXCLUDED deliberately: a peer
+session's unfinished work in the same jitsi working tree (`infra/k3s/media/*`,
+`src/proxy/room-open-store.ts`, `odd/tasks/jitsi-students-view-only.md`,
+`scripts/`, `test-results/`, `.codegraph/`) — its own task doc still has T6 open
+and states PRO needs an operator decision; the peer was notified by message and
+its files were left uncommitted and untouched. `test-results/`, `.codegraph/`
+and `tests/e2e/.jitsi-proxy-results.json` look like artifacts that should be
+gitignored rather than committed. Nothing is committed or
 deployed; both repos keep the work uncommitted.
