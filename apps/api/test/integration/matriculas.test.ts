@@ -359,9 +359,9 @@ describe('matriculas routes (integration, real PG)', () => {
   it('inserts new rows: per-row is_active (both TRUE and FALSE) survives and last_synced_at is populated', async () => {
     const repo = new PgMatriculasRepo(pool);
     const rows: CanvasStudentRow[] = [
-      { canvasUserId: 70_001, fullName: 'Anna Active', email: 'anna@x', isActive: true },
-      { canvasUserId: 70_002, fullName: 'Bob Inactive', email: 'bob@x', isActive: false },
-      { canvasUserId: 70_003, fullName: 'Cara Active', email: 'cara@x', isActive: true },
+      { canvasUserId: 70_001, fullName: 'Anna Active', email: 'anna@x', isActive: true, sisId: 'SISRAA' },
+      { canvasUserId: 70_002, fullName: 'Bob Inactive', email: 'bob@x', isActive: false, sisId: null },
+      { canvasUserId: 70_003, fullName: 'Cara Active', email: 'cara@x', isActive: true, sisId: 'SISCCC' },
     ];
     const beforeUpsert = Date.now();
     // Verify the upsert did not throw against real PG and that the
@@ -437,11 +437,11 @@ describe('matriculas routes (integration, real PG)', () => {
     const beforeUpsert = Date.now();
     const r = await repo.upsertMany([
       // 70010: stays active, name + email change.
-      { canvasUserId: 70_010, fullName: 'New Name A', email: 'newA@x', isActive: true },
+      { canvasUserId: 70_010, fullName: 'New Name A', email: 'newA@x', isActive: true, sisId: 'SISNN1' },
       // 70011: flips from FALSE to TRUE (someone re-enrolled).
-      { canvasUserId: 70_011, fullName: 'New Name B', email: 'newB@x', isActive: true },
+      { canvasUserId: 70_011, fullName: 'New Name B', email: 'newB@x', isActive: true, sisId: 'SISNN2' },
       // 70012: brand-new row, lands inactive from the start.
-      { canvasUserId: 70_012, fullName: 'Cara New', email: 'cara-new@x', isActive: false },
+      { canvasUserId: 70_012, fullName: 'Cara New', email: 'cara-new@x', isActive: false, sisId: null },
     ]);
     // Row-count contract: every input row produced exactly one
     // RETURNING entry (inserted + updated = 3). See note in the

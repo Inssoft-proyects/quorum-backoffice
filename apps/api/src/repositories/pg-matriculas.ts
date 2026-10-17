@@ -41,12 +41,19 @@ type Client = pg.Pool | pg.PoolClient;
  * omit the flag). The `email` column is the clear-text email the
  * portal publishes when PII minimisation is OFF; when the portal
  * omits it, the service stores the empty string.
+ *
+ * B5 follow-up: `sisId` is the SIS matrícula (`sis_user_id`)
+ * portal-api now publishes per student. NULL when the portal
+ * omits the field OR when the student has no SIS enrolment yet —
+ * the upsert mirrors the NULL into `students_cache.sis_id` so a
+ * later sync can back-fill it.
  */
 export interface CanvasStudentRow {
   canvasUserId: number;
   fullName: string;
   email: string;
   isActive: boolean;
+  sisId: string | null;
 }
 
 /** Upsert outcome counts. Sum equals the row count at ingest time. */
@@ -319,26 +326,38 @@ export class PgMatriculasRepo {
     const fullNames = rows.map((r) => r.fullName);
     const emails = rows.map((r) => r.email);
     const isActives = rows.map((r) => r.isActive);
+    // B5 / S4: 5th UNNEST array carries the SIS matrícula
+    // (`sis_user_id`) the portal publishes per student. NULL
+    // when the portal omits the field or publishes explicit
+    // null; the cache mirrors NULL until a later sync
+    // back-fills it.
+    const sisIds = rows.map((r) => r.sisId);
 
     // `xmax = 0` is the standard "INSERT" sentinel returned by
     // RETURNING after ON CONFLICT DO UPDATE. The other rows are
     // updates (no separate "unchanged" signal at the SQL level).
     //
-    // D-3 fix: the INSERT column list omits `last_synced_at` so the
-    // column DEFAULT `now()` fires on insert. The ON CONFLICT branch
-    // still sets `last_synced_at = now()` so updated rows get a
-    // fresh timestamp. The 4 target columns line up 1:1 with the 4
-    // UNNEST arrays.
+    // D-3 fix: the INSERT column list omits `last_synced_at` so
+    // the column DEFAULT `now()` fires on insert. The ON
+    // CONFLICT branch still sets `last_synced_at = now()` so
+    // updated rows get a fresh timestamp. The 5 target columns
+    // line up 1:1 with the 5 UNNEST arrays.
+    //
+    // B5 / S4: `sis_id` is added as the 5th INSERT column; the
+    // ON CONFLICT branch writes `sis_id = EXCLUDED.sis_id` so a
+    // previously-NULL matrícula is back-filled when Canvas
+    // publishes one. Lock the parity: 5 columns + 5 arrays.
     const r = await this.client.query<{ canvas_user_id: number; xmax: number }>(
-      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active)
-       SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::boolean[])
+      `INSERT INTO students_cache (canvas_user_id, full_name, email, is_active, sis_id)
+       SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::boolean[], $5::text[])
        ON CONFLICT (canvas_user_id) DO UPDATE
          SET full_name = EXCLUDED.full_name,
              email = EXCLUDED.email,
              is_active = EXCLUDED.is_active,
+             sis_id = EXCLUDED.sis_id,
              last_synced_at = now()
        RETURNING canvas_user_id, xmax`,
-      [canvasIds, fullNames, emails, isActives],
+      [canvasIds, fullNames, emails, isActives, sisIds],
     );
 
     let inserted = 0;

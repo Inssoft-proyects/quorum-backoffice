@@ -1041,6 +1041,145 @@ describe('MatriculasService.sync — paging math + upsert counts', () => {
     expect(upsertSql!.params[0]).toEqual([101, 102, 103]);
     expect(upsertSql!.params[3]).toEqual([false, true, true]);
   });
+
+  // B5 / S4: portal-api now publishes `sis_user_id`. The
+  // backoffice MUST forward that value into
+  // `students_cache.sis_id` so an active student with no
+  // matrícula yet is back-filled on the next sync. Legacy
+  // portal builds (which omit the field) MUST keep
+  // working: the service forwards `null` and never
+  // substitutes '' / undefined / a hard-coded fallback.
+  it('forwards sis_user_id into the upsertMany sisId column (non-null case)', async () => {
+    const canvas = makeCanvasClient([
+      {
+        total: 1,
+        items: [
+          {
+            id: 1,
+            canvas_user_id: 101,
+            full_name: 'A',
+            email: 'a@x',
+            sis_user_id: 'TOPGR4',
+          },
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      { rows: [{ canvas_user_id: 101, xmax: 0 }] },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    await svc.sync('admin');
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    // FIVE parameters now: canvasIds, fullNames, emails,
+    // isActives, sisIds. The fifth array carries the
+    // upstream matrícula verbatim. A regression to a
+    // 4-parameter shape (the pre-S4 contract) breaks the
+    // test immediately.
+    expect(upsertSql!.params).toHaveLength(5);
+    expect(upsertSql!.params[4]).toEqual(['TOPGR4']);
+  });
+
+  it('forwards sis_user_id = null into the upsertMany sisId column (explicit null from portal)', async () => {
+    const canvas = makeCanvasClient([
+      {
+        total: 1,
+        items: [
+          {
+            id: 1,
+            canvas_user_id: 101,
+            full_name: 'A',
+            email: 'a@x',
+            // portal publishes `null` — e.g. student
+            // never enrolled in SIS. The cache must
+            // mirror that NULL.
+            sis_user_id: null,
+          },
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      { rows: [{ canvas_user_id: 101, xmax: 0 }] },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    await svc.sync('admin');
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    expect(upsertSql!.params[4]).toEqual([null]);
+  });
+
+  it('defaults sisId to null when the portal omits sis_user_id (legacy portal builds)', async () => {
+    // The PORTAL may not publish sis_user_id at all. The
+    // service must NOT crash, MUST NOT substitute a
+    // hard-coded value, and MUST pass `null` so the
+    // students_cache row keeps its NULL matrícula until
+    // a future published sync back-fills it.
+    const canvas = makeCanvasClient([
+      {
+        total: 1,
+        items: [
+          // No `sis_user_id` key at all.
+          { id: 1, canvas_user_id: 101, full_name: 'A', email: 'a@x' },
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      { rows: [{ canvas_user_id: 101, xmax: 0 }] },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    await svc.sync('admin');
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    expect(upsertSql!.params[4]).toEqual([null]);
+  });
+
+  it('mixed page: per-row sis_user_id forwards to per-row sisId (including nulls)', async () => {
+    // Triangulate the per-row mapping: one row carries a
+    // SIS id, the second publishes explicit null, the
+    // third omits the field. All three map to the
+    // upsertMany's sisIds array in the same position.
+    const canvas = makeCanvasClient([
+      {
+        total: 3,
+        items: [
+          { id: 1, canvas_user_id: 101, full_name: 'A', email: 'a@x', sis_user_id: 'TOPGR4' },
+          { id: 2, canvas_user_id: 102, full_name: 'B', email: 'b@x', sis_user_id: null },
+          { id: 3, canvas_user_id: 103, full_name: 'C', email: 'c@x' }, // field omitted
+        ],
+      },
+    ]);
+    const captured: CapturedQuery[] = [];
+    const responses = [
+      {
+        rows: [
+          { canvas_user_id: 101, xmax: 0 },
+          { canvas_user_id: 102, xmax: 0 },
+          { canvas_user_id: 103, xmax: 0 },
+        ],
+      },
+    ];
+    const pool = makePool({ responses, captured });
+    const svc = buildService({ pool, canvas: canvas.client });
+    await svc.sync('admin');
+    const upsertSql = captured.find((q) =>
+      /INSERT INTO students_cache/i.test(q.sql),
+    );
+    expect(upsertSql).toBeDefined();
+    expect(upsertSql!.params[0]).toEqual([101, 102, 103]);
+    expect(upsertSql!.params[4]).toEqual(['TOPGR4', null, null]);
+  });
 });
 
 describe('MatriculasService — grant-aware OTP', () => {
