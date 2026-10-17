@@ -73,7 +73,12 @@ S5. Gate (fail-closed; operator decision "denegar si null"): `mfa-authenticate`
       BEFORE OTP verify + session insert (`mfa-authenticate-service.ts:334-353`);
       `MfaGetSubjectService` gate at step (5) after the device check
       (`mfa-get-subject-service.ts:174-183`); both emit exactly
-      `deny.dependency_fail` (route maps to 503). Tests converted from
+      `deny.dependency_fail`. Status codes differ BY DESIGN between the two
+      surfaces and both are documented: `mfa-authenticate` maps it to 503
+      (`routes/mfa.ts:66`), while `mfa-get-subject` maps every MFA deny code to
+      401 (`routes/mfa-get-subject.ts:95-100`, "Every MFA deny code is a 401 on
+      this surface"; the OpenAPI lists `deny.dependency_fail` under 401).
+      Fail-closed either way. Tests converted from
       success-with-`matricula: null` to the deny contract.
 - [x] CLOSE — verification and delivery done. Delivery: backoffice PR #30
       (P1 web fixtures), #31 (T2) and #32 (T3) into `main`; portal-api PR #7
@@ -133,6 +138,18 @@ unit 49 suites / 739 passed with **1 pre-existing unrelated failure**
 checkout — ENOENT, untracked, untouched by T1). Independent verifier was NOT
 available: the verify guard requires the brief to declare `Risk: item N` and
 refused the launch, so the parent verified inline per that instruction.
+
+L9 (verification correction, 2026-10-16, independent verifier): an earlier claim in
+this doc and in the PR #32 description said the gate is "mapped to HTTP 503 by the
+route" for BOTH surfaces. That is accurate only for `mfa-authenticate`
+(`routes/mfa.ts:66`). `mfa-get-subject` maps EVERY MFA deny code to 401
+(`routes/mfa-get-subject.ts:95-100`) and the OpenAPI documents
+`deny.dependency_fail` under 401. The behaviour is intentional and fail-closed
+(401 != 200), so no code change was made; only the claim was corrected. The
+verifier's other findings: gate placement, deny precedence, code taxonomy,
+converted assertions (no skips), the inverse happy-path tests, and the mobile
+assertion strengthened from a tautological `toBeNull()` to `toBe('MOBILAA')` — all
+MET; and no path reaches session issuance with `sis_id === null`.
 
 L7 (deployment ordering — PROD FACT, read-only query 2026-10-16):
 `students_cache` = 1004 rows; `sis_id IS NOT NULL` = 997; `is_active` = 999;
