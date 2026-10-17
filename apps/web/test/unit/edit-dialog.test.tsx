@@ -17,6 +17,7 @@ const sample: MarbeteDetailResponse = {
   student: {
     id: 10,
     canvasUserId: 80001,
+    sisId: null,
     fullName: 'Ada Lovelace',
     email: 'ada@quorum.local',
   },
