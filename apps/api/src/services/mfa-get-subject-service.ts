@@ -18,7 +18,16 @@
  *      `deny.student_inactive`.
  *   5. Device lookup by `serial_number`: unknown / revoked →
  *      `deny.device_unknown`.
- *   6. Return `{ canvasUserId, matricula }`.
+ *   6. B5 / S5 fail-closed matrícula gate: if the resolved
+ *      student's `sis_id IS NULL`, deny with
+ *      `deny.dependency_fail`. Mirrors `MfaAuthenticateService`
+ *      step 5 — the gate runs AFTER the device check (so only
+ *      authorized callers learn the row is missing the
+ *      matrícula) and BEFORE the resolve returns. The caller
+ *      (typically a S2S caller that issues OTPs) MUST NOT see
+ *      `{ canvasUserId, matricula: null }` because a `null`
+ *      matrícula would yield an OTP without a Jitsi display name.
+ *   7. Return `{ canvasUserId, matricula }`.
  *
  * The device is an AUTHORIZATION factor, not an identity factor: a
  * shared classroom device must be active + non-revoked (a member of
@@ -157,7 +166,22 @@ export class MfaGetSubjectService {
       });
     }
 
-    // (5) Resolve. The subject is the canvas_user_id (NOT the
+    // (5) B5 / S5 fail-closed matrícula gate. A student whose
+    // `students_cache.sis_id` is NULL (legacy / synthetic row
+    // whose matrícula was never back-filled) MUST NOT be
+    // resolved as `{ canvasUserId, matricula: null }` — the
+    // caller (the S2S service that issues OTPs) would issue
+    // an OTP for a student the Jitsi proxy cannot label.
+    // Deny with `deny.dependency_fail` so the route
+    // propagates the operator-visible fail-closed signal.
+    if (student.sis_id === null) {
+      throw new MfaAuthenticateError({
+        code: 'deny.dependency_fail',
+        message: 'student matrícula (sis_id) is not available',
+      });
+    }
+
+    // (6) Resolve. The subject is the canvas_user_id (NOT the
     // internal students_cache.id) so the caller issues/verifies OTPs
     // with the same wire identifier the MFA flow uses.
     return {

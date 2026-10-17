@@ -507,17 +507,19 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
     expect(body.matricula).toBe('A00001');
   });
 
-  it('happy: synthetic high-privacy student (sis_id IS NULL) surfaces matricula=null on the response', async () => {
-    // A synthetic high-privacy student (inserted before
-    // migration 0020, or a row whose `sis_id` was never
-    // back-filled) carries `sis_id = NULL`. The MFA chain
-    // MUST still issue a session (the chain requires an
-    // active student record, NOT a non-null sis_id), and
-    // the response MUST surface `matricula: null` so the
-    // Jitsi proxy can branch on "we don't know the
-    // matrícula yet" vs. "we have one". A future refactor
-    // that coerces NULL to '' would render an empty
-    // display name and trip this test.
+  it('happy: synthetic high-privacy student (sis_id IS NULL) → 401 deny.dependency_fail (B5 S5 fail-closed gate)', async () => {
+    // B5 / S5 contract change: the previous behaviour issued a
+    // session with `matricula: null` so the Jitsi proxy could
+    // branch on "we don't know the matrícula yet" vs. "we
+    // have one". That behaviour was correct for the
+    // pre-B5 access path, but the B5 cross-repo work made
+    // Canvas the authoritative SIS source: a row whose
+    // `sis_id` was never back-filled represents an
+    // *unresolved* matrícula, not a valid one. The MFA chain
+    // now fails closed with `deny.dependency_fail` so the
+    // caller never burns an OTP NOR gets a session for a
+    // student whose Jitsi display name the backoffice
+    // cannot honour.
     const noMatriculaCanvas = 90_777;
     const noMatriculaStudentId = await seedStudent(
       pool,
@@ -543,13 +545,21 @@ describe('POST /api/v1/mfa/authenticate — M1 endpoint (integration, real PG)',
         }),
       ),
     });
-    expect(r.statusCode).toBe(201);
-    const body = r.json() as {
-      canvas_user_id: number;
-      matricula: string | null;
-    };
-    expect(body.canvas_user_id).toBe(noMatriculaCanvas);
-    expect(body.matricula).toBeNull();
+    // The deny envelope maps to 503 because the route
+    // layer's `denyCodeToHttpStatus` helper collapses
+    // `deny.dependency_fail` to HTTP 503 (the OTP is
+    // never called, but the downstream is unreachable
+    // from the caller's perspective). The fail-closed
+    // gate reuses the MfaAuthenticateError envelope
+    // without route changes.
+    expect(r.statusCode).toBe(503);
+    expect(r.json()).toMatchObject({ code: 'deny.dependency_fail' });
+    // No session row was issued (the gate runs BEFORE session
+    // insertion). The audit row carries the deny outcome so
+    // an operator can pivot the log by student.
+    expect(await auditCount(pool, 'deny.dependency_fail')).toBe(1);
+    const audit = await lastMfaAuditRow(pool);
+    expect(audit?.entity_id).toBe(String(noMatriculaCanvas));
   });
 
   // -----------------------------------------------------------------

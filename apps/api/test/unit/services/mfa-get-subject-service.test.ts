@@ -147,17 +147,31 @@ describe('MfaGetSubjectService.resolve — policy order', () => {
     expect(calls.device).toEqual([RAW_SERIAL]);
   });
 
-  it('matricula is passed through as null when sis_id is null', async () => {
+  it('sis_id IS NULL → deny.dependency_fail (B5 S5: pass-through as null is no longer correct)', async () => {
+    // B5 / S5 contract change: the previous behaviour
+    // passed `matricula: null` through to the caller.
+    // That return shape let a S2S caller issue OTPs for
+    // a student the downstream Jitsi proxy could not
+    // label. The new contract fails closed with
+    // `deny.dependency_fail` so the caller must respect
+    // the operator decision "denegar si null".
     const { repo } = makeRepo({
       marbete: makeMarbeteRow(),
       student: makeStudentRow({ sis_id: null }),
       device: makeDeviceRow(),
     });
-    const result = await makeService(repo).resolve({
-      marbeteCode: RAW_CODE,
-      serialNumber: RAW_SERIAL,
-    });
-    expect(result).toEqual({ canvasUserId: 7001, matricula: null });
+    let caught: unknown;
+    try {
+      await makeService(repo).resolve({
+        marbeteCode: RAW_CODE,
+        serialNumber: RAW_SERIAL,
+      });
+      throw new Error('expected_MfaAuthenticateError');
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(MfaAuthenticateError);
+    expect(caught).toMatchObject({ code: 'deny.dependency_fail' });
   });
 
   it('marbete not found → deny.marbete_unknown (short-circuits)', async () => {
@@ -292,6 +306,87 @@ describe('MfaGetSubjectService.resolve — policy order', () => {
 
   it('deny envelope never contains the raw marbete code or the raw serial', async () => {
     const { repo } = makeRepo({ marbete: null });
+    expect.assertions(2);
+    try {
+      await makeService(repo).resolve({
+        marbeteCode: RAW_CODE,
+        serialNumber: RAW_SERIAL,
+      });
+    } catch (err) {
+      const serialized = JSON.stringify(err, Object.getOwnPropertyNames(err));
+      expect(serialized).not.toContain(RAW_CODE);
+      expect(serialized).not.toContain(RAW_SERIAL);
+    }
+  });
+
+  // B5 / S5: the get-subject path now enforces the same
+  // fail-closed gate as authenticate. A student whose
+  // `students_cache.sis_id` is NULL (legacy / synthetic
+  // row) MUST be denied with `deny.dependency_fail` so
+  // the caller never receives a `matricula: null` answer
+  // they could mistake for "no answer yet". The gate
+  // runs AFTER the device check (only authorized callers
+  // learn that the cache row is missing the matrícula).
+  it('B5/S5: sis_id IS NULL → deny.dependency_fail (matrícula absent; gate AFTER device check)', async () => {
+    const { repo } = makeRepo({
+      marbete: makeMarbeteRow(),
+      student: makeStudentRow({ sis_id: null }),
+      device: makeDeviceRow(),
+    });
+    let caught: unknown;
+    try {
+      await makeService(repo).resolve({
+        marbeteCode: RAW_CODE,
+        serialNumber: RAW_SERIAL,
+      });
+      throw new Error('expected_MfaAuthenticateError');
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(MfaAuthenticateError);
+    expect(caught).toMatchObject({ code: 'deny.dependency_fail' });
+  });
+
+  it('B5/S5 (precedence): a null-matrícula student with no device still denies device_unknown (gate runs AFTER device check)', async () => {
+    // Triangulate the gate placement: the device check
+    // runs BEFORE the matrícula gate, so a no-device +
+    // null-matrícula student gets `deny.device_unknown`,
+    // NOT `deny.dependency_fail`. Locks the
+    // precedence so a future refactor that moves the
+    // gate above the device check would break this test.
+    const { repo } = makeRepo({
+      marbete: makeMarbeteRow(),
+      student: makeStudentRow({ sis_id: null }),
+      device: null,
+    });
+    const code = await denyCodeOf(
+      makeService(repo).resolve({
+        marbeteCode: RAW_CODE,
+        serialNumber: OTHER_SERIAL,
+      }),
+    );
+    expect(code).toBe('deny.device_unknown');
+  });
+
+  it('B5/S5 (inverse): happy path with a real sis_id still completes (matrícula round-trips)', async () => {
+    const { repo } = makeRepo({
+      marbete: makeMarbeteRow(),
+      student: makeStudentRow({ sis_id: 'TOPGR4' }),
+      device: makeDeviceRow(),
+    });
+    const result = await makeService(repo).resolve({
+      marbeteCode: RAW_CODE,
+      serialNumber: RAW_SERIAL,
+    });
+    expect(result).toEqual({ canvasUserId: 7001, matricula: 'TOPGR4' });
+  });
+
+  it('B5/S5 (leak guard): the deny envelope never contains the raw marbete code or serial on the matrícula gate', async () => {
+    const { repo } = makeRepo({
+      marbete: makeMarbeteRow(),
+      student: makeStudentRow({ sis_id: null }),
+      device: makeDeviceRow(),
+    });
     expect.assertions(2);
     try {
       await makeService(repo).resolve({

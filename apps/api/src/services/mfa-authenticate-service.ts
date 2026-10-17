@@ -38,7 +38,18 @@
  *      is no longer enforced (fase 2 retired
  *      `dispositivos.assigned_student_id` and
  *      `deny.device_not_bound_to_student`). NEVER log the serial.
- *   5. Call `OtpClient.verify` with
+ *   5. B5 / S5 fail-closed matrícula gate: if the resolved
+ *      student's `sis_id IS NULL` (legacy / synthetic high-privacy
+ *      row whose matrícula was never back-filled), deny with
+ *      `deny.dependency_fail`. The gate runs AFTER the student +
+ *      device checks (so `entity_id = String(canvas_user_id)` is
+ *      available for the audit row) and BEFORE the OTP
+ *      verification + session insertion (so a null-matrícula
+ *      student NEVER burns an OTP and NEVER gets a session).
+ *      Rationale: the Jitsi downstream requires a non-null
+ *      matrícula to render the participant display name; denying
+ *      here is fail-closed against a partial Canvas roster.
+ *   6. Call `OtpClient.verify` with
  *      `subject = String(canvas_user_id)` and
  *      `scope = 'mfa.access'`. Map: `ok=true` → continue;
  *      `ok=false, reason='invalid'` → `deny.otp_invalid`;
@@ -317,7 +328,31 @@ export class MfaAuthenticateService {
         );
       }
 
-      // (5) OTP verification. The subject is the canvas_user_id
+      // (5) B5 / S5 fail-closed matrícula gate. The
+      // authoritative Canvas SIS source for this student was
+      // never published (or the row was a legacy / synthetic
+      // high-privacy insert before migration 0020 back-fill).
+      // Deny with `deny.dependency_fail` BEFORE the OTP is
+      // consumed and BEFORE any session is issued so the
+      // downstream Jitsi proxy never receives a session for a
+      // student whose participant display name the backoffice
+      // cannot honour. The gate runs AFTER the student +
+      // device checks (steps 3 + 4) so the deny audit row
+      // already carries the student-side `entity_id =
+      // String(canvas_user_id)` (NOT 'unknown').
+      if (student.sis_id === null) {
+        return await this.deny(
+          {
+            code: 'deny.dependency_fail',
+            message: 'student matrícula (sis_id) is not available',
+          },
+          student,
+          marbete,
+          meta,
+        );
+      }
+
+      // (6) OTP verification. The subject is the canvas_user_id
       // (NOT the internal students_cache.id) so the OTP issuer
       // sees the same wire identifier the operator handed out.
       let otpResult: VerifyOtpResult;
@@ -368,7 +403,7 @@ export class MfaAuthenticateService {
         );
       }
 
-      // (6) Issue the session. The token is the same opaque base64url
+      // (7) Issue the session. The token is the same opaque base64url
       // 32-byte string the user session uses (see
       // lib/session-token.ts). The session row carries
       // kind='student', role='student', canvas_user_id, user_id=NULL.
@@ -382,14 +417,14 @@ export class MfaAuthenticateService {
         userAgent: meta.userAgent,
       });
 
-      // (7) Audit row. actor='__mfa__' (the MFA endpoint is the
+      // (8) Audit row. actor='__mfa__' (the MFA endpoint is the
       // actor — the student is the subject). entity_id is the
       // canvas_user_id (the same wire identifier the OTP was
       // bound to) so an operator can reconcile the event with
       // Canvas without joining on any other table.
       //
       // BEST-EFFORT: the session row was already issued in step
-      // (6) and the student has been authenticated. An audit-
+      // (7) and the student has been authenticated. An audit-
       // table outage must NOT delete the session, must NOT
       // fail the request, and must NOT leak through the outer
       // try/catch (which would map a 201 success into a 503

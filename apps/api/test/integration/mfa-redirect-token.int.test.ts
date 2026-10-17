@@ -456,15 +456,19 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
     expect(consumeBodyJson.matricula).toBe('A00001');
   });
 
-  it('consume: synthetic high-privacy student (sis_id IS NULL) surfaces matricula=null on the response', async () => {
-    // A synthetic student with `sis_id = NULL` (legacy row,
-    // or a row whose SIS source was never back-filled) MUST
-    // still mint a redirect-token (the consume chain does
-    // not require a non-null matrícula) AND the consume
-    // response MUST surface `matricula: null` so the Jitsi
-    // proxy can branch on "we don't know the matrícula
-    // yet" vs. "we have one". A coercion to '' would render
-    // an empty display name and trip this test.
+  it('consume: synthetic high-privacy student (sis_id IS NULL) → authenticate 401 deny.dependency_fail (B5 S5)', async () => {
+    // B5 / S5 contract change: the previous test
+    // ('sis_id IS NULL surfaces matricula=null on the
+    // response') validated that the M3 redirect-token +
+    // consume chain still minted a redirect-token when the
+    // resolved student had `sis_id IS NULL`. With B5's
+    // fail-closed gate, that chain now NEVER gets past
+    // `/api/v1/mfa/authenticate`: the gate denies before
+    // the session is issued, so there is no session cookie
+    // to feed `/api/v1/mfa/redirect-token`. The token is
+    // never minted, the consume chain is never reached.
+    // The test asserts the deny on authenticate to lock the
+    // upstream consequence of the gate.
     const noMatriculaCanvas = 91_777;
     const noMatriculaStudentId = await seedStudent(
       pool,
@@ -492,42 +496,19 @@ describe('M3 / MFA redirect + consume (integration, real PG + Redis)', () => {
         }),
       ),
     });
-    expect(auth.statusCode).toBe(201);
-    const noMatriculaCookie = cookieFromSetCookie(
-      auth.headers['set-cookie'],
-      '__Host-mfa_sid',
-    );
-    expect(noMatriculaCookie).not.toBeNull();
-
-    const issue = await app.inject({
-      method: 'POST',
-      url: '/api/v1/mfa/redirect-token',
-      headers: {
-        'content-type': 'application/json',
-        cookie: noMatriculaCookie!,
-      },
-      payload: JSON.stringify(issueBody()),
-    });
-    expect(issue.statusCode).toBe(200);
-    const { token } = issue.json() as { token: string };
-
-    const stored = await app.redis.get(`mfa_redirect:${token}`);
-    expect(stored).not.toBeNull();
-    const storedPayload = JSON.parse(stored!) as {
-      matricula?: string | null;
-    };
-    expect(storedPayload.matricula).toBeNull();
-
-    const consume = await postSigned(app, '/api/v1/mfa/consume', {
-      body: consumeBody(token),
-    });
-    expect(consume.statusCode).toBe(200);
-    const consumeBodyJson = consume.json() as {
-      canvas_user_id: number;
-      matricula: string | null;
-    };
-    expect(consumeBodyJson.canvas_user_id).toBe(noMatriculaCanvas);
-    expect(consumeBodyJson.matricula).toBeNull();
+    // The gate runs BEFORE the OTP verify + session insert,
+    // so the response is a 503 deny envelope
+    // (`denyCodeToHttpStatus` collapses `deny.dependency_fail`
+    // to 503 — the OTP is never called, but the downstream
+    // is unreachable from the caller's perspective).
+    expect(auth.statusCode).toBe(503);
+    expect(auth.json()).toMatchObject({ code: 'deny.dependency_fail' });
+    // No session cookie was set, so the redirect-token
+    // endpoint would itself reject the call (no MFA
+    // session). The new contract is enforced at the
+    // authenticate layer; the redirect-token consume chain
+    // is intentionally NOT exercised here.
+    expect(cookieFromSetCookie(auth.headers['set-cookie'], '__Host-mfa_sid')).toBeNull();
   });
 
   // -----------------------------------------------------------------
