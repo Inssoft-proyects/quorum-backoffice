@@ -255,11 +255,11 @@ describe('PgMatriculasRepo.upsertMany', () => {
     const client = makeClient({ xmaxSequence: [0, 0, 42, 0, 99] });
     const repo = new PgMatriculasRepo(client);
     const r = await repo.upsertMany([
-      { canvasUserId: 1, fullName: 'A', email: 'a@x', isActive: true },
-      { canvasUserId: 2, fullName: 'B', email: 'b@x', isActive: true },
-      { canvasUserId: 3, fullName: 'C', email: 'c@x', isActive: false },
-      { canvasUserId: 4, fullName: 'D', email: 'd@x', isActive: true },
-      { canvasUserId: 5, fullName: 'E', email: 'e@x', isActive: true },
+      { canvasUserId: 1, fullName: 'A', email: 'a@x', isActive: true, sisId: 'SISA01' },
+      { canvasUserId: 2, fullName: 'B', email: 'b@x', isActive: true, sisId: 'SISB02' },
+      { canvasUserId: 3, fullName: 'C', email: 'c@x', isActive: false, sisId: null },
+      { canvasUserId: 4, fullName: 'D', email: 'd@x', isActive: true, sisId: 'SISD04' },
+      { canvasUserId: 5, fullName: 'E', email: 'e@x', isActive: true, sisId: null },
     ]);
     expect(r.inserted).toBe(3);
     expect(r.updated).toBe(2);
@@ -270,26 +270,26 @@ describe('PgMatriculasRepo.upsertMany', () => {
     const client = makeClient({ xmaxSequence: [0], captured });
     const repo = new PgMatriculasRepo(client);
     await repo.upsertMany([
-      { canvasUserId: 100, fullName: 'F', email: 'f@x', isActive: true },
-      { canvasUserId: 101, fullName: 'G', email: 'g@x', isActive: false },
+      { canvasUserId: 100, fullName: 'F', email: 'f@x', isActive: true, sisId: 'SISRAA' },
+      { canvasUserId: 101, fullName: 'G', email: 'g@x', isActive: false, sisId: null },
     ]);
     expect(captured).toHaveLength(1);
     const sql = captured[0]!.sql;
     expect(sql).toMatch(/INSERT INTO students_cache/i);
-    // D-3 lock: the INSERT column list MUST have exactly 4
-    // columns matching the 4 UNNEST arrays. The column DEFAULT
-    // `now()` fills `last_synced_at` on insert; the ON CONFLICT
-    // branch sets it to now() on update. A regression to the
-    // 5-column / 4-UNNEST shape (the pre-fix production bug)
-    // would break this assertion immediately.
+    // B5 follow-up (S4): the INSERT column list MUST now
+    // have 5 columns matching the 5 UNNEST arrays. `last_synced_at`
+    // still relies on the column DEFAULT for INSERT and on
+    // `last_synced_at = now()` for the ON CONFLICT branch. A
+    // regression to the pre-S4 4-column / 4-UNNEST shape would
+    // break this assertion immediately.
     expect(sql).toMatch(
-      /INSERT INTO students_cache\s*\(\s*canvas_user_id\s*,\s*full_name\s*,\s*email\s*,\s*is_active\s*\)/i,
+      /INSERT INTO students_cache\s*\(\s*canvas_user_id\s*,\s*full_name\s*,\s*email\s*,\s*is_active\s*,\s*sis_id\s*\)/i,
     );
     expect(sql).not.toMatch(
       /INSERT INTO students_cache\s*\([^)]*last_synced_at/i,
     );
     expect(sql).toMatch(
-      /UNNEST\(\$1::bigint\[\],\s*\$2::text\[\],\s*\$3::text\[\],\s*\$4::boolean\[\]\)/,
+      /UNNEST\(\$1::bigint\[\],\s*\$2::text\[\],\s*\$3::text\[\],\s*\$4::boolean\[\],\s*\$5::text\[\]\)/,
     );
     expect(sql).toMatch(/ON CONFLICT \(canvas_user_id\) DO UPDATE/i);
     // G9: ON CONFLICT branch uses the upstream is_active (so a
@@ -298,12 +298,49 @@ describe('PgMatriculasRepo.upsertMany', () => {
     // upsert path used.
     expect(sql).toMatch(/is_active = EXCLUDED\.is_active/i);
     expect(sql).not.toMatch(/is_active = TRUE/i);
+    // B5 follow-up (S4): ON CONFLICT branch writes the
+    // upstream `sis_id` so a previously-NULL matrícula is
+    // back-filled when Canvas publishes it. Lock the
+    // assignment + ordering: full_name, email, is_active,
+    // sis_id, last_synced_at = now().
+    expect(sql).toMatch(/sis_id = EXCLUDED\.sis_id/i);
     expect(sql).toMatch(/last_synced_at = now\(\)/i);
     expect(captured[0]!.params).toEqual([
       [100, 101],
       ['F', 'G'],
       ['f@x', 'g@x'],
       [true, false],
+      ['SISRAA', null],
+    ]);
+  });
+
+  // B5 / S4: the upsert path is also exercised end-to-end
+  // in test/integration/matriculas.test.ts (the row-level
+  // coverage for `sis_id` round-tripping lives there
+  // because the column DEFAULT and the UNNEST shape are
+  // real-PG concerns). The unit-test tier here is just
+  // the 5-column / 5-UNNEST parity lock.
+  it('round-trips sisId = null when the Canvas row has no matrícula (legacy cache row back-fill)', async () => {
+    const captured: CapturedSql[] = [];
+    const client = makeClient({ xmaxSequence: [7], captured });
+    const repo = new PgMatriculasRepo(client);
+    await repo.upsertMany([
+      // Pre-existing row with sis_id = NULL; future
+      // publish would set it via the same upsert. Here we
+      // just confirm the NULL propagates.
+      { canvasUserId: 200, fullName: 'H', email: 'h@x', isActive: true, sisId: null },
+    ]);
+    expect(captured).toHaveLength(1);
+    const sql = captured[0]!.sql;
+    // 5 columns, 5 UNNEST arrays.
+    expect(sql).toMatch(/sis_id/i);
+    expect(sql).toMatch(/UNNEST\(\$1::bigint\[\],[^)]*\$5::text\[\]\)/);
+    expect(captured[0]!.params).toEqual([
+      [200],
+      ['H'],
+      ['h@x'],
+      [true],
+      [null],
     ]);
   });
 });

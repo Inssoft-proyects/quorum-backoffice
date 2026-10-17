@@ -39,6 +39,20 @@ export const CanvasStudent = z.object({
    * out of the upstream total.
    */
   is_active: z.boolean().optional(),
+  /**
+   * Institutional SIS user id (NOT the internal Canvas
+   * numeric id). PUBLISHED by the portal-api `/v1/students`
+   * endpoint starting with the B5 cross-repo work
+   * (`odd/tasks/canvas-sis-lookup-b5.md`, specs S1/S2 in the
+   * portal-api repo). The field is OPTIONAL + nullable here
+   * so legacy portal builds (which do not publish it) keep
+   * parsing, and a portal that publishes `null` (i.e. the
+   * student has no SIS matrícula yet) is also accepted: the
+   * service layer forwards `null` to
+   * `students_cache.sis_id` so the row can be back-filled on
+   * a later sync when Canvas publishes the value.
+   */
+  sis_user_id: z.string().nullable().optional(),
 });
 export type CanvasStudent = z.infer<typeof CanvasStudent>;
 

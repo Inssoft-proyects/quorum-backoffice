@@ -549,6 +549,19 @@ export class MatriculasService {
         // the very next sync — the F4 `deactivateMissing`
         // roster-walk is the safety net for anything we miss.
         isActive: s.is_active ?? true,
+        // B5 / S4: the portal publishes
+        // `sis_user_id: string | null` per student. When the
+        // field is absent (legacy portal builds) OR the
+        // portal publishes explicit null, we forward `null`
+        // to `students_cache.sis_id` so the row can be
+        // back-filled on a later sync when Canvas publishes
+        // one. Never substitute an empty string: a future
+        // partial-unique index on `sis_id` (declared in
+        // migration 0020) would treat '' as a value, not a
+        // NULL, and the B5 fail-closed gate
+        // (`mfa-authenticate` / `mfa-get-subject`) reads
+        // `sis_id IS NULL` to deny.
+        sisId: s.sis_user_id ?? null,
       }));
       // Record them on every iteration so the deactivation call gets
       // the union of every page (order is irrelevant to the SQL).
