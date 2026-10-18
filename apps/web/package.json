@@ -13,7 +13,8 @@
     "format": "prettier --write \"app/**/*.{ts,tsx,json,css}\" \"components/**/*.{ts,tsx,json,css}\"",
     "format:check": "prettier --check \"app/**/*.{ts,tsx,json,css}\" \"components/**/*.{ts,tsx,json,css}\"",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:cosmetic": "bash ../../scripts/cosmetic-smoke.sh"
   },
   "dependencies": {
     "@quorum-backoffice/shared": "*",

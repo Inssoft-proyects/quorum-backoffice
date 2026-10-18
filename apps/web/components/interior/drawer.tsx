@@ -330,6 +330,13 @@ export function Drawer({
   const tree = (
     <div
       ref={drawer.rootRef}
+      data-state={open ? 'open' : 'closed'}
+      // Quorum adaptation: `useDrawer` already makes the panel inert while
+      // closed, but the off-screen root stays in the DOM. This also takes
+      // the closed root out of the accessibility tree and exposes
+      // `data-state` for CSS and browser assertions.
+      aria-hidden={open ? undefined : true}
+      inert={open ? undefined : true}
       className={`${container === 'viewport' ? 'fixed' : 'absolute'} inset-0 z-50 overflow-hidden ${
         open ? '' : 'pointer-events-none'
       }`}

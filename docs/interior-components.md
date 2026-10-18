@@ -82,6 +82,39 @@ npx jest --config jest.config.cjs
 npm run build
 ```
 
+### Smoke de navegador (sin credenciales)
+
+```bash
+cd apps/web
+npm run test:cosmetic
+```
+
+Construye el standalone con `NEXT_PUBLIC_API_URL=http://127.0.0.1:3211`, levanta
+un API determinista (`e2e/cosmetic/stub-api.mjs`) y corre Chromium sobre
+`http://127.0.0.1:3210/backoffice`. Cubre login con OTP, banner de error,
+dashboard, diálogo de creación, paginación y drawer móvil, y falla si aparece
+cualquier error de CORS en consola. No toca hosts reales, base de datos ni el
+emisor de OTP.
+
+### Por qué el login falla en local con “Solicitud de origen cruzado bloqueada”
+
+`apps/api/src/app.ts` registra CORS con `origin: ALLOWED_ORIGIN ?? false`: si
+`ALLOWED_ORIGIN` no está definido, Fastify **no emite cabeceras CORS** y el
+navegador bloquea cualquier POST cross-origin con estado `(null)`. A la vez,
+`NEXT_PUBLIC_API_URL` cae por defecto en `http://127.0.0.1:3100` (el mismo puerto
+por defecto del API) mientras el web de desarrollo vive en `3002`. Para correr
+en local se necesita:
+
+1. La misma **hostname** para la página y el API (`localhost` ≠ `127.0.0.1`
+   aunque el puerto coincida).
+2. `NEXT_PUBLIC_API_URL` apuntando al API real en build/dev.
+3. `ALLOWED_ORIGIN=<origen exacto del web>` en el API.
+
+En producción esto no aplica porque nginx sirve web y API bajo el mismo origen
+(`odd/tasks/backoffice-cors-same-origin.md`).
+
+### Paridad visual
+
 La paridad pixel contra la maqueta (`e2e/lookfeel/12-maquette-parity.spec.ts`)
 necesita `E2E_ADMIN_USERNAME` y un OTP fresco del servicio: al cambiar la
 apariencia de botones, campos y diálogos, su línea base debe regenerarse antes de
