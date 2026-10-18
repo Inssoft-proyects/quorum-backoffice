@@ -166,7 +166,8 @@ export function useDropdown({
   useEffect(() => {
     if (!open || activeIndex < 0 || !viaKey.current) return;
     viaKey.current = false;
-    itemRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
+    // jsdom has no scrollIntoView; the guard keeps tests honest.
+    itemRefs.current[activeIndex]?.scrollIntoView?.({ block: 'nearest' });
   }, [open, activeIndex]);
 
   useEffect(

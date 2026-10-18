@@ -214,7 +214,7 @@ export function Tabs({
 
     read();
     const row = rowRef.current;
-    if (!row) return;
+    if (!row || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(read);
     observer.observe(row);
     return () => observer.disconnect();
