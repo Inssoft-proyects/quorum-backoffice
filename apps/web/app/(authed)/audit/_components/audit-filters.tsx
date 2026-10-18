@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTransition, type ChangeEvent } from 'react';
-import { Input } from '@/components/ui/input';
+import { Field } from '@/components/ui/field';
 
 const ENTITY_TYPES: Array<{ value: string; label: string }> = [
   { value: '', label: 'Todos' },
@@ -146,46 +146,34 @@ export function AuditFilters({ countLabel = '(0)' }: Props) {
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-actor" className="text-xs text-text-muted">
-            Actor ID
-          </label>
-          <Input
-            id="filter-actor"
-            type="text"
-            placeholder="email o user id"
-            defaultValue={actorId}
-            onChange={(e) => updateParam('actorId', e.target.value)}
-            disabled={isPending}
-            data-testid="filter-actor"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-since" className="text-xs text-text-muted">
-            Desde
-          </label>
-          <Input
-            id="filter-since"
-            type="datetime-local"
-            defaultValue={since}
-            onChange={(e) => updateParam('since', toIso(e.target.value))}
-            disabled={isPending}
-            data-testid="filter-since"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-until" className="text-xs text-text-muted">
-            Hasta
-          </label>
-          <Input
-            id="filter-until"
-            type="datetime-local"
-            defaultValue={until}
-            onChange={(e) => updateParam('until', toIso(e.target.value))}
-            disabled={isPending}
-            data-testid="filter-until"
-          />
-        </div>
+        <Field
+          id="filter-actor"
+          type="text"
+          label="Actor ID"
+          placeholder="email o user id"
+          data-testid="filter-actor"
+          defaultValue={actorId}
+          onChange={(value) => updateParam('actorId', value)}
+          disabled={isPending}
+        />
+        <Field
+          id="filter-since"
+          type="datetime-local"
+          label="Desde"
+          data-testid="filter-since"
+          defaultValue={since}
+          onChange={(value) => updateParam('since', toIso(value))}
+          disabled={isPending}
+        />
+        <Field
+          id="filter-until"
+          type="datetime-local"
+          label="Hasta"
+          data-testid="filter-until"
+          defaultValue={until}
+          onChange={(value) => updateParam('until', toIso(value))}
+          disabled={isPending}
+        />
       </div>
     </>
   );

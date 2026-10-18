@@ -1,7 +1,7 @@
 'use client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTransition, type ChangeEvent } from 'react';
-import { Input } from '@/components/ui/input';
+import { Field } from '@/components/ui/field';
 
 const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'Todos' },
@@ -32,8 +32,8 @@ export function MarbetesFilters() {
   function handleStatus(e: ChangeEvent<HTMLSelectElement>) {
     updateParam('status', e.target.value);
   }
-  function handleSearch(e: ChangeEvent<HTMLInputElement>) {
-    updateParam('search', e.target.value);
+  function handleSearch(value: string) {
+    updateParam('search', value);
   }
 
   return (
@@ -57,12 +57,10 @@ export function MarbetesFilters() {
         </select>
       </div>
       <div className="flex min-w-[200px] flex-1 flex-col gap-1">
-        <label htmlFor="filter-search" className="text-xs text-text-muted">
-          Buscar por UID
-        </label>
-        <Input
+        <Field
           id="filter-search"
           type="search"
+          label="Buscar por UID"
           placeholder="m-AB12CD"
           defaultValue={search}
           onChange={handleSearch}

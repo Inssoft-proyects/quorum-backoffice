@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { KeyRound } from 'lucide-react';
 import { ApiError, mfaAuthenticate, mfaIssueRedirectToken } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
@@ -297,49 +297,45 @@ export function MfaForm({ next }: MfaFormProps) {
             </Alert>
           ) : null}
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mfa-marbete">Marbete</Label>
-            <Input
-              id="mfa-marbete"
-              name="marbete_code"
-              type="text"
-              autoComplete="off"
-              required
-              minLength={8}
-              maxLength={128}
-              placeholder="ABCD-1234-EFGH"
-              value={marbeteCode}
-              onChange={(e) => {
-                setMarbeteCode(e.target.value.toUpperCase());
-                clearError();
-              }}
-              disabled={loading}
-              data-testid="mfa-marbete"
-              className="font-mono uppercase tracking-wider"
-            />
-          </div>
+          <Field
+            id="mfa-marbete"
+            name="marbete_code"
+            type="text"
+            autoComplete="off"
+            required
+            minLength={8}
+            maxLength={128}
+            label="Marbete"
+            placeholder="ABCD-1234-EFGH"
+            data-testid="mfa-marbete"
+            value={marbeteCode}
+            onChange={(value) => {
+              setMarbeteCode(value.toUpperCase());
+              clearError();
+            }}
+            disabled={loading}
+            inputClassName="font-mono uppercase tracking-wider"
+          />
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mfa-serial">Número de serie</Label>
-            <Input
-              id="mfa-serial"
-              name="serial_number"
-              type="text"
-              autoComplete="off"
-              required
-              minLength={3}
-              maxLength={128}
-              placeholder="SN-12345"
-              value={serialNumber}
-              onChange={(e) => {
-                setSerialNumber(e.target.value.toUpperCase());
-                clearError();
-              }}
-              disabled={loading}
-              data-testid="mfa-serial"
-              className="font-mono uppercase tracking-wider"
-            />
-          </div>
+          <Field
+            id="mfa-serial"
+            name="serial_number"
+            type="text"
+            autoComplete="off"
+            required
+            minLength={3}
+            maxLength={128}
+            label="Número de serie"
+            placeholder="SN-12345"
+            data-testid="mfa-serial"
+            value={serialNumber}
+            onChange={(value) => {
+              setSerialNumber(value.toUpperCase());
+              clearError();
+            }}
+            disabled={loading}
+            inputClassName="font-mono uppercase tracking-wider"
+          />
 
           <div className="flex flex-col items-center gap-2">
             <Label htmlFor="mfa-otp-1" className="self-center text-center text-primary-500">

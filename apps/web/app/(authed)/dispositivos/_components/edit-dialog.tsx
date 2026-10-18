@@ -10,8 +10,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
 import { ApiError, updateDispositivo } from '@/lib/api-client';
@@ -129,47 +129,41 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
               {error}
             </Alert>
           ) : null}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-serial">Serial</Label>
-            <Input
-              id="edit-serial"
-              type="text"
-              value={dispositivo?.serialNumber ?? ''}
-              disabled
-              data-testid="edit-serial"
-            />
-          </div>
+          <Field
+            id="edit-serial"
+            type="text"
+            label="Serial"
+            data-testid="edit-serial"
+            value={dispositivo?.serialNumber ?? ''}
+            disabled
+          />
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="edit-brand">Marca</Label>
-              <Input
-                id="edit-brand"
-                type="text"
-                maxLength={64}
-                value={brand}
-                onChange={(e) => {
-                  setBrand(e.target.value);
-                  if (error) setError(null);
-                }}
-                disabled={loading}
-                data-testid="edit-brand"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="edit-model">Modelo</Label>
-              <Input
-                id="edit-model"
-                type="text"
-                maxLength={128}
-                value={model}
-                onChange={(e) => {
-                  setModel(e.target.value);
-                  if (error) setError(null);
-                }}
-                disabled={loading}
-                data-testid="edit-model"
-              />
-            </div>
+            <Field
+              id="edit-brand"
+              type="text"
+              maxLength={64}
+              label="Marca"
+              data-testid="edit-brand"
+              value={brand}
+              onChange={(value) => {
+                setBrand(value);
+                if (error) setError(null);
+              }}
+              disabled={loading}
+            />
+            <Field
+              id="edit-model"
+              type="text"
+              maxLength={128}
+              label="Modelo"
+              data-testid="edit-model"
+              value={model}
+              onChange={(value) => {
+                setModel(value);
+                if (error) setError(null);
+              }}
+              disabled={loading}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Código OTP</Label>

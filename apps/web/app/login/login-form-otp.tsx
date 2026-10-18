@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { KeyRound } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
@@ -65,26 +65,24 @@ export function LoginFormOtp() {
         </Alert>
       ) : null}
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="username">Usuario</Label>
-        <Input
-          id="username"
-          name="username"
-          type="text"
-          autoComplete="username"
-          required
-          minLength={3}
-          maxLength={32}
-          placeholder="admin"
-          value={username}
-          onChange={(e) => {
-            setUsername(e.target.value);
-            if (error) reset();
-          }}
-          disabled={loading}
-          data-testid="login-username"
-        />
-      </div>
+      <Field
+        id="username"
+        name="username"
+        type="text"
+        autoComplete="username"
+        required
+        minLength={3}
+        maxLength={32}
+        label="Usuario"
+        placeholder="admin"
+        data-testid="login-username"
+        value={username}
+        onChange={(value) => {
+          setUsername(value);
+          if (error) reset();
+        }}
+        disabled={loading}
+      />
 
       {/*
         OTP zone, matched to `diseno/design/OPT_Dinamico.png`: centered

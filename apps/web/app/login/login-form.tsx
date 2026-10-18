@@ -3,8 +3,7 @@ import { useState, useTransition, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Field } from '@/components/ui/field';
 import { Alert } from '@/components/ui/alert';
 
 /**
@@ -33,40 +32,36 @@ export function LoginForm() {
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
       {error ? <Alert variant="destructive" role="alert">{error}</Alert> : null}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="email">Correo</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          placeholder="admin@quorum.local"
-          value={email}
-          onChange={(e) => {
-            setEmail(e.target.value);
-            if (error) reset();
-          }}
-          disabled={loading}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="password">Contraseña</Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          minLength={1}
-          value={password}
-          onChange={(e) => {
-            setPassword(e.target.value);
-            if (error) reset();
-          }}
-          disabled={loading}
-        />
-      </div>
+      <Field
+        id="email"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        label="Correo"
+        placeholder="admin@quorum.local"
+        value={email}
+        onChange={(value) => {
+          setEmail(value);
+          if (error) reset();
+        }}
+        disabled={loading}
+      />
+      <Field
+        id="password"
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        required
+        minLength={1}
+        label="Contraseña"
+        value={password}
+        onChange={(value) => {
+          setPassword(value);
+          if (error) reset();
+        }}
+        disabled={loading}
+      />
       <Button type="submit" disabled={loading || !email || !password}>
         {loading ? 'Ingresando…' : 'Ingresar'}
       </Button>

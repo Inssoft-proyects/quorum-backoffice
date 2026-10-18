@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Input } from '@/components/ui/input';
+import { Field } from '@/components/ui/field';
 import { ApiError, getStudentByCanvasId, type StudentDetailResponse } from '@/lib/api-client';
 
 interface Props {
@@ -88,21 +88,21 @@ export function StudentLookup({ value, onChange, disabled }: Props) {
   return (
     <div className="flex flex-col gap-1.5" data-testid="student-lookup">
       <div className="flex items-end gap-2">
-        <Input
+        <Field
           type="number"
           inputMode="numeric"
+          label="Matrícula Canvas"
           min={1}
           placeholder="12345"
+          data-testid="student-canvas-id"
           value={value === null ? '' : String(value)}
-          onChange={(e) => {
-            const raw = e.target.value.trim();
-            if (raw === '') onChange('');
-            else onChange(Number(raw));
+          onChange={(raw) => {
+            const trimmed = raw.trim();
+            if (trimmed === '') onChange('');
+            else onChange(Number(trimmed));
           }}
           onBlur={handleBlur}
           disabled={disabled}
-          data-testid="student-canvas-id"
-          aria-label="Matrícula Canvas"
         />
         <button
           type="button"

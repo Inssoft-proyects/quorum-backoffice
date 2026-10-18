@@ -301,12 +301,14 @@ export function FloatingLabelInput({
                 : 'text-text-muted '
           }`}
         >
+          {/*
+           * Quorum adaptation: no visible asterisk. Because the label *is*
+           * the accessible name, an asterisk inside it turned every
+           * getByLabelText('Correo') into a miss. `required` on the input
+           * plus `aria-required` already carry the constraint, and the
+           * previous shadcn label never showed a marker either.
+           */}
           {label}
-          {required ? (
-            <span aria-hidden className="ml-0.5 text-text-muted ">
-              *
-            </span>
-          ) : null}
         </motion.label>
       </div>
 

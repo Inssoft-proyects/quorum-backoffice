@@ -10,8 +10,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
 import { StudentLookup } from './student-lookup';
@@ -113,24 +113,22 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
               {error}
             </Alert>
           ) : null}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="create-code">Código</Label>
-            <Input
-              id="create-code"
-              type="text"
-              minLength={8}
-              maxLength={128}
-              placeholder="WITH-CODE-1234"
-              value={code}
-              onChange={(e) => {
-                setCode(e.target.value);
-                if (error) setError(null);
-              }}
-              disabled={loading}
-              required
-              data-testid="create-code"
-            />
-          </div>
+          <Field
+            id="create-code"
+            type="text"
+            minLength={8}
+            maxLength={128}
+            label="Código"
+            placeholder="WITH-CODE-1234"
+            data-testid="create-code"
+            value={code}
+            onChange={(value) => {
+              setCode(value);
+              if (error) setError(null);
+            }}
+            disabled={loading}
+            required
+          />
           <div className="flex flex-col gap-1.5">
             <Label>Matrícula Canvas (opcional)</Label>
             <StudentLookup
