@@ -154,6 +154,29 @@ mv "$BASE/apps/web/.next.rollback-$TS" "$BASE/apps/web/.next"
 kubectl -n quorum-backoffice rollout restart deploy/quorum-backoffice-web
 ```
 
+**Si el build en el hostPath falla por caché de Turbopack** (`Node.js subprocess
+crashed while evaluating loaders [postcss]`, `failed to receive message`,
+`Unexpected token` dentro de una regla generada): el `.next` del host quedó con
+caché incremental corrupta. No se arregla reintentando. Construir en un árbol
+limpio (el worktree de la rama) y publicar el artefacto:
+
+```bash
+# 1. Build en el worktree, con el MISMO API_INTERNAL_URL de producción
+cd <WORKTREE>/apps/web
+unset NEXT_PUBLIC_API_URL
+API_INTERNAL_URL=http://127.0.0.1:4100 npm run build
+# 2. Verificar el artefacto antes de tocarlo
+grep -rl '127\.0\.0\.1:3100' .next/static/chunks && echo "FALLA: base loopback"
+python3 -c "import json;print(json.load(open('.next/standalone/apps/web/.next/routes-manifest.json'))['rewrites']['afterFiles'])"
+# 3. Publicar con respaldo
+cp -a /opt/quorum-backoffice/apps/web/.next /opt/quorum-backoffice/apps/web/.next.rollback-<ts>
+rsync -a --delete .next/ /opt/quorum-backoffice/apps/web/.next/
+kubectl -n quorum-backoffice rollout restart deploy/quorum-backoffice-web
+```
+
+El rsync de `.next` tarda segundos; si se quiere cero ventana, escalar el pod a
+0, publicar y volver a 1.
+
 **Errores que este procedimiento previene:**
 
 - Construir con `NEXT_PUBLIC_API_URL` sin definir y el default histórico
