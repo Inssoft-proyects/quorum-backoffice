@@ -14,10 +14,7 @@ export function StatusCards({ counters }: { counters: MarbeteCountersResponse })
           <CardTitle className="text-sm text-text-muted">Marbetes OK</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className="text-3xl font-semibold text-feedback-success"
-            data-testid="counter-ok"
-          >
+          <div className="text-3xl font-semibold text-feedback-success" data-testid="counter-ok">
             <AnimatedCounter value={counters.ok} label="Marbetes OK" />
           </div>
           <p className="mt-1 text-xs text-text-muted">Activos y asignados a un estudiante</p>
@@ -28,10 +25,7 @@ export function StatusCards({ counters }: { counters: MarbeteCountersResponse })
           <CardTitle className="text-sm text-text-muted">Marbetes KO</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className="text-3xl font-semibold text-alert-error-text"
-            data-testid="counter-ko"
-          >
+          <div className="text-3xl font-semibold text-alert-error-text" data-testid="counter-ko">
             <AnimatedCounter value={counters.ko} label="Marbetes KO" />
           </div>
           <p className="mt-1 text-xs text-text-muted">Sin asignar, inactivos o eliminados</p>

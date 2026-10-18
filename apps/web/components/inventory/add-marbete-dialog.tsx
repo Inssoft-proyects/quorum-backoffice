@@ -138,10 +138,7 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
           <DialogTitle className="modal-dialog__title" data-testid="add-marbete-title">
             Agregar marbete
           </DialogTitle>
-          <DialogDescription
-            className="modal-dialog__description"
-            id="add-marbete-description"
-          >
+          <DialogDescription className="modal-dialog__description" id="add-marbete-description">
             Registra un marbete físico en el inventario.{' '}
             <b>El sistema calculará la vigencia y lo asignará en el estado Disponible</b>{' '}
             automáticamente.
@@ -180,11 +177,7 @@ export function AddMarbeteDialog({ open, onOpenChange, onSaved }: AddMarbeteDial
           </div>
 
           {grantActive && expiresLabel ? (
-            <Alert
-              variant="success"
-              role="status"
-              data-testid="add-marbete-grant-note"
-            >
+            <Alert variant="success" role="status" data-testid="add-marbete-grant-note">
               OTP vigente hasta {expiresLabel}. No necesitas capturar un código nuevo.
             </Alert>
           ) : (

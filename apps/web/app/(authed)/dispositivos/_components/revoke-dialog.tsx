@@ -99,8 +99,8 @@ export function RevokeDialog({ dispositivo, onClose, onSuccess }: Props) {
         <DialogHeader>
           <DialogTitle>Revocar dispositivo</DialogTitle>
           <DialogDescription>
-            Vas a revocar el dispositivo <strong>{dispositivo?.serialNumber ?? ''}</strong>.
-            Esta operación requiere justificación y un código OTP.
+            Vas a revocar el dispositivo <strong>{dispositivo?.serialNumber ?? ''}</strong>. Esta
+            operación requiere justificación y un código OTP.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>

@@ -97,8 +97,8 @@ export function DeleteDialog({ marbete, onClose, onSuccess }: Props) {
         <DialogHeader>
           <DialogTitle>Eliminar marbete</DialogTitle>
           <DialogDescription>
-            Vas a eliminar el marbete <strong>{marbete?.maskedCode ?? ''}</strong>. Esta
-            operación requiere justificación y un código OTP.
+            Vas a eliminar el marbete <strong>{marbete?.maskedCode ?? ''}</strong>. Esta operación
+            requiere justificación y un código OTP.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>

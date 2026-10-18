@@ -103,8 +103,7 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
         <DialogHeader>
           <DialogTitle>Crear marbete</DialogTitle>
           <DialogDescription>
-            Asigna un nuevo marbete con su código QR. La asignación a un
-            estudiante es opcional.
+            Asigna un nuevo marbete con su código QR. La asignación a un estudiante es opcional.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
@@ -131,11 +130,7 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
           />
           <div className="flex flex-col gap-1.5">
             <Label>Matrícula Canvas (opcional)</Label>
-            <StudentLookup
-              value={canvasUserId}
-              onChange={setCanvasUserId}
-              disabled={loading}
-            />
+            <StudentLookup value={canvasUserId} onChange={setCanvasUserId} disabled={loading} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Código OTP</Label>

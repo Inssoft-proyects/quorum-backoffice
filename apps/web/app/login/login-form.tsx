@@ -31,7 +31,11 @@ export function LoginForm() {
 
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
-      {error ? <Alert variant="destructive" role="alert">{error}</Alert> : null}
+      {error ? (
+        <Alert variant="destructive" role="alert">
+          {error}
+        </Alert>
+      ) : null}
       <Field
         id="email"
         name="email"

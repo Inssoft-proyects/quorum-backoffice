@@ -131,9 +131,7 @@ export function AuditFilters({ countLabel = '(0)' }: Props) {
           <select
             id="filter-action"
             value={action}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-              updateParam('action', e.target.value)
-            }
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => updateParam('action', e.target.value)}
             disabled={isPending}
             className="custom-select__trigger"
             data-testid="filter-action"

@@ -1,6 +1,9 @@
 'use client';
 import { useState, type FormEvent } from 'react';
-import type { DispositivoDetailResponse, UpdateDispositivoRequest } from '@quorum-backoffice/shared';
+import type {
+  DispositivoDetailResponse,
+  UpdateDispositivoRequest,
+} from '@quorum-backoffice/shared';
 import {
   Dialog,
   DialogContent,
@@ -119,9 +122,7 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
       <DialogContent data-testid="edit-dialog">
         <DialogHeader>
           <DialogTitle>Editar dispositivo</DialogTitle>
-          <DialogDescription>
-            Cambia la marca o el modelo. Requiere código OTP.
-          </DialogDescription>
+          <DialogDescription>Cambia la marca o el modelo. Requiere código OTP.</DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
           {error ? (
@@ -187,11 +188,7 @@ export function EditDialog({ dispositivo, onClose, onSuccess }: Props) {
             >
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              disabled={loading || otp.length !== 6}
-              data-testid="edit-submit"
-            >
+            <Button type="submit" disabled={loading || otp.length !== 6} data-testid="edit-submit">
               {loading ? 'Guardando…' : 'Guardar'}
             </Button>
           </DialogFooter>

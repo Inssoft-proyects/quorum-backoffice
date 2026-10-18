@@ -31,9 +31,7 @@ type LookupState = 'idle' | 'loading' | 'found' | 'not_found' | 'inactive' | 'er
 export function StudentLookup({ value, onChange, disabled }: Props) {
   const [state, setState] = useState<LookupState>('idle');
   const [student, setStudent] = useState<StudentDetailResponse | null>(null);
-  const [lookupId, setLookupId] = useState<number | null>(
-    typeof value === 'number' ? value : null,
-  );
+  const [lookupId, setLookupId] = useState<number | null>(typeof value === 'number' ? value : null);
 
   // `state` is intentionally excluded from deps: updating it inside
   // this effect would re-trigger the effect and create a fetch loop.

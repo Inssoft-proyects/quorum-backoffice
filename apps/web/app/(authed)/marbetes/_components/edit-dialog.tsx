@@ -157,11 +157,7 @@ export function EditDialog({ marbete, onClose, onSuccess }: Props) {
           />
           <div className="flex flex-col gap-1.5">
             <Label>Matrícula Canvas</Label>
-            <StudentLookup
-              value={canvasUserId}
-              onChange={setCanvasUserId}
-              disabled={loading}
-            />
+            <StudentLookup value={canvasUserId} onChange={setCanvasUserId} disabled={loading} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="edit-status">Estado</Label>
@@ -204,11 +200,7 @@ export function EditDialog({ marbete, onClose, onSuccess }: Props) {
             >
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              disabled={loading || otp.length !== 6}
-              data-testid="edit-submit"
-            >
+            <Button type="submit" disabled={loading || otp.length !== 6} data-testid="edit-submit">
               {loading ? 'Guardando…' : 'Guardar'}
             </Button>
           </DialogFooter>

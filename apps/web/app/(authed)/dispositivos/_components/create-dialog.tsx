@@ -1,6 +1,9 @@
 'use client';
 import { useState, type FormEvent } from 'react';
-import type { CreateDispositivoRequest, DispositivoDetailResponse } from '@quorum-backoffice/shared';
+import type {
+  CreateDispositivoRequest,
+  DispositivoDetailResponse,
+} from '@quorum-backoffice/shared';
 import {
   Dialog,
   DialogContent,

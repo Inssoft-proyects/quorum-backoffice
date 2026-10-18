@@ -54,11 +54,7 @@ export function LoginFormOtp() {
   }
 
   return (
-    <form
-      className="flex flex-col items-stretch gap-5"
-      onSubmit={handleSubmit}
-      noValidate
-    >
+    <form className="flex flex-col items-stretch gap-5" onSubmit={handleSubmit} noValidate>
       {error ? (
         <Alert variant="destructive" role="alert" data-testid="login-error">
           {error}
@@ -92,10 +88,7 @@ export function LoginFormOtp() {
         Testing Library queries keep working.
       */}
       <div className="flex flex-col items-center gap-2">
-        <Label
-          htmlFor="otp-1"
-          className="self-center text-center text-primary-500"
-        >
+        <Label htmlFor="otp-1" className="self-center text-center text-primary-500">
           Código de acceso
         </Label>
         <OtpInput
@@ -108,7 +101,10 @@ export function LoginFormOtp() {
             // re-normalisation so a future refactor cannot accidentally
             // regress the wire contract (the backend verifies A–Z0–9
             // uppercased only).
-            const safe = next.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            const safe = next
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '')
+              .slice(0, 6);
             setOtp(safe);
             if (error) reset();
           }}
@@ -117,10 +113,7 @@ export function LoginFormOtp() {
           aria-label="Código de acceso de 6 caracteres"
           data-testid="login-otp"
         />
-        <p
-          id="otp-hint"
-          className="text-center text-xs text-text-muted"
-        >
+        <p id="otp-hint" className="text-center text-xs text-text-muted">
           Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).
         </p>
       </div>

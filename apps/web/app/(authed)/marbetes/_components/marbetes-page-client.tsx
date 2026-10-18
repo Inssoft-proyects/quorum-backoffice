@@ -62,14 +62,10 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((m) => {
-      const matchesSearch =
-        q.length === 0 ||
-        m.maskedCode.toLowerCase().includes(q);
+      const matchesSearch = q.length === 0 || m.maskedCode.toLowerCase().includes(q);
       if (!matchesSearch) return false;
-      if (filter === 'available')
-        return m.status === 'active' && m.assignedStudentId === null;
-      if (filter === 'assigned')
-        return m.status === 'active' && m.assignedStudentId !== null;
+      if (filter === 'available') return m.status === 'active' && m.assignedStudentId === null;
+      if (filter === 'assigned') return m.status === 'active' && m.assignedStudentId !== null;
       if (filter === 'attention') {
         const validity = new Date(m.createdAt);
         const due = validity.getTime() + 1000 * 60 * 60 * 24 * 365 * 3;
@@ -113,9 +109,10 @@ export function MarbetesPageClient({ items, userRole }: Props) {
 
   const totalForPaging = filtered.length;
   const effectiveSize: number = pageSize === 'all' ? Math.max(totalForPaging, 1) : pageSize;
-  const totalPages = pageSize === 'all' || totalForPaging === 0
-    ? 1
-    : Math.max(1, Math.ceil(totalForPaging / pageSize));
+  const totalPages =
+    pageSize === 'all' || totalForPaging === 0
+      ? 1
+      : Math.max(1, Math.ceil(totalForPaging / pageSize));
   const safePage = Math.min(page, totalPages);
   const pagedItems = useMemo(() => {
     if (pageSize === 'all') return filtered;
@@ -234,15 +231,15 @@ export function MarbetesPageClient({ items, userRole }: Props) {
         </div>
         {userRole === 'admin' || userRole === 'operator' ? (
           <div className="inventory-header__actions">
-            <Button
-              variant="outline"
-              onClick={handleAddClick}
-              data-testid="add-marbete-trigger"
-            >
+            <Button variant="outline" onClick={handleAddClick} data-testid="add-marbete-trigger">
               <PlusCircle className="h-4 w-4" aria-hidden />
               Agregar marbete
             </Button>
-            <Button variant="default" onClick={handleUploadClick} data-testid="upload-marbetes-trigger">
+            <Button
+              variant="default"
+              onClick={handleUploadClick}
+              data-testid="upload-marbetes-trigger"
+            >
               <Upload className="h-4 w-4" aria-hidden />
               Cargar marbetes
             </Button>
@@ -336,24 +333,24 @@ export function MarbetesPageClient({ items, userRole }: Props) {
           onEdit={(m) => setRevealing(m)}
         />
 
-      {lastRevealedCode !== null ? (
-        <div
-          className="mt-4 rounded-md border border-secondary-500 bg-success-bg p-3 text-success-text"
-          role="status"
-          aria-live="polite"
-          data-testid="reveal-confirmation-banner"
-        >
-          Código revelado:{' '}
-          <strong data-testid="reveal-confirmation-code">{lastRevealedCode}</strong>{' '}
-          <CopyButton
-            value={lastRevealedCode}
-            label="Copiar código"
-            copiedLabel="Copiado"
-            errorLabel="No se pudo copiar"
-            className="ml-1 h-8 px-2 align-middle"
-          />
-        </div>
-      ) : null}
+        {lastRevealedCode !== null ? (
+          <div
+            className="mt-4 rounded-md border border-secondary-500 bg-success-bg p-3 text-success-text"
+            role="status"
+            aria-live="polite"
+            data-testid="reveal-confirmation-banner"
+          >
+            Código revelado:{' '}
+            <strong data-testid="reveal-confirmation-code">{lastRevealedCode}</strong>{' '}
+            <CopyButton
+              value={lastRevealedCode}
+              label="Copiar código"
+              copiedLabel="Copiado"
+              errorLabel="No se pudo copiar"
+              className="ml-1 h-8 px-2 align-middle"
+            />
+          </div>
+        ) : null}
 
         <Pagination
           currentPage={safePage}
@@ -367,11 +364,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
         />
       </section>
 
-      <AddMarbeteDialog
-        open={adding}
-        onOpenChange={setAdding}
-        onSaved={handleAdded}
-      />
+      <AddMarbeteDialog open={adding} onOpenChange={setAdding} onSaved={handleAdded} />
       <RevealMarbeteDialog
         marbeteId={revealing?.id ?? 0}
         open={revealing !== null}
@@ -434,11 +427,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
           </svg>
         </button>
       </div>
-      <BulkUploadDialog
-        open={bulkOpen}
-        onOpenChange={setBulkOpen}
-        onSaved={refresh}
-      />
+      <BulkUploadDialog open={bulkOpen} onOpenChange={setBulkOpen} onSaved={refresh} />
     </div>
   );
 }
