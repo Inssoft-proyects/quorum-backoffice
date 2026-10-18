@@ -4,6 +4,49 @@ Pega este bloque en una sesión nueva de Pi para retomar el trabajo.
 
 ---
 
+# Estado actual al cierre de la sesión (2026-10-18)
+
+> Esta sección reemplaza a la del 2026-09-26 para el estado del **frontend**.
+> El resto del documento sigue siendo válido como historial de arquitectura.
+
+## Lo que cambió
+
+- **Migración cosmética a interior.dev** (rama `feat/cosmetico`): los primitivos
+  shadcn de `apps/web/components/ui` fueron sustituidos por componentes de
+  [interior.dev](https://www.interior.dev/) (MIT) vendorizados en
+  `apps/web/components/interior/`, con adaptadores que conservan la API que ya
+  consumían las pantallas. Detalle y tabla de sustitución en
+  `docs/interior-components.md`.
+- **Base del API en mismo origen por defecto**: `NEXT_PUBLIC_API_URL` solo se
+  inlinea si está definida; si falta, el navegador llama a `/api/v1/...` del
+  origen que sirvió la página. El servidor usa `API_INTERNAL_URL` (runtime) y
+  `next.config.ts` expone un rewrite `/api` para dev/standalone. Esto corrigió el
+  login roto en `backoffice.inecuni.com` (el bundle traía `127.0.0.1:3100`).
+- **Armonización visual**: el chrome heredado (`.btn`, `.row-action`,
+  `.form-field__*`, `.custom-select__trigger`, tablas, paginación, metric cards,
+  modales) se alineó a la geometría interior.dev (40 px, radio 8, 13 px/500,
+  anillo de 1 px, foco dorado). Se corrigieron defectos de layout: filtros de
+  auditoría superpuestos, sección de tabla sin CSS (footer fuera de vista),
+  tabla de dispositivos 118 px más ancha que su contenedor, número invisible en
+  la tarjeta activa y doble anillo de foco en los campos.
+- **Release real documentado** en `RUNBOOK.md` §Deploy: el pod web corre
+  `node:22-bookworm-slim` sobre el hostPath `/opt/quorum-backoffice`. Se
+  documentó el rebuild, el rollback y la recuperación ante caché de Turbopack
+  corrupta (build en worktree + publicación del `.next`).
+- **Producción**: revisión 31 del Deployment `quorum-backoffice-web`, bundle
+  construido en mismo origen, `/api` proxied por nginx.
+
+## Pendientes
+
+1. Regenerar la línea base de paridad visual
+   (`e2e/lookfeel/12-maquette-parity.spec.ts`) con `E2E_ADMIN_USERNAME` + OTP;
+   el rediseño de botones/campos/diálogos invalida la anterior.
+2. Retirar del Deployment la env `NEXT_PUBLIC_API_URL` (hoy inerte: el bundle no
+   la lee) y las dependencias Radix sin uso
+   (`@radix-ui/react-dialog|dropdown-menu|label|tabs`).
+3. Implementar CI para web y migrar el release a `kubectl set image`; hoy no
+   existe pipeline y el release es el rebuild del hostPath.
+
 # Estado actual al cierre de la sesión (2026-09-26)
 
 > Esta sección reemplaza las anteriores — refleja el master actual con
@@ -151,7 +194,7 @@ https://backoffice.quorum.asistentepro.mx/login
 │   │   ├── migrations/             # 11 migrations (0001-0011_backoffice_username.sql)
 │   │   ├── scripts/                # migrate.ts, seed-e2e-users.ts, mock-otp-service.ts
 │   │   └── src/                    # routes, services, repositories, plugins
-│   └── web/                        # Next.js 16 App Router + React 19 + shadcn/ui
+│   └── web/                        # Next.js 16 App Router + React 19 + interior.dev
 │       ├── app/
 │       │   ├── login/              # single-step username + OTP form
 │       │   └── (authed)/           # route group con layout que valida sesión
@@ -162,7 +205,8 @@ https://backoffice.quorum.asistentepro.mx/login
 │       ├── components/
 │       │   ├── inventory/          # 10 componentes compartidos (MetricCard, DonutChart, Pagination, etc.)
 │       │   ├── layout/             # AppShell, Sidebar, Topbar, MobileNav, LogoutButton
-│       │   └── ui/                 # shadcn wrappers (button, card, dialog, otp-input, select, ...)
+│       │   ├── interior/           # fuentes interior.dev vendorizadas (MIT)
+│       │   └── ui/                 # adaptadores estables (Field, Modal, Button, OtpInput, Select...)
 │       ├── lib/
 │       │   ├── api-client.ts        # fetch wrappers
 │       │   ├── auth-context.ts      # client auth state
@@ -289,7 +333,7 @@ Cerrados en Polish WU v6 (**14 commits** en `feature/security-auth-otp` @ `7fe86
 
 - **Port convention**: DEV 3xx (api 3100, web 3002), PROD 4xx (api 4100, web 4002)
 - **Stack backend**: Node 22 + Fastify 5 + PG 18 + Redis 8 + Zod + Pino + prom-client + bcrypt cost-12
-- **Stack frontend**: Next.js 16 App Router + React 19 + Tailwind 4 + shadcn/ui + lucide-react
+- **Stack frontend**: Next.js 16 App Router + React 19 + Tailwind 4 + interior.dev (vendored, `motion`) + lucide-react
 - **Shared**: Zod DTOs en `packages/shared/src/dto/<entity>.ts`; api consume desde `dist/`
 - **Audit log**: append-only enforced via `REVOKE UPDATE,DELETE,TRUNCATE FROM PUBLIC` en la migration 0004
 - **OTP**: header `X-OTP-Code` (6 dígitos) en operaciones destructivas; service llama `OtpClient.verify({subject,scope,code})`
