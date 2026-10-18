@@ -62,6 +62,8 @@ export default defineConfig({
         PORT: '3210',
         HOSTNAME: '127.0.0.1',
         AUTH_COOKIE_NAME: 'sid',
+        // Server-side fetches (server components) and the /api rewrite target.
+        API_INTERNAL_URL: 'http://127.0.0.1:3211',
       },
       reuseExistingServer: false,
       timeout: 60_000,

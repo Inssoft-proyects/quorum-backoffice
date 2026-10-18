@@ -158,21 +158,22 @@ test.describe('Cosmetic migration — browser smoke', () => {
     expect(corsIssues(issues)).toEqual([]);
   });
 
-  test('serving the app under a different hostname reproduces the CORS block', async ({ page }) => {
-    // This is the operator's symptom, reproduced deliberately: the build
-    // points at http://127.0.0.1:3211 while the page is served from
-    // localhost:3210, so the browser treats the POST as cross-origin and
-    // the stub's ACAO (127.0.0.1) does not match the localhost origin.
-    const issues = collectIssues(page);
-    await page.goto('http://localhost:3210/backoffice/login');
-    await page.getByLabel('Usuario').fill(USERNAME);
-    await page.getByTestId('login-otp').locator('input').first().click();
-    await page.keyboard.type(OTP, { delay: 20 });
-    await page.getByTestId('login-submit').click();
+  test('the browser calls the API on its own origin, never a hardcoded host', async ({ page }) => {
+    // Regression guard for the deployed failure: a bundle built without
+    // NEXT_PUBLIC_API_URL used to inline http://127.0.0.1:3100, so every
+    // visitor's browser called its own machine and was blocked as
+    // cross-origin. With the same-origin default every /api request must
+    // resolve to the origin serving the page.
+    const apiRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/api/v1/')) apiRequests.push(request.url());
+    });
 
-    await expect(page.getByTestId('login-error')).toBeVisible();
-    await expect(page).toHaveURL(/\/backoffice\/login$/);
-    // The failure is transport-level, not an application exception.
-    expect(issues.some((issue) => /cors|access-control|cross-origin/i.test(issue.text))).toBe(true);
+    await login(page);
+
+    expect(apiRequests.length).toBeGreaterThan(0);
+    for (const url of apiRequests) {
+      expect(new URL(url).origin).toBe('http://127.0.0.1:3210');
+    }
   });
 });

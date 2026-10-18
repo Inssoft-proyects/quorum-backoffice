@@ -5,7 +5,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../apps/web"
 
-export NEXT_PUBLIC_API_URL="http://127.0.0.1:3211"
+# Deliberately NOT setting NEXT_PUBLIC_API_URL: this is the production
+# topology that broke (bundle built without it). The browser must call the
+# same origin and the Next rewrite must proxy /api to the stub.
+unset NEXT_PUBLIC_API_URL
+export API_INTERNAL_URL="http://127.0.0.1:3211"
 
 npm run build
 npx playwright test --config e2e/cosmetic/playwright.config.ts "$@"

@@ -96,22 +96,28 @@ dashboard, diálogo de creación, paginación y drawer móvil, y falla si aparec
 cualquier error de CORS en consola. No toca hosts reales, base de datos ni el
 emisor de OTP.
 
-### Por qué el login falla en local con “Solicitud de origen cruzado bloqueada”
+### Base del API: mismo origen por defecto
 
-`apps/api/src/app.ts` registra CORS con `origin: ALLOWED_ORIGIN ?? false`: si
-`ALLOWED_ORIGIN` no está definido, Fastify **no emite cabeceras CORS** y el
-navegador bloquea cualquier POST cross-origin con estado `(null)`. A la vez,
-`NEXT_PUBLIC_API_URL` cae por defecto en `http://127.0.0.1:3100` (el mismo puerto
-por defecto del API) mientras el web de desarrollo vive en `3002`. Para correr
-en local se necesita:
+Un bundle construido **sin** `NEXT_PUBLIC_API_URL` incrustaba
+`http://127.0.0.1:3100`, así que el navegador del visitante llamaba a su propia
+máquina y la petición se bloqueaba como cross-origin (síntoma reportado en
+`https://backoffice.inecuni.com/backoffice/login`). Ahora:
 
-1. La misma **hostname** para la página y el API (`localhost` ≠ `127.0.0.1`
-   aunque el puerto coincida).
-2. `NEXT_PUBLIC_API_URL` apuntando al API real en build/dev.
-3. `ALLOWED_ORIGIN=<origen exacto del web>` en el API.
+- **Navegador**: si `NEXT_PUBLIC_API_URL` está definido se usa tal cual
+  (comportamiento histórico para APIs cross-origin). Si no, la base es `''` y
+  todas las llamadas son relativas (`/api/v1/...`), es decir, contra el mismo
+  origen que sirvió la página. Producción ya enruta `/api/` al API con nginx.
+- **Servidor (Node)**: una URL relativa no es fetchable, así que usa
+  `API_INTERNAL_URL` (variable solo de servidor, leída en runtime) y, si falta,
+  el puerto por defecto del API para herramientas locales.
+- **Desarrollo / standalone**: `next.config.ts` declara un rewrite
+  `/api/:path* → API_INTERNAL_URL`, así que `next dev` y el servidor standalone
+  funcionan sin configurar CORS.
 
-En producción esto no aplica porque nginx sirve web y API bajo el mismo origen
-(`odd/tasks/backoffice-cors-same-origin.md`).
+`apps/api/src/app.ts` sigue registrando CORS con `origin: ALLOWED_ORIGIN ?? false`:
+con el nuevo default ya no hace falta para el flujo normal (no hay petición
+cross-origin), pero sigue siendo necesario si se opta por una API absoluta en
+otro origen.
 
 ### Paridad visual
 

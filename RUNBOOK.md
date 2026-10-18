@@ -30,53 +30,54 @@ Backoffice service.
 
 ## Ports
 
-| Service | Dev | Prod |
-| --- | --- | --- |
-| API    | 3100 | 4100 |
-| Web    | 3002 | 4002 |
-| PG     | 5432 | 5432 |
-| Redis  | 6379 | 6379 |
+| Service | Dev  | Prod |
+| ------- | ---- | ---- |
+| API     | 3100 | 4100 |
+| Web     | 3002 | 4002 |
+| PG      | 5432 | 5432 |
+| Redis   | 6379 | 6379 |
 
 ## Environment variables
 
 ### API (`apps/api`)
 
-| Variable | Required | Default | Notes |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | yes | — | `postgresql://user:pass@host:5432/db` |
-| `REDIS_URL` | yes | — | `redis://host:6379` |
-| `OTP_SERVICE_URL` | yes | — | `http://quorum-otp:3000` |
-| `OTP_SERVICE_TOKEN` | yes | — | HMAC bearer token for OTP service |
-| `CANVAS_PORTAL_API_URL` | yes | — | `http://portal-api:3000` |
-| `CANVAS_PORTAL_API_TOKEN` | yes | — | HMAC bearer token for portal-api |
-| `SESSION_SECRET` | yes | — | ≥32 chars; HMAC for cookie |
-| `SESSION_TTL_SECONDS` | no | 3600 | Session lifetime |
-| `AUTH_COOKIE_NAME` | no | `sid` | Set to `__Host-sid` in prod (requires Secure flag) |
-| `AUTH_COOKIE_SECURE` | no | true | Set to false only in dev/test |
-| `AUTH_LOGIN_MAX_ATTEMPTS` | no | 5 | Per-email rate limit |
-| `AUTH_LOGIN_WINDOW_SECONDS` | no | 900 | 15 minutes |
-| `API_HOST` | no | `127.0.0.1` | Bind host |
-| `API_PORT` | no | 3100 | Bind port |
-| `LOG_LEVEL` | no | info | `fatal|error|warn|info|debug|trace` |
-| `NODE_ENV` | no | development | `development|test|production` |
-| `BOOTSTRAP_ADMIN_EMAIL` | no | — | Optional: create initial admin on boot |
-| `BOOTSTRAP_ADMIN_PASSWORD` | no | — | Optional: initial admin password |
-| `SMTP_HOST` | prod only | — | Hostname of the SMTP relay used to deliver login OTPs |
-| `SMTP_PORT` | prod only | — | SMTP port (typically 587 for STARTTLS or 465 for TLS) |
-| `SMTP_SECURE` | no | false | `true` for implicit TLS (port 465) |
-| `SMTP_USER` | prod only | — | SMTP auth user |
-| `SMTP_PASS` | prod only | — | SMTP auth password |
-| `SMTP_FROM` | no | `no-reply@quorum.local` | From address on OTP emails |
-| `LOGIN_OTP_TTL_SECONDS` | no | 300 | OTP validity window |
-| `LOGIN_OTP_MAX_ATTEMPTS` | no | 5 | Max wrong codes per OTP |
-| `LOGIN_OTP_REQUEST_MAX_PER_EMAIL` | no | 5 | Max OTP requests per email / window |
-| `LOGIN_OTP_REQUEST_WINDOW_SECONDS` | no | 900 | 15 minutes |
+| Variable                           | Required  | Default                 | Notes                                                 |
+| ---------------------------------- | --------- | ----------------------- | ----------------------------------------------------- |
+| `DATABASE_URL`                     | yes       | —                       | `postgresql://user:pass@host:5432/db`                 |
+| `REDIS_URL`                        | yes       | —                       | `redis://host:6379`                                   |
+| `OTP_SERVICE_URL`                  | yes       | —                       | `http://quorum-otp:3000`                              |
+| `OTP_SERVICE_TOKEN`                | yes       | —                       | HMAC bearer token for OTP service                     |
+| `CANVAS_PORTAL_API_URL`            | yes       | —                       | `http://portal-api:3000`                              |
+| `CANVAS_PORTAL_API_TOKEN`          | yes       | —                       | HMAC bearer token for portal-api                      |
+| `SESSION_SECRET`                   | yes       | —                       | ≥32 chars; HMAC for cookie                            |
+| `SESSION_TTL_SECONDS`              | no        | 3600                    | Session lifetime                                      |
+| `AUTH_COOKIE_NAME`                 | no        | `sid`                   | Set to `__Host-sid` in prod (requires Secure flag)    |
+| `AUTH_COOKIE_SECURE`               | no        | true                    | Set to false only in dev/test                         |
+| `AUTH_LOGIN_MAX_ATTEMPTS`          | no        | 5                       | Per-email rate limit                                  |
+| `AUTH_LOGIN_WINDOW_SECONDS`        | no        | 900                     | 15 minutes                                            |
+| `API_HOST`                         | no        | `127.0.0.1`             | Bind host                                             |
+| `API_PORT`                         | no        | 3100                    | Bind port                                             |
+| `LOG_LEVEL`                        | no        | info                    | `fatal                                                | error | warn        | info | debug | trace` |
+| `NODE_ENV`                         | no        | development             | `development                                          | test  | production` |
+| `BOOTSTRAP_ADMIN_EMAIL`            | no        | —                       | Optional: create initial admin on boot                |
+| `BOOTSTRAP_ADMIN_PASSWORD`         | no        | —                       | Optional: initial admin password                      |
+| `SMTP_HOST`                        | prod only | —                       | Hostname of the SMTP relay used to deliver login OTPs |
+| `SMTP_PORT`                        | prod only | —                       | SMTP port (typically 587 for STARTTLS or 465 for TLS) |
+| `SMTP_SECURE`                      | no        | false                   | `true` for implicit TLS (port 465)                    |
+| `SMTP_USER`                        | prod only | —                       | SMTP auth user                                        |
+| `SMTP_PASS`                        | prod only | —                       | SMTP auth password                                    |
+| `SMTP_FROM`                        | no        | `no-reply@quorum.local` | From address on OTP emails                            |
+| `LOGIN_OTP_TTL_SECONDS`            | no        | 300                     | OTP validity window                                   |
+| `LOGIN_OTP_MAX_ATTEMPTS`           | no        | 5                       | Max wrong codes per OTP                               |
+| `LOGIN_OTP_REQUEST_MAX_PER_EMAIL`  | no        | 5                       | Max OTP requests per email / window                   |
+| `LOGIN_OTP_REQUEST_WINDOW_SECONDS` | no        | 900                     | 15 minutes                                            |
 
 ### Web (`apps/web`)
 
-| Variable | Required | Default | Notes |
-| --- | --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | yes (prod) | `http://127.0.0.1:3100` | API base URL the browser hits |
+| Variable              | Required                        | Default                 | Notes                                                                                                                                                                                               |
+| --------------------- | ------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL` | no                              | _(same origin)_         | Absolute API origin inlined into the **browser** bundle at build time. Leave it unset behind nginx so the browser calls `/api/v1/...` on the page's own origin; set it only for a cross-origin API. |
+| `API_INTERNAL_URL`    | yes (prod, server-side fetches) | `http://127.0.0.1:3100` | Server-only address the Next server uses for its own fetches and the local `/api` rewrite destination. In the k3s/hostNetwork deployment use `http://127.0.0.1:4100`. Not exposed to the browser.   |
 
 ## Health endpoints
 
@@ -116,6 +117,7 @@ Backoffice service.
 5. `kubectl -n quorum-backoffice rollout status deployment/quorum-backoffice-web`
    espera al nuevo ReplicaSet (1/1 Ready).
 6. Smoke check:
+
    ```bash
    curl -sk -o /dev/null -w 'login HTTP %{http_code}\n' \
      https://backoffice.inecuni.com/login
@@ -155,11 +157,11 @@ is bash-only, strict (`set -euo pipefail`), and chains:
 
 Optional phases, gated explicitly:
 
-* `DATABASE_URL_TEST=… bash scripts/ci-checks.sh` — also runs
+- `DATABASE_URL_TEST=… bash scripts/ci-checks.sh` — also runs
   `apps/api/test:integration`. The integration suite drops/creates tables;
   **only run it against a disposable DB** (never against the production
   cluster or a shared dev DB).
-* `RUN_PARITY=1 bash scripts/ci-checks.sh` — also runs the lookfeel
+- `RUN_PARITY=1 bash scripts/ci-checks.sh` — also runs the lookfeel
   parity harness against the design canon.
 
 Before any lookfeel / parity work the script exports
@@ -306,8 +308,8 @@ tested but **not deployed**; no live caller exists yet.
 - **Response** (`DecisionResponse`): HTTP 200 for every AUTHENTICATED
   outcome — `{ decision: 'allow', student_id, room_id?, media_policy? }`
   or `{ decision: 'deny', denial: '<deny.* code>' }`. The nine `deny.*
-  codes are the locked taxonomy (migration-independent, in
-  `packages/shared/src/dto/access-decision.ts`).
+codes are the locked taxonomy (migration-independent, in
+`packages/shared/src/dto/access-decision.ts`).
 - **Policy order** (first match wins): `deny.otp_missing` →
   `deny.otp_invalid` / `deny.lockout` (OTP verify rejected / locked) →
   `deny.dependency_fail` (OTP service down, timeout or 5xx — the
@@ -337,8 +339,7 @@ migrate` and `npm run seed:e2e` from `apps/api`, and env
 (a running `quorum-otp`, e.g. its local docker-compose),
 `CANVAS_PORTAL_API_URL`/`CANVAS_PORTAL_API_TOKEN` (unused by these
 flows — placeholder is fine), `SESSION_SECRET`, and
-`BACKOFFICE_SERVICE_TOKENS='demo-caller:demo-secret'`. API dev port:
-3100.
+`BACKOFFICE_SERVICE_TOKENS='demo-caller:demo-secret'`. API dev port: 3100.
 
 Seed one student and one device:
 
@@ -401,6 +402,7 @@ ALTER TYPE audit_action ADD VALUE 'new_entity.action';
 ```
 
 Then update:
+
 1. `packages/shared/src/dto/audit.ts` — `AuditAction` enum.
 2. `apps/api/src/services/<entity>-service.ts` — use the new action in
    `AuditService.write()` calls.
@@ -465,12 +467,12 @@ The counter increments per failed login. Reset with `redis-cli DEL`.
 
 ## Common alerts
 
-| Alert | Likely cause | Action |
-| --- | --- | --- |
-| /readyz returns 503 | PG or Redis down | Check `docker compose ps`, `pg_isready`, `redis-cli ping` |
-| Login 429 spike | Brute force or credential leak | Check `audit_log WHERE action='auth.failed'`, rotate creds, consider blocking IP at edge |
-| Audit log growth slow | Old `_migrations` not pruning | Archive > 1 year to cold storage; never DELETE |
-| OTP 503 in /readyz | quorum-otp service down | Check quorum-otp health; auth still works for already-issued sessions |
+| Alert                 | Likely cause                   | Action                                                                                   |
+| --------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
+| /readyz returns 503   | PG or Redis down               | Check `docker compose ps`, `pg_isready`, `redis-cli ping`                                |
+| Login 429 spike       | Brute force or credential leak | Check `audit_log WHERE action='auth.failed'`, rotate creds, consider blocking IP at edge |
+| Audit log growth slow | Old `_migrations` not pruning  | Archive > 1 year to cold storage; never DELETE                                           |
+| OTP 503 in /readyz    | quorum-otp service down        | Check quorum-otp health; auth still works for already-issued sessions                    |
 
 ## Disaster recovery
 
@@ -515,6 +517,7 @@ This script is idempotent — running it multiple times upserts users
 with fresh bcrypt hashes. Safe to re-run before each e2e test session.
 
 Override any default via env vars before running the script:
+
 - `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD`
 - `E2E_OPERATOR_EMAIL` / `E2E_OPERATOR_PASSWORD`
 - `E2E_AUDITOR_EMAIL` / `E2E_AUDITOR_PASSWORD`
@@ -621,6 +624,7 @@ For VPS deployment with auto-TLS via Let's Encrypt, use the vhost in
    >
    > If you build outside `npm` (raw `next build`), run
    > `bash scripts/copy-web-standalone-assets.sh` afterwards.
+
 3. Drop env files into `/etc/quorum-backoffice/` (api.env + web.env).
 4. Enable the systemd units (templates in `infra/nginx/README.md` §5).
 5. Symlink `infra/nginx/quorum.asistentepro.mx.conf` into `/etc/nginx/sites-enabled/`.
@@ -628,6 +632,7 @@ For VPS deployment with auto-TLS via Let's Encrypt, use the vhost in
 7. `systemctl reload nginx` — done.
 
 The vhost:
+
 - HTTP→HTTPS redirect on port 80.
 - TLS 1.2/1.3 only via Let's Encrypt (auto-renewal).
 - Routes `/healthz`, `/readyz`, `/metrics` (CIDR-restricted) to the API.
@@ -638,6 +643,7 @@ The vhost:
 - `_next/static/*` cached 1 year with immutable.
 
 For production HTTPS mode in the api:
+
 - `ALLOWED_ORIGIN=https://quorum.asistentepro.mx` — single-origin CORS allow.
 - `AUTH_COOKIE_SECURE=true` — cookies only over HTTPS.
 - `AUTH_COOKIE_NAME=__Host-sid` — cookie hardening (requires Secure + Path=/).
