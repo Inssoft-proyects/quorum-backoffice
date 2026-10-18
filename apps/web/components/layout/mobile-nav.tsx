@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Menu } from 'lucide-react';
 import type { MeResponse } from '@quorum-backoffice/shared';
 import { hasAtLeastRole } from '@quorum-backoffice/shared';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Drawer } from '@/components/interior/drawer';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -15,17 +15,16 @@ interface NavItem {
 }
 
 /**
- * Mobile navigation drawer (RESP-001).
+ * Mobile navigation as an interior.dev Drawer
+ * (https://www.interior.dev/docs/drawer) instead of a Radix Dialog with
+ * `data-state` CSS transforms.
  *
- * Hamburger trigger visible only on viewports < 768px (Tailwind `md`
- * breakpoint). Tapping it opens a left-side Radix Dialog containing
- * the same nav items rendered by the desktop Sidebar, plus an X
- * (rendered by the shared DialogContent close button).
- *
- * The drawer uses two `data-state` transforms defined in globals.css
- * under `@layer components` (`slide-in-from-left` / `slide-out-to-left`)
- * so the panel animates in/out from the left edge without depending on
- * tailwindcss-animate.
+ * The equivalent guarantees: the panel enters from its own edge and can be
+ * dragged back toward it (the drag position is the exit position, so the
+ * gesture and the animation agree), the scrim fades under the finger, Escape
+ * closes, focus is trapped and returned, and `prefers-reduced-motion` keeps
+ * the panel reachable without the trip. The trigger and every link keep their
+ * `data-testid`, and the audit link keeps its role gate.
  */
 export function MobileNav({ user }: { user: MeResponse }) {
   const [open, setOpen] = useState(false);
@@ -40,8 +39,9 @@ export function MobileNav({ user }: { user: MeResponse }) {
       visible: hasAtLeastRole(user.role, 'auditor'),
     },
   ];
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -51,17 +51,17 @@ export function MobileNav({ user }: { user: MeResponse }) {
       >
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>
-      <DialogContent
-        aria-modal="true"
-        className="fixed inset-y-0 left-0 right-auto top-0 z-50 w-72 max-w-[85vw] translate-x-0 translate-y-0 gap-0 border-r border-border bg-card p-0 data-[state=closed]:duration-200 data-[state=open]:duration-200 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:rounded-none"
+
+      <Drawer
+        open={open}
+        onOpenChange={setOpen}
+        title="Menú principal"
+        description="Quorum Backoffice"
+        side="left"
+        width={288}
+        closeLabel="Cerrar menú"
       >
-        <DialogTitle className="sr-only">Menú principal</DialogTitle>
-        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 pr-12">
-          <span className="text-sm font-semibold uppercase tracking-wider text-text-muted">
-            Quorum Backoffice
-          </span>
-        </div>
-        <nav className="flex flex-col gap-1 p-4" aria-label="Navegación principal">
+        <nav className="flex flex-col gap-1" aria-label="Navegación principal">
           {items
             .filter((i) => i.visible)
             .map((item) => (
@@ -79,7 +79,7 @@ export function MobileNav({ user }: { user: MeResponse }) {
               </Link>
             ))}
         </nav>
-      </DialogContent>
-    </Dialog>
+      </Drawer>
+    </>
   );
 }
