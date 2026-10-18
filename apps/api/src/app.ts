@@ -37,6 +37,7 @@ import { registerAuthRoutes } from './routes/auth';
 import { registerStudentsRoutes } from './routes/students';
 import { registerMatriculasRoutes } from './routes/matriculas';
 import { registerAccessDecisionsRoutes } from './routes/access-decisions';
+import { registerInternalAuthRoutes } from './routes/internal-auth';
 import { registerMfaRoutes } from './routes/mfa';
 import { registerMfaTokenRoutes } from './routes/mfa-tokens';
 import { registerMfaGetSubjectRoutes } from './routes/mfa-get-subject';
@@ -54,9 +55,9 @@ declare module 'fastify' {
 // standalone pools also return numeric ids (matching the DTO contract).
 pg.types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
 
-export async function buildApp(
-  overrides?: { config?: NodeJS.ProcessEnv },
-): Promise<FastifyInstance> {
+export async function buildApp(overrides?: {
+  config?: NodeJS.ProcessEnv;
+}): Promise<FastifyInstance> {
   const config = loadConfig(overrides?.config);
   const logger = createLogger(config);
 
@@ -125,6 +126,10 @@ export async function buildApp(
   // BACKOFFICE_SERVICE_HMAC_SKEW_SECONDS, failing closed when the
   // registry is empty.
   await registerAccessDecisionsRoutes(app as unknown as FastifyInstance);
+  // S2S identity verification for Quorum QR. The route relies on the
+  // global raw-body capture plugin registered by
+  // registerAccessDecisionsRoutes above and wires its own HMAC preHandler.
+  await registerInternalAuthRoutes(app as unknown as FastifyInstance);
   // M1 / MFA authentication endpoint. The MFA flow is itself
   // the auth (marbete code + device serial + OTP), so the route
   // has no preHandler; the route module wires the

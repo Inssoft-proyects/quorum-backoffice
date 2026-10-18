@@ -38,11 +38,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { MeResponse, UserRole, VerifyOtpResult } from '@quorum-backoffice/shared';
 import { AppError } from '../lib/errors';
 import { generateSessionToken } from '../lib/session-token';
-import {
-  hitLoginRateLimit,
-  resetLoginRateLimit,
-  type RedisLike,
-} from '../lib/rate-limit';
+import { hitLoginRateLimit, resetLoginRateLimit, type RedisLike } from '../lib/rate-limit';
 import { PgUserRepo } from '../repositories/pg-users';
 import { PgSessionRepo } from '../repositories/pg-sessions';
 import { AuditService } from './audit-service';
@@ -129,107 +125,11 @@ export class AuthService {
     otp: string,
     meta: RequestMeta = { ip: null, userAgent: null },
   ): Promise<LoginResult> {
-    const canonical = canonicaliseUsername(rawUsername);
-    if (!canonical) {
-      throw new AppError('invalid_credentials', 'invalid username or code', 401);
-    }
-
-    // Local per-username rate limit. Keyed by canonical username so a
-    // sweep across `admin`/`Admin` shares a budget.
-    const rate = await hitLoginRateLimit(
-      this.redis,
-      canonical,
-      this.loginMaxAttempts,
-      this.loginWindowSeconds,
+    const { user, canonical, verification } = await this.verifyOtpForIdentity(
+      rawUsername,
+      otp,
+      meta,
     );
-    if (!rate.ok) {
-      this.log.warn(
-        { username: canonical, retryAfterSeconds: rate.retryAfterSeconds },
-        'login_rate_limited',
-      );
-      throw new AppError(
-        'rate_limited',
-        'too many login attempts, please try again later',
-        429,
-        { retryAfterSeconds: rate.retryAfterSeconds },
-      );
-    }
-
-    // We deliberately look up the local user BEFORE the OTP verify so
-    // we can:
-    //   - refuse disabled accounts before exposing the OTP path;
-    //   - return a distinct `user_unmapped` when the row exists but
-    //     has no username yet (audit-friendly);
-    //   - log a discriminator against the username for every outcome.
-    const user = await this.users.findByUsername(canonical);
-    if (!user) {
-      await this.recordLoginFailure(canonical, 'unknown_user', meta);
-      // Same shape as invalid_otp so attackers cannot enumerate.
-      throw new AppError('invalid_credentials', 'invalid username or code', 401);
-    }
-    if (user.disabled_at !== null) {
-      await this.recordLoginFailure(canonical, 'disabled', meta);
-      throw new AppError('user_disabled', 'user account is disabled', 403);
-    }
-    if (user.username === null) {
-      // Defensive: findByUsername only matches non-null rows, but if
-      // the row mutated between SELECTs we surface a stable error.
-      await this.recordLoginFailure(canonical, 'unmapped_user', meta);
-      throw new AppError(
-        'user_unmapped',
-        'username not assigned for this account',
-        403,
-      );
-    }
-
-    // Verify the pre-issued OTP against quorum-otp. The provider HMAC
-    // requires the subject to be the canonical username — exactly
-    // the value the issuer bound during the upstream issuance flow.
-    //
-    // For backwards compatibility with operators who issued the OTP
-    // bound to the legacy email identifier (Polish WU v6 flow), we
-    // also try `user.email` as the subject if the username probe
-    // rejects the token. The first probe to succeed wins.
-    const candidateSubjects = Array.from(
-      new Set([user.username, user.email].filter((s): s is string => typeof s === 'string' && s.length > 0)),
-    );
-    let verification: VerifyOtpResult | null = null;
-    let lastReason: string | null = null;
-    for (const subject of candidateSubjects) {
-      try {
-        const result = await this.otp.verify({
-          subject,
-          scope: LOGIN_OTP_SCOPE,
-          code: otp,
-        });
-        if (result.ok) {
-          verification = result;
-          break;
-        }
-        lastReason = result.reason ?? 'unknown';
-      } catch (err) {
-        if (err instanceof AppError) {
-          await this.recordLoginFailure(canonical, 'service_unavailable', meta);
-          throw err;
-        }
-        throw AppError.serviceUnavailable('otp_dependent_failure');
-      }
-    }
-    if (!verification) {
-      const reason = lastReason ?? 'unknown';
-      await this.recordLoginFailure(canonical, reason, meta);
-      if (reason === 'locked') {
-        throw new AppError(
-          'rate_limited',
-          'too many login attempts, please try again later',
-          429,
-        );
-      }
-      // 'invalid' | 'expired' | 'rate_limited' | 'unknown' all collapse
-      // to a single invalid-credentials response so we don't leak
-      // provider-internal reasons.
-      throw new AppError('invalid_credentials', 'invalid username or code', 401);
-    }
 
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + this.sessionTtlSeconds * 1000);
@@ -262,9 +162,147 @@ export class AuthService {
 
     // MeResponse keeps `email` for existing UI/audit consumers.
     return {
-      user: { id: user.id, email: user.email, username: user.username, role: user.role as UserRole },
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role as UserRole,
+      },
       sessionToken: token,
     };
+  }
+
+  /**
+   * Verify username + OTP and return the resolved user without issuing a
+   * session. Used by the S2S `verify-otp` endpoint (HMAC service auth).
+   * Shares the login attempt counter and failure audit with loginWithOtp.
+   */
+  async verifyOtpIdentity(
+    rawUsername: string,
+    otp: string,
+    meta: RequestMeta = { ip: null, userAgent: null },
+    serviceName = 'unknown',
+  ): Promise<{ id: number; username: string; role: UserRole }> {
+    const { user, canonical } = await this.verifyOtpForIdentity(rawUsername, otp, meta);
+    await resetLoginRateLimit(this.redis, canonical);
+
+    await new AuditService(this.pool).write({
+      actorId: user.username ?? canonical,
+      action: 'auth.verify_service',
+      entityType: 'service',
+      entityId: serviceName,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    return {
+      id: user.id,
+      username: user.username ?? canonical,
+      role: user.role as UserRole,
+    };
+  }
+
+  /**
+   * Shared verification path: rate limit, user lookup, OTP probe and
+   * failure audit. Callers decide what to do on success (session vs S2S).
+   */
+  private async verifyOtpForIdentity(rawUsername: string, otp: string, meta: RequestMeta) {
+    const canonical = canonicaliseUsername(rawUsername);
+    if (!canonical) {
+      throw new AppError('invalid_credentials', 'invalid username or code', 401);
+    }
+
+    // Local per-username rate limit. Keyed by canonical username so a
+    // sweep across `admin`/`Admin` shares a budget.
+    const rate = await hitLoginRateLimit(
+      this.redis,
+      canonical,
+      this.loginMaxAttempts,
+      this.loginWindowSeconds,
+    );
+    if (!rate.ok) {
+      this.log.warn(
+        { username: canonical, retryAfterSeconds: rate.retryAfterSeconds },
+        'login_rate_limited',
+      );
+      throw new AppError('rate_limited', 'too many login attempts, please try again later', 429, {
+        retryAfterSeconds: rate.retryAfterSeconds,
+      });
+    }
+
+    // We deliberately look up the local user BEFORE the OTP verify so
+    // we can:
+    //   - refuse disabled accounts before exposing the OTP path;
+    //   - return a distinct `user_unmapped` when the row exists but
+    //     has no username yet (audit-friendly);
+    //   - log a discriminator against the username for every outcome.
+    const user = await this.users.findByUsername(canonical);
+    if (!user) {
+      await this.recordLoginFailure(canonical, 'unknown_user', meta);
+      // Same shape as invalid_otp so attackers cannot enumerate.
+      throw new AppError('invalid_credentials', 'invalid username or code', 401);
+    }
+    if (user.disabled_at !== null) {
+      await this.recordLoginFailure(canonical, 'disabled', meta);
+      throw new AppError('user_disabled', 'user account is disabled', 403);
+    }
+    if (user.username === null) {
+      // Defensive: findByUsername only matches non-null rows, but if
+      // the row mutated between SELECTs we surface a stable error.
+      await this.recordLoginFailure(canonical, 'unmapped_user', meta);
+      throw new AppError('user_unmapped', 'username not assigned for this account', 403);
+    }
+
+    // Verify the pre-issued OTP against quorum-otp. The provider HMAC
+    // requires the subject to be the canonical username — exactly
+    // the value the issuer bound during the upstream issuance flow.
+    //
+    // For backwards compatibility with operators who issued the OTP
+    // bound to the legacy email identifier (Polish WU v6 flow), we
+    // also try `user.email` as the subject if the username probe
+    // rejects the token. The first probe to succeed wins.
+    const candidateSubjects = Array.from(
+      new Set(
+        [user.username, user.email].filter(
+          (s): s is string => typeof s === 'string' && s.length > 0,
+        ),
+      ),
+    );
+    let verification: VerifyOtpResult | null = null;
+    let lastReason: string | null = null;
+    for (const subject of candidateSubjects) {
+      try {
+        const result = await this.otp.verify({
+          subject,
+          scope: LOGIN_OTP_SCOPE,
+          code: otp,
+        });
+        if (result.ok) {
+          verification = result;
+          break;
+        }
+        lastReason = result.reason ?? 'unknown';
+      } catch (err) {
+        if (err instanceof AppError) {
+          await this.recordLoginFailure(canonical, 'service_unavailable', meta);
+          throw err;
+        }
+        throw AppError.serviceUnavailable('otp_dependent_failure');
+      }
+    }
+    if (!verification) {
+      const reason = lastReason ?? 'unknown';
+      await this.recordLoginFailure(canonical, reason, meta);
+      if (reason === 'locked') {
+        throw new AppError('rate_limited', 'too many login attempts, please try again later', 429);
+      }
+      // 'invalid' | 'expired' | 'rate_limited' | 'unknown' all collapse
+      // to a single invalid-credentials response so we don't leak
+      // provider-internal reasons.
+      throw new AppError('invalid_credentials', 'invalid username or code', 401);
+    }
+
+    return { user, canonical, verification };
   }
 
   /**
