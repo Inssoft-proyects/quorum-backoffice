@@ -16,6 +16,7 @@ import {
   type DonutSegment,
   type PageSize,
 } from '@/components/inventory';
+import { CopyButton } from '@/components/interior/copy-button';
 import { MarbetesTable } from './marbetes-table';
 
 interface Props {
@@ -342,7 +343,15 @@ export function MarbetesPageClient({ items, userRole }: Props) {
           aria-live="polite"
           data-testid="reveal-confirmation-banner"
         >
-          Código revelado: <strong data-testid="reveal-confirmation-code">{lastRevealedCode}</strong>
+          Código revelado:{' '}
+          <strong data-testid="reveal-confirmation-code">{lastRevealedCode}</strong>{' '}
+          <CopyButton
+            value={lastRevealedCode}
+            label="Copiar código"
+            copiedLabel="Copiado"
+            errorLabel="No se pudo copiar"
+            className="ml-1 h-8 px-2 align-middle"
+          />
         </div>
       ) : null}
 
