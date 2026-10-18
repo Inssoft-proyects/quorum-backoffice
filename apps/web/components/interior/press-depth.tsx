@@ -121,10 +121,16 @@ export function usePressDepth(options: UsePressDepthOptions = {}): UsePressDepth
       if (disabled) return;
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       const r = event.currentTarget.getBoundingClientRect();
-      setOrigin({
-        x: Math.max(-1, Math.min(1, ((event.clientX - r.left) / r.width) * 2 - 1)),
-        y: Math.max(-1, Math.min(1, ((event.clientY - r.top) / r.height) * 2 - 1)),
-      });
+      // jsdom (and a detached node) reports a zero-sized box: without this
+      // guard the tilt becomes NaN and poisons the transform string.
+      if (r.width <= 0 || r.height <= 0) {
+        setOrigin({ x: 0, y: 0 });
+      } else {
+        setOrigin({
+          x: Math.max(-1, Math.min(1, ((event.clientX - r.left) / r.width) * 2 - 1)),
+          y: Math.max(-1, Math.min(1, ((event.clientY - r.top) / r.height) * 2 - 1)),
+        });
+      }
       pointer.current = event.pointerId;
       setTracking(true);
       setDown(true);
