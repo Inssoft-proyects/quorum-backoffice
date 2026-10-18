@@ -99,50 +99,73 @@ Backoffice service.
 > **ssh + systemd + git pull** que ya no aplica al cluster k3s real.
 > El release real es:
 
-1. Push de la rama feature al remoto (e.g. `git push origin feature/<name>`).
-2. Merge a `master` (PR vía GitHub o `git merge --no-ff` local + push).
-3. Build de la imagen Docker del pod web (paso ejecutado por el pipeline
-   de CI; la imagen queda en el registry configurado en `kustomization.yaml`
-   / helm chart del cluster).
-4. Apply al cluster:
-   ```bash
-   kubectl -n quorum-backoffice set image deployment/quorum-backoffice-web \
-     web=<registry>/<image>:<tag>
-   ```
-   El Deployment tiene `hostNetwork: true` + `hostPath: /opt/quorum-backoffice`,
-   pero el bundle real (`apps/web/.next/standalone/apps/web/server.js`)
-   debe estar en el **filesystem del pod desde la imagen**, no en el
-   hostPath. El hostPath se mantiene por compatibilidad con debugs
-   locales.
-5. `kubectl -n quorum-backoffice rollout status deployment/quorum-backoffice-web`
-   espera al nuevo ReplicaSet (1/1 Ready).
-6. Smoke check:
+**Topología real (verificada 2026-10-18, revisión 29):** el Deployment
+`quorum-backoffice-web` usa la imagen `node:22-bookworm-slim` y ejecuta
+`node .next/standalone/apps/web/server.js` desde el hostPath
+`/opt/quorum-backoffice` montado en `/opt/qb` (`hostNetwork: true`, puerto
+4002). No hay imagen propia con el bundle: **el release es el rebuild del
+bundle en el hostPath + restart del pod**. La variante "imagen desde el
+registry" descrita históricamente no está implementada para web.
 
-   ```bash
-   curl -sk -o /dev/null -w 'login HTTP %{http_code}\n' \
-     https://backoffice.inecuni.com/login
-   curl -sk -o /dev/null -w 'marbetes HTTP %{http_code}\n' \
-     https://backoffice.inecuni.com/backoffice/marbetes
-   ```
+#### Release del bundle web
 
-   Para CI / runbooks, prefer `scripts/smoke-post-deploy.sh` (F6) — wraps
-   the probes above plus the bulk-upload template and the unauthenticated
-   `/api/v1/matriculas` route, and adds an optional `SMOKE_API_LOCAL`
-   health/ready probe against the node loopback (port 4100). Example:
+```bash
+TS=$(date +%Y%m%d-%H%M%S)
+BASE=/opt/quorum-backoffice
 
-   ```bash
-   SMOKE_API_LOCAL=http://127.0.0.1:4100 \
-     bash scripts/smoke-post-deploy.sh
-   ```
+# 1. Respaldo del bundle en producción (rollback)
+cp -a "$BASE/apps/web/.next" "$BASE/apps/web/.next.rollback-$TS"
 
-   Default target is `https://backoffice.inecuni.com`; override
-   with `SMOKE_BASE_URL=…` for staging. The script exits non-zero on any
-   mismatch and prints a `FAIL — …` summary line.
+# 2. Sincronizar el árbol de trabajo autorizado (sin .next ni node_modules)
+rsync -a --exclude '.next*' --exclude 'node_modules' --exclude 'test-results' \
+  --exclude 'playwright-report' --exclude 'next-env.d.ts' --exclude '*.tsbuildinfo' \
+  <WORKTREE>/apps/web/ "$BASE/apps/web/"
+rsync -a --exclude 'node_modules' --exclude 'dist*' <WORKTREE>/packages/shared/ "$BASE/packages/shared/"
+cp -a <WORKTREE>/package.json <WORKTREE>/package-lock.json "$BASE/"
+rsync -a <WORKTREE>/scripts/ "$BASE/scripts/"
 
-> Procedimiento manual vía rsync al hostPath **no es el flujo de release
-> soportado**. Sólo se usa en debug local cuando el usuario lo autoriza
-> explícitamente, y el pod debe reiniciarse para tomar el bundle
-> (`kubectl rollout restart`).
+# 3. Dependencias (node_modules es root-owned en el host)
+cd "$BASE" && sudo -n npm install --no-audit --no-fund
+npm run build -w @quorum-backoffice/shared
+
+# 4. Build del web EN MODO MISMO ORIGEN
+#    NEXT_PUBLIC_API_URL debe estar SIN definir: se inlinea en el bundle.
+cd "$BASE/apps/web"
+unset NEXT_PUBLIC_API_URL
+API_INTERNAL_URL=http://127.0.0.1:4100 npm run build
+
+# 5. Env de servidor + rollout
+kubectl -n quorum-backoffice set env deploy/quorum-backoffice-web \
+  API_INTERNAL_URL=http://127.0.0.1:4100
+kubectl -n quorum-backoffice rollout restart deploy/quorum-backoffice-web
+kubectl -n quorum-backoffice rollout status deploy/quorum-backoffice-web --timeout=180s
+
+# 6. Verificación
+grep -rl '127\.0\.0\.1:3100' "$BASE/apps/web/.next/static/chunks" && echo "FALLA: base loopback inlineada"
+curl -s -o /dev/null -w 'login %{http_code}\n' https://backoffice.inecuni.com/backoffice/login
+curl -s -o /dev/null -w 'api %{http_code}\n'  https://backoffice.inecuni.com/api/v1/auth/me   # 401 esperado
+```
+
+**Rollback:** restaurar el respaldo y reiniciar.
+
+```bash
+mv "$BASE/apps/web/.next" "$BASE/apps/web/.next.failed-$TS"
+mv "$BASE/apps/web/.next.rollback-$TS" "$BASE/apps/web/.next"
+kubectl -n quorum-backoffice rollout restart deploy/quorum-backoffice-web
+```
+
+**Errores que este procedimiento previene:**
+
+- Construir con `NEXT_PUBLIC_API_URL` sin definir y el default histórico
+  `http://127.0.0.1:3100` producía un bundle que llamaba a la máquina del
+  visitante (bloqueado por CORS). Hoy el default es _mismo origen_; aun así,
+  verificar el punto 6 después de cada release.
+- `NEXT_PUBLIC_API_URL` definida **solo como env de runtime** no corrige un
+  valor ya inlineado: hay que reconstruir.
+
+> El build manual se usa hoy porque no existe pipeline de CI para web en este
+> repo (`gh run list` vacío, sin `.github/workflows`). Si se implementa, migrar
+> a `kubectl set image` y retirar el hostPath.
 
 ### Pre-merge verification gate (`scripts/ci-checks.sh`)
 
