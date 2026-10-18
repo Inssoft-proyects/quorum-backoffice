@@ -130,11 +130,13 @@ export function ValueFlash({
     return () => clearTimeout(id);
   }, [text, announceAfter]);
 
+  // `text-current` lets the host control the resting colour (a dark metric
+  // card needs white digits); the flash tone still wins while it lasts.
   const tone = flashing
     ? direction === 'up'
       ? 'text-success-text '
       : 'text-alert-error-text '
-    : 'text-text-primary ';
+    : 'text-current ';
 
   const tint = direction === 'up' ? 'bg-feedback-success/10 ' : 'bg-alert-error-bg ';
 

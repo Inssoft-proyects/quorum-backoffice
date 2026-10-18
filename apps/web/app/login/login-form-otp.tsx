@@ -87,8 +87,8 @@ export function LoginFormOtp() {
         testid lives on the OtpInput group wrapper so existing
         Testing Library queries keep working.
       */}
-      <div className="flex flex-col items-center gap-2">
-        <Label htmlFor="otp-1" className="self-center text-center text-primary-500">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="otp-1" className="text-[13px] font-medium text-text-muted-bold">
           Código de acceso
         </Label>
         <OtpInput
@@ -112,15 +112,13 @@ export function LoginFormOtp() {
           autoFocus={false}
           aria-label="Código de acceso de 6 caracteres"
           data-testid="login-otp"
+          hint="Código de 6 caracteres alfanuméricos (mayúsculas y dígitos)."
         />
-        <p id="otp-hint" className="text-center text-xs text-text-muted">
-          Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).
-        </p>
       </div>
 
       <Button
         type="submit"
-        className="w-full font-semibold"
+        className="w-full"
         size="lg"
         disabled={loading || !usernameReady || !otpReady}
         data-testid="login-submit"

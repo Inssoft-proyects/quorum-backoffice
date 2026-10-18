@@ -125,3 +125,32 @@ La paridad pixel contra la maqueta (`e2e/lookfeel/12-maquette-parity.spec.ts`)
 necesita `E2E_ADMIN_USERNAME` y un OTP fresco del servicio: al cambiar la
 apariencia de botones, campos y diálogos, su línea base debe regenerarse antes de
 volver a exigir el umbral de 96.
+
+## Armonización del chrome heredado
+
+Los primitivos de interior.dev son el canon visual. La capa final de
+`app/globals.css` (`@layer components`, sección «Cosmetic harmony») lleva las
+clases de la maqueta a la misma geometría para que una pantalla no muestre dos
+lenguajes a la vez:
+
+| Regla                 | Valor canónico                                                     |
+| --------------------- | ------------------------------------------------------------------ |
+| Altura de control     | 40 px (compacto 32-36)                                             |
+| Radio                 | 8 px controles, 12 px paneles                                      |
+| Tipografía de control | 13 px / 500; hints 11.5 px / 400                                   |
+| Borde                 | 1 px `--color-border` + anillo `0 0 0 1px rgb(0 0 0 / 12%)`        |
+| Foco                  | anillo de 2 px `--color-primary-500` (dorado), nunca el verde 4 px |
+| Press                 | `translateY(1px)` + `brightness(.98)`                              |
+
+Clases alineadas: `.btn` / `.btn--primary` / `.btn--secondary`, `.row-action`,
+`.admin-action--*`, `.form-field__*`, `.custom-select__trigger`,
+`.inventory-search__*`, `.data-table` (tipografía y padding), `.sort-button`
+(min-width 6.25rem), `.table-pagination` (footer en flujo, tarjeta propia),
+`.metric-card__*` (chip sin solapar la etiqueta, porcentaje sin recortarse),
+`.modal-dialog__*`, `.status-chip`, `.app-alert`, `.assignment-checkbox`.
+
+Además se corrigieron defectos de layout que la inconsistencia hacía visibles:
+la barra de filtros de auditoría no tenía `flex-wrap` y sus campos se
+superponían; `.inventory-section--table` no existía en CSS, así que la tabla
+crecía con la página y el paginador quedaba fuera de vista; la tabla de
+dispositivos excedía el contenedor ~120 px y recortaba la columna Acciones.

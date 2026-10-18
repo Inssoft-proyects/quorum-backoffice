@@ -278,7 +278,7 @@ export function MfaForm({ next }: MfaFormProps) {
           </Alert>
           <Button
             type="button"
-            className="w-full font-semibold"
+            className="w-full"
             size="lg"
             onClick={async () => {
               const token = await tryIssueRedirectToken(targetNext);
@@ -337,8 +337,8 @@ export function MfaForm({ next }: MfaFormProps) {
             inputClassName="font-mono uppercase tracking-wider"
           />
 
-          <div className="flex flex-col items-center gap-2">
-            <Label htmlFor="mfa-otp-1" className="self-center text-center text-primary-500">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="mfa-otp-1" className="text-[13px] font-medium text-text-muted-bold">
               Código dinámico
             </Label>
             <OtpInput
@@ -367,7 +367,7 @@ export function MfaForm({ next }: MfaFormProps) {
 
           <Button
             type="submit"
-            className="w-full font-semibold"
+            className="w-full"
             size="lg"
             disabled={loading || !ready}
             data-testid="mfa-submit"

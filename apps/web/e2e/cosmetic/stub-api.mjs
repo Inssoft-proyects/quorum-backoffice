@@ -92,6 +92,26 @@ const DISPOSITIVOS = [
   },
 ];
 
+const MATRICULAS = Array.from({ length: 24 }, (_, i) => ({
+  canvasUserId: 9000 + i,
+  fullName: i % 5 === 0 ? null : `Estudiante ${i}`,
+  email: `estudiante${i}@inecuni.com`,
+  sisId: `SIS-${String(i).padStart(4, '0')}`,
+  isActive: true,
+  registeredAt: nowIso,
+  marbete:
+    i % 3 === 0
+      ? {
+          id: i + 1,
+          publicUid: `m-${String(i + 1).padStart(6, '0')}`,
+          maskedCode: `V***${String(i + 1).padStart(2, '0')}`,
+          status: 'active',
+          assignedAt: nowIso,
+          assignedBy: 'admin',
+        }
+      : null,
+}));
+
 const AUDIT = [
   {
     id: 1,
@@ -229,6 +249,28 @@ const server = createServer(async (req, res) => {
       limit,
       offset,
       items: MARBETES.slice(offset, offset + limit),
+    });
+    return;
+  }
+
+  if (path === '/api/v1/matriculas/counters') {
+    send(req, res, 200, {
+      total: MATRICULAS.length,
+      assigned: MATRICULAS.filter((m) => m.marbete).length,
+      unassigned: MATRICULAS.filter((m) => !m.marbete).length,
+      availableMarbetes: 60,
+    });
+    return;
+  }
+
+  if (path === '/api/v1/matriculas') {
+    const limit = Number(url.searchParams.get('limit') ?? 50);
+    const offset = Number(url.searchParams.get('offset') ?? 0);
+    send(req, res, 200, {
+      total: MATRICULAS.length,
+      limit,
+      offset,
+      items: MATRICULAS.slice(offset, offset + limit),
     });
     return;
   }

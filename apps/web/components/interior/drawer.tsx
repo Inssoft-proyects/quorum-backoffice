@@ -345,7 +345,7 @@ export function Drawer({
         aria-hidden
         style={{ opacity: drawer.veil }}
         onClick={dismissOnScrimClick ? drawer.close : undefined}
-        className="absolute inset-0 bg-black/40 "
+        className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
       />
       <motion.div
         ref={drawer.panelRef}
@@ -364,7 +364,10 @@ export function Drawer({
           }`}
         >
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="truncate text-[13px] font-medium text-text-primary ">
+            <h2
+              id={titleId}
+              className="truncate text-[14px] font-semibold tracking-[-0.01em] text-text-primary"
+            >
               {title}
             </h2>
             {description ? (

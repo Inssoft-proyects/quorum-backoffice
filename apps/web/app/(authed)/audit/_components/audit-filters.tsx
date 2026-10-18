@@ -99,7 +99,7 @@ export function AuditFilters({ countLabel = '(0)' }: Props) {
         </span>
       </div>
       <div
-        className="mt-3 grid gap-3 md:grid-cols-3 lg:grid-cols-5"
+        className="mt-3 grid w-full basis-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5"
         data-testid="audit-filters-extra"
       >
         <div className="custom-select">

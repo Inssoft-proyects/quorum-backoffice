@@ -124,7 +124,7 @@ export function OtpInput({
           const char = chars[i] ?? '';
           const cell = getCellProps(i);
           return (
-            <div key={i} className="relative h-12 w-11">
+            <div key={i} className="relative h-10 w-10">
               <input
                 {...cell}
                 autoComplete={isAlpha ? (i === 0 ? 'one-time-code' : undefined) : undefined}
@@ -134,8 +134,8 @@ export function OtpInput({
                 aria-invalid={status === 'error' || undefined}
                 aria-describedby={hasMessage ? messageId : undefined}
                 className={cn(
-                  'h-12 w-11 rounded-md border border-input bg-background text-center text-lg font-mono uppercase caret-transparent',
-                  'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:bg-primary-500/10',
+                  'h-10 w-10 rounded-md border border-border-strong bg-background text-center text-[15px] font-mono uppercase caret-transparent shadow-[0_1px_2px_rgba(0,0,0,0.10)]',
+                  'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:bg-primary-500/5',
                   'disabled:opacity-50',
                   status === 'error' && 'border-alert-error-text',
                   status === 'success' && 'border-feedback-success',
@@ -158,7 +158,7 @@ export function OtpInput({
                         }
                   }
                 >
-                  <span className="block h-[18px] w-[1.5px] rounded-[1px] bg-primary-500" />
+                  <span className="block h-4 w-[1.5px] rounded-[1px] bg-primary-500" />
                 </motion.span>
               ) : null}
             </div>
@@ -185,9 +185,11 @@ export function OtpInput({
           >
             {message}
           </motion.div>
-          <span id={messageId} role="status" className="sr-only">
-            {message}
-          </span>
+          {status !== 'idle' ? (
+            <span id={messageId} role="status" className="sr-only">
+              {message}
+            </span>
+          ) : null}
         </>
       ) : null}
     </div>
