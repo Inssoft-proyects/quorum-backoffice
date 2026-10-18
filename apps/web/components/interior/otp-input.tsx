@@ -36,8 +36,17 @@ const ALLOW: Record<OtpMode, RegExp> = {
 export type UseOtpInputOptions = {
   length?: number;
   mode?: OtpMode;
+  /** Controlled concatenated value. When supplied it wins over internal state. */
+  value?: string;
   defaultValue?: string;
   disabled?: boolean;
+  /** Applied to every incoming character before the alphabet filter runs. */
+  normalize?: (raw: string) => string;
+  /**
+   * Upstream focuses the first empty cell when an earlier one is empty.
+   * Quorum dialogs address cells positionally, so this is opt-out.
+   */
+  jumpToFirstEmpty?: boolean;
   onChange?: (value: string) => void;
   onComplete?: (value: string) => void;
 };
@@ -73,23 +82,27 @@ export type UseOtpInputReturn = {
 export function useOtpInput({
   length = 6,
   mode = 'numeric',
+  value: controlledValue,
   defaultValue = '',
   disabled = false,
+  normalize,
+  jumpToFirstEmpty = true,
   onChange,
   onComplete,
 }: UseOtpInputOptions = {}): UseOtpInputReturn {
   const allow = ALLOW[mode];
+  const isControlled = controlledValue !== undefined;
 
   const keep = useCallback(
     (text: string) =>
-      text
+      (normalize ? normalize(text) : text)
         .split('')
         .filter((c) => allow.test(c))
         .join(''),
-    [allow],
+    [allow, normalize],
   );
 
-  const [chars, setChars] = useState<string[]>(() => {
+  const [internalChars, setInternalChars] = useState<string[]>(() => {
     const seed = defaultValue
       .split('')
       .filter((c) => ALLOW[mode].test(c))
@@ -97,6 +110,16 @@ export function useOtpInput({
     return Array.from({ length }, (_, i) => seed[i] ?? '');
   });
   const [focusedIndex, setFocusedIndex] = useState(-1);
+
+  const chars = isControlled
+    ? Array.from({ length }, (_, i) => {
+        // Positional read: the wire value keeps a space where a cell is
+        // empty (the historical Quorum contract), so a gap must not shift
+        // the following characters to the left.
+        const raw = (controlledValue ?? '')[i] ?? '';
+        return ALLOW[mode].test(raw) ? raw : '';
+      })
+    : internalChars;
 
   const charsRef = useRef(chars);
   charsRef.current = chars;
@@ -109,19 +132,25 @@ export function useOtpInput({
   completed.current = onComplete;
 
   useEffect(() => {
-    setChars((prev) =>
+    setInternalChars((prev) =>
       prev.length === length ? prev : Array.from({ length }, (_, i) => prev[i] ?? ''),
     );
     refs.current.length = length;
   }, [length]);
 
-  const commit = useCallback((next: string[]) => {
-    charsRef.current = next;
-    setChars(next);
-    const value = next.join('');
-    changed.current?.(value);
-    if (next.length > 0 && next.every((c) => c !== '')) completed.current?.(value);
-  }, []);
+  const commit = useCallback(
+    (next: string[]) => {
+      charsRef.current = next;
+      if (!isControlled) setInternalChars(next);
+      const value = next
+        .map((c) => (c === '' ? ' ' : c))
+        .join('')
+        .trimEnd();
+      changed.current?.(value);
+      if (next.length > 0 && next.every((c) => c !== '')) completed.current?.(value);
+    },
+    [isControlled],
+  );
 
   const focusAt = useCallback(
     (index: number) => {
@@ -247,10 +276,12 @@ export function useOtpInput({
       },
       onFocus: (e) => {
         e.currentTarget.select();
-        const firstEmpty = charsRef.current.findIndex((c) => c === '');
-        if (firstEmpty !== -1 && firstEmpty < index) {
-          focusAt(firstEmpty);
-          return;
+        if (jumpToFirstEmpty) {
+          const firstEmpty = charsRef.current.findIndex((c) => c === '');
+          if (firstEmpty !== -1 && firstEmpty < index) {
+            focusAt(firstEmpty);
+            return;
+          }
         }
         setFocusedIndex(index);
       },
@@ -260,7 +291,7 @@ export function useOtpInput({
         setFocusedIndex(-1);
       },
     }),
-    [chars, commit, disabled, fillFrom, focusAt, keep, length, mode],
+    [chars, commit, disabled, fillFrom, focusAt, jumpToFirstEmpty, keep, length, mode],
   );
 
   const value = chars.join('');
