@@ -3,9 +3,12 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { DonutChart, type DonutSegment } from './donut-chart';
+import { AnimatedCounter } from './animated-counter';
 
-export interface MetricCardProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+export interface MetricCardProps extends Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  'children'
+> {
   /** Label shown in the upper part of the card (e.g. "Total"). */
   label: string;
   /** Numeric value (large, bold). */
@@ -91,7 +94,9 @@ export const MetricCard = React.forwardRef<HTMLButtonElement, MetricCardProps>(
         </span>
         {percentageLabel ? (
           <span className="metric-card__value-row">
-            <span className="metric-card__value">{value}</span>
+            <span className="metric-card__value">
+              {typeof value === 'number' ? <AnimatedCounter value={value} label={label} /> : value}
+            </span>
             <span
               className="metric-card__percentage"
               aria-label={percentageAriaLabel ?? percentageLabel}
@@ -101,7 +106,9 @@ export const MetricCard = React.forwardRef<HTMLButtonElement, MetricCardProps>(
             </span>
           </span>
         ) : (
-          <span className="metric-card__value">{value}</span>
+          <span className="metric-card__value">
+            {typeof value === 'number' ? <AnimatedCounter value={value} label={label} /> : value}
+          </span>
         )}
         {pills && pills.length > 0 ? (
           <span className="metric-card__meta" aria-label={pills.map((p) => p.label).join(' / ')}>

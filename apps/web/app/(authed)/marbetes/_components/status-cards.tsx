@@ -1,5 +1,6 @@
 import type { MarbeteCountersResponse } from '@quorum-backoffice/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AnimatedCounter } from '@/components/inventory/animated-counter';
 
 /**
  * Two-up status cards for the Marbetes page (OK vs KO counters).
@@ -17,7 +18,7 @@ export function StatusCards({ counters }: { counters: MarbeteCountersResponse })
             className="text-3xl font-semibold text-feedback-success"
             data-testid="counter-ok"
           >
-            {counters.ok}
+            <AnimatedCounter value={counters.ok} label="Marbetes OK" />
           </div>
           <p className="mt-1 text-xs text-text-muted">Activos y asignados a un estudiante</p>
         </CardContent>
@@ -31,7 +32,7 @@ export function StatusCards({ counters }: { counters: MarbeteCountersResponse })
             className="text-3xl font-semibold text-alert-error-text"
             data-testid="counter-ko"
           >
-            {counters.ko}
+            <AnimatedCounter value={counters.ko} label="Marbetes KO" />
           </div>
           <p className="mt-1 text-xs text-text-muted">Sin asignar, inactivos o eliminados</p>
         </CardContent>
