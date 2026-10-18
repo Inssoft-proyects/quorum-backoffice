@@ -30,7 +30,6 @@ import { useModal } from '@/components/interior/modal';
 
 const SURFACE = { type: 'spring', stiffness: 420, damping: 34, mass: 0.8 } as const;
 const EASE = [0.16, 1, 0.3, 1] as const;
-const INSTANT = { duration: 0 } as const;
 
 type OverlayProps = ReturnType<typeof useModal>['overlayProps'];
 type PanelProps = ReturnType<typeof useModal>['panelProps'];
