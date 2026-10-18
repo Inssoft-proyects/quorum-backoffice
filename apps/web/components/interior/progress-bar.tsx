@@ -24,6 +24,11 @@ export type ProgressBarProps = {
   pendingLabel?: string;
   completeLabel?: string;
   className?: string;
+  /**
+   * Quorum adaptation: hide the built-in label row when the caller already
+   * renders its own status line and percentage above the track.
+   */
+  showHeader?: boolean;
 };
 
 export function ProgressBar({
@@ -33,6 +38,7 @@ export function ProgressBar({
   pendingLabel = 'Working',
   completeLabel = 'Complete',
   className = '',
+  showHeader = true,
 }: ProgressBarProps) {
   const reduced = useReducedMotion();
   const labelId = useId();
@@ -51,35 +57,38 @@ export function ProgressBar({
 
   return (
     <div className={`w-full ${className}`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span id={labelId} className="truncate text-[13px] font-medium text-text-primary ">
-          {label}
-        </span>
+      {showHeader ? (
+        <div className="flex items-baseline justify-between gap-3">
+          <span id={labelId} className="truncate text-[13px] font-medium text-text-primary ">
+            {label}
+          </span>
 
-        <span aria-hidden className="grid shrink-0 justify-items-end text-text-muted ">
-          <motion.span
-            className="col-start-1 row-start-1 whitespace-nowrap text-[12px] font-medium leading-5"
-            initial={false}
-            animate={{ opacity: indeterminate ? 1 : 0 }}
-            transition={reduced ? INSTANT : CROSSFADE}
-          >
-            {pendingLabel}
-          </motion.span>
+          <span aria-hidden className="grid shrink-0 justify-items-end text-text-muted ">
+            <motion.span
+              className="col-start-1 row-start-1 whitespace-nowrap text-[12px] font-medium leading-5"
+              initial={false}
+              animate={{ opacity: indeterminate ? 1 : 0 }}
+              transition={reduced ? INSTANT : CROSSFADE}
+            >
+              {pendingLabel}
+            </motion.span>
 
-          <motion.span
-            className="col-start-1 row-start-1 whitespace-nowrap font-mono text-[12px] font-medium leading-5 tabular-nums"
-            initial={false}
-            animate={{ opacity: indeterminate ? 0 : 1 }}
-            transition={reduced ? INSTANT : CROSSFADE}
-          >
-            {percent}%
-          </motion.span>
-        </span>
-      </div>
+            <motion.span
+              className="col-start-1 row-start-1 whitespace-nowrap font-mono text-[12px] font-medium leading-5 tabular-nums"
+              initial={false}
+              animate={{ opacity: indeterminate ? 0 : 1 }}
+              transition={reduced ? INSTANT : CROSSFADE}
+            >
+              {percent}%
+            </motion.span>
+          </span>
+        </div>
+      ) : null}
 
       <div
         role="progressbar"
-        aria-labelledby={labelId}
+        aria-labelledby={showHeader ? labelId : undefined}
+        aria-label={showHeader ? undefined : label}
         aria-valuemin={0}
         aria-valuemax={max}
         {...measured}

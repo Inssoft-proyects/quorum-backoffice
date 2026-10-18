@@ -216,9 +216,14 @@ export function ValueFlash({
           ) : null}
         </AnimatePresence>
       </span>
-      <span className="sr-only" aria-live="polite">
-        {label ? `${label}: ${settled}` : settled}
-      </span>
+      {/* Quorum adaptation: announce only a change. Rendering the initial
+          value here duplicated the visible digits for text queries and made
+          screen readers hear the same number twice on first paint. */}
+      {changeId > 0 ? (
+        <span className="sr-only" aria-live="polite">
+          {label ? `${label}: ${settled}` : settled}
+        </span>
+      ) : null}
     </motion.span>
   );
 }
