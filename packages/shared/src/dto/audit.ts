@@ -35,6 +35,9 @@ export const AuditAction = z.enum([
   'auth.login.requested',
   'auth.login.otp_verified',
   'auth.login.failed',
+  // S2S identity verification for Quorum QR (POST /api/v1/internal/auth/verify-otp).
+  // Records the calling service in entity_id; SQL label added in migration 0023.
+  'auth.verify_service',
   // M1 / MFA authentication: every MFA attempt (allow OR deny)
   // emits a single 'student.mfa_authenticate' row so the operator
   // can reconcile the allow/deny distribution without joining on

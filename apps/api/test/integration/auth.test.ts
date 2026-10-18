@@ -28,6 +28,7 @@
  */
 import { Pool } from 'pg';
 import path from 'node:path';
+import { createHmac } from 'node:crypto';
 import bcrypt from 'bcrypt';
 import { buildApp } from '../../src/app';
 import { hashPassword } from '../../src/lib/password';
@@ -56,6 +57,7 @@ const TEST_ENV: NodeJS.ProcessEnv = {
   AUTH_COOKIE_SECURE: 'false',
   AUTH_LOGIN_MAX_ATTEMPTS: '5',
   AUTH_LOGIN_WINDOW_SECONDS: '900',
+  BACKOFFICE_SERVICE_TOKENS: 'quorum-qr:integration-hmac-secret',
   LOGIN_OTP_MAX_ATTEMPTS: '5',
   LOGIN_OTP_REQUEST_WINDOW_SECONDS: '900',
 };
@@ -93,7 +95,10 @@ async function seedUser(pool: Pool, u: SeedUser): Promise<number> {
   return id;
 }
 
-function cookieFromSetCookie(setCookie: string | string[] | undefined, name: string): string | null {
+function cookieFromSetCookie(
+  setCookie: string | string[] | undefined,
+  name: string,
+): string | null {
   if (!setCookie) return null;
   const arr = Array.isArray(setCookie) ? setCookie : [setCookie];
   for (const c of arr) {
@@ -117,9 +122,19 @@ class FakeOtpClient {
   public forceReject = false;
   public forceLock = false;
 
-  async issue(args: { subject: string; scope: string; ttlSeconds?: number; maxAttempts?: number }): Promise<{ ok: true; otpId: string; token: string; ttlSeconds: number }> {
+  async issue(args: {
+    subject: string;
+    scope: string;
+    ttlSeconds?: number;
+    maxAttempts?: number;
+  }): Promise<{ ok: true; otpId: string; token: string; ttlSeconds: number }> {
     if (this.forceReject) {
-      return { ok: true as const, otpId: 'fake-otp-id', token: 'AB12CD', ttlSeconds: args.ttlSeconds ?? 300 };
+      return {
+        ok: true as const,
+        otpId: 'fake-otp-id',
+        token: 'AB12CD',
+        ttlSeconds: args.ttlSeconds ?? 300,
+      };
     }
     const code = 'AB12CD'; // deterministic for assertions
     this.issued.set(`${args.scope}:${args.subject.toLowerCase()}`, { code, consumed: false });
@@ -131,7 +146,14 @@ class FakeOtpClient {
     };
   }
 
-  async verify(args: { subject: string; scope: string; code: string }): Promise<{ ok: true; otpId: string } | { ok: false; reason: 'invalid' | 'locked' | 'expired' | 'rate_limited' | 'unknown' }> {
+  async verify(args: {
+    subject: string;
+    scope: string;
+    code: string;
+  }): Promise<
+    | { ok: true; otpId: string }
+    | { ok: false; reason: 'invalid' | 'locked' | 'expired' | 'rate_limited' | 'unknown' }
+  > {
     if (this.forceLock) {
       return { ok: false as const, reason: 'locked' as const };
     }
@@ -160,6 +182,13 @@ describe('auth routes (integration, real PG + Redis, single-step username + pre-
   const operatorEmail = 'auth-operator@example.test';
   const operatorPass = 'Op3r@torPass';
   const OTP_CODE = 'AB12CD';
+  const HMAC_SECRET = 'integration-hmac-secret';
+
+  function hmacAuth(body: string, secret = HMAC_SECRET): string {
+    const ts = Math.floor(Date.now() / 1000);
+    const signature = createHmac('sha256', secret).update(`${ts}.${body}`).digest('hex');
+    return `HMAC quorum-qr ${ts} ${signature}`;
+  }
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 4 });
@@ -207,10 +236,7 @@ describe('auth routes (integration, real PG + Redis, single-step username + pre-
   // canonical username (see apps/api/src/lib/rate-limit.ts), not by
   // email.
   beforeEach(async () => {
-    const keys = [
-      `login_attempts:${adminUsername}`,
-      `login_attempts:${operatorUsername}`,
-    ];
+    const keys = [`login_attempts:${adminUsername}`, `login_attempts:${operatorUsername}`];
     for (const k of keys) {
       await app.redis.del(k);
     }
@@ -231,7 +257,10 @@ describe('auth routes (integration, real PG + Redis, single-step username + pre-
     await fakeOtp.issue({ subject: username, scope: 'login' });
   }
 
-  async function loginWithOtp(username: string, code: string = OTP_CODE): Promise<{
+  async function loginWithOtp(
+    username: string,
+    code: string = OTP_CODE,
+  ): Promise<{
     statusCode: number;
     body: unknown;
     cookie: string | null;
@@ -523,6 +552,84 @@ describe('auth routes (integration, real PG + Redis, single-step username + pre-
       const hash = await hashPassword(password);
       expect(hash.startsWith('$argon2id$')).toBe(true);
       expect(await bcrypt.compare(password, hash)).toBe(false); // bcrypt.compare must reject argon2id
+    });
+  });
+
+  describe('POST /api/v1/internal/auth/verify-otp', () => {
+    it('verifies a valid OTP without issuing a session or cookie', async () => {
+      await pool.query('DELETE FROM sessions WHERE user_id = $1', [seededAdminId]);
+      await issueOtp(adminUsername);
+      const body = JSON.stringify({ username: adminUsername, otp: OTP_CODE });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/internal/auth/verify-otp',
+        headers: {
+          'content-type': 'application/json',
+          authorization: hmacAuth(body),
+        },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const json = response.json() as { user: { id: number; username: string; role: string } };
+      expect(json.user.id).toBe(seededAdminId);
+      expect(json.user.username).toBe(adminUsername);
+      expect(json.user.role).toBe('admin');
+      expect(response.headers['set-cookie']).toBeUndefined();
+
+      const sessions = await pool.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM sessions WHERE user_id = $1',
+        [seededAdminId],
+      );
+      expect(Number(sessions.rows[0]?.count)).toBe(0);
+
+      const audit = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM audit_log
+          WHERE action = 'auth.verify_service' AND entity_id = 'quorum-qr'`,
+      );
+      expect(Number(audit.rows[0]?.count)).toBeGreaterThanOrEqual(1);
+    });
+
+    it('rejects a missing or invalid HMAC', async () => {
+      const body = JSON.stringify({ username: adminUsername, otp: OTP_CODE });
+
+      const missing = await app.inject({
+        method: 'POST',
+        url: '/api/v1/internal/auth/verify-otp',
+        headers: { 'content-type': 'application/json' },
+        payload: body,
+      });
+      expect(missing.statusCode).toBe(401);
+
+      const invalid = await app.inject({
+        method: 'POST',
+        url: '/api/v1/internal/auth/verify-otp',
+        headers: {
+          'content-type': 'application/json',
+          authorization: hmacAuth(body, 'wrong-secret'),
+        },
+        payload: body,
+      });
+      expect(invalid.statusCode).toBe(401);
+    });
+
+    it('returns 401 invalid_credentials for a wrong OTP', async () => {
+      await issueOtp(adminUsername);
+      const body = JSON.stringify({ username: adminUsername, otp: 'WRONG0' });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/internal/auth/verify-otp',
+        headers: {
+          'content-type': 'application/json',
+          authorization: hmacAuth(body),
+        },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(401);
+      expect((response.json() as { code: string }).code).toBe('invalid_credentials');
     });
   });
 });

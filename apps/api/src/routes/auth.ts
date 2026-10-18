@@ -18,10 +18,7 @@
  * audit work.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import {
-  LoginRequestOtp,
-  type MeResponse,
-} from '@quorum-backoffice/shared';
+import { LoginRequestOtp, type MeResponse } from '@quorum-backoffice/shared';
 import { AppError } from '../lib/errors';
 import { isValidSessionToken } from '../lib/session-token';
 import { AuthService } from '../services/auth-service';
@@ -38,21 +35,23 @@ function metaFromRequest(req: FastifyRequest): { ip: string | null; userAgent: s
   };
 }
 
+export function createAuthService(app: FastifyInstance): AuthService {
+  return new AuthService({
+    pool: app.pg as unknown as import('pg').Pool,
+    log: app.log,
+    redis: app.redis,
+    otp: app.otpClient,
+    sessionTtlSeconds: app.config.SESSION_TTL_SECONDS,
+    loginMaxAttempts: app.config.AUTH_LOGIN_MAX_ATTEMPTS,
+    loginWindowSeconds: app.config.AUTH_LOGIN_WINDOW_SECONDS,
+  });
+}
+
 export async function registerAuthRoutes(
   app: FastifyInstance,
   deps?: { authService?: AuthService },
 ): Promise<void> {
-  const getService = (): AuthService =>
-    deps?.authService ??
-    new AuthService({
-      pool: app.pg as unknown as import('pg').Pool,
-      log: app.log,
-      redis: app.redis,
-      otp: app.otpClient,
-      sessionTtlSeconds: app.config.SESSION_TTL_SECONDS,
-      loginMaxAttempts: app.config.AUTH_LOGIN_MAX_ATTEMPTS,
-      loginWindowSeconds: app.config.AUTH_LOGIN_WINDOW_SECONDS,
-    });
+  const getService = (): AuthService => deps?.authService ?? createAuthService(app);
 
   /**
    * Single-step username + OTP login. Body: `{ username, otp }`.
