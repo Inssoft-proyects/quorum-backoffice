@@ -1,14 +1,9 @@
 'use client';
 
 import * as React from 'react';
+import { ProgressBar } from '@/components/interior/progress-bar';
 
-export type BulkProcessingStage =
-  | 'read'
-  | 'rows'
-  | 'format'
-  | 'duplicates'
-  | 'existing'
-  | 'result';
+export type BulkProcessingStage = 'read' | 'rows' | 'format' | 'duplicates' | 'existing' | 'result';
 
 export type BulkProcessingStageStatus = 'pending' | 'active' | 'complete';
 
@@ -80,8 +75,8 @@ export function BulkUploadProcessingOverlay({
         Estamos cargando tus marbetes
       </h2>
       <p className="modal-dialog__description" data-testid="bulk-upload-processing-description">
-        Estamos leyendo el archivo .xlsx y preparando los marbetes para
-        agregarlos al inventario. No cierres esta ventana.
+        Estamos leyendo el archivo .xlsx y preparando los marbetes para agregarlos al inventario. No
+        cierres esta ventana.
       </p>
 
       <div className="bulk-upload__progress-block">
@@ -89,23 +84,14 @@ export function BulkUploadProcessingOverlay({
           <span data-testid="bulk-upload-processing-status" aria-live="polite">
             {statusMessage}
           </span>
-          <strong data-testid="bulk-upload-processing-percentage">
-            {clampedProgress}%
-          </strong>
+          <strong data-testid="bulk-upload-processing-percentage">{clampedProgress}%</strong>
         </div>
-        <div
+        <ProgressBar
+          value={clampedProgress}
+          label="Progreso de carga de marbetes"
+          showHeader={false}
           className="bulk-upload__progress-track"
-          role="progressbar"
-          aria-label="Progreso de carga de marbetes"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={clampedProgress}
-        >
-          <span
-            className="bulk-upload__progress-value"
-            style={{ width: `${clampedProgress}%` }}
-          />
-        </div>
+        />
       </div>
 
       <ol

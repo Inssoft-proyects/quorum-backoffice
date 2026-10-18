@@ -1,6 +1,9 @@
 'use client';
 import { useState, type FormEvent } from 'react';
-import type { CreateDispositivoRequest, DispositivoDetailResponse } from '@quorum-backoffice/shared';
+import type {
+  CreateDispositivoRequest,
+  DispositivoDetailResponse,
+} from '@quorum-backoffice/shared';
 import {
   Dialog,
   DialogContent,
@@ -10,8 +13,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
 import { ApiError, createDispositivo } from '@/lib/api-client';
@@ -112,51 +115,45 @@ export function CreateDialog({ open, onClose, onSuccess }: Props) {
               {error}
             </Alert>
           ) : null}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="create-serial">Serial</Label>
-            <Input
-              id="create-serial"
-              type="text"
-              minLength={3}
-              maxLength={128}
-              placeholder="SN-XXXX-1234"
-              value={serial}
-              onChange={(e) => {
-                setSerial(e.target.value);
-                if (error) setError(null);
-              }}
-              disabled={loading}
-              required
-              data-testid="create-serial"
-            />
-          </div>
+          <Field
+            id="create-serial"
+            type="text"
+            minLength={3}
+            maxLength={128}
+            label="Serial"
+            placeholder="SN-XXXX-1234"
+            data-testid="create-serial"
+            value={serial}
+            onChange={(value) => {
+              setSerial(value);
+              if (error) setError(null);
+            }}
+            disabled={loading}
+            required
+          />
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="create-brand">Marca (opcional)</Label>
-              <Input
-                id="create-brand"
-                type="text"
-                maxLength={64}
-                placeholder="Apple"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                disabled={loading}
-                data-testid="create-brand"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="create-model">Modelo (opcional)</Label>
-              <Input
-                id="create-model"
-                type="text"
-                maxLength={128}
-                placeholder="iPad Pro"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={loading}
-                data-testid="create-model"
-              />
-            </div>
+            <Field
+              id="create-brand"
+              type="text"
+              maxLength={64}
+              label="Marca (opcional)"
+              placeholder="Apple"
+              data-testid="create-brand"
+              value={brand}
+              onChange={(value) => setBrand(value)}
+              disabled={loading}
+            />
+            <Field
+              id="create-model"
+              type="text"
+              maxLength={128}
+              label="Modelo (opcional)"
+              placeholder="iPad Pro"
+              data-testid="create-model"
+              value={model}
+              onChange={(value) => setModel(value)}
+              disabled={loading}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Código OTP</Label>

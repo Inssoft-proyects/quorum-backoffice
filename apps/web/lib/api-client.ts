@@ -8,7 +8,17 @@
  *     (built from next/headers) that we forward as the `cookie` header,
  *     since the browser cookie store is not available in the Node runtime.
  *
- * The base URL comes from NEXT_PUBLIC_API_URL (default http://127.0.0.1:3100).
+ * Base URL resolution (fixes the "cross-origin request blocked" deployment bug):
+ *
+ *   - Browser: `NEXT_PUBLIC_API_URL` when it is set (absolute origin, the
+ *     historical behaviour), otherwise the empty string, which makes every
+ *     request same-origin (`/api/v1/...`). Production serves web and API under
+ *     the same origin (nginx proxies `/api/`), so a bundle built WITHOUT the
+ *     variable still works on any domain instead of pointing at loopback.
+ *   - Server (Node): a relative URL is not fetchable, so it falls back to
+ *     `API_INTERNAL_URL` — a server-only variable that is read at runtime, not
+ *     inlined like `NEXT_PUBLIC_*` — and finally to the API's own default port
+ *     for local tooling.
  */
 
 import type { z } from 'zod';
@@ -63,7 +73,19 @@ export interface StudentDetailResponse {
   isActive: boolean;
 }
 
-const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://127.0.0.1:3100';
+/**
+ * Public base baked into the bundle. Empty means "same origin".
+ * Next inlines `NEXT_PUBLIC_*` at build time; see next.config.ts.
+ */
+const PUBLIC_API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? '';
+
+/**
+ * Server-only fallback for the Node runtime. Never sent to the browser.
+ */
+const SERVER_API_URL =
+  typeof window === 'undefined' ? (process.env['API_INTERNAL_URL'] ?? 'http://127.0.0.1:3100') : '';
+
+const API_BASE = PUBLIC_API_URL || SERVER_API_URL;
 
 export class ApiError extends Error {
   constructor(
@@ -418,14 +440,12 @@ export async function bulkCreateMarbetes(
 // `categoryCounts` histogram, and a downloadable errors workbook.
 // The 20-minute OTP grant window applies exactly like the JSON /bulk
 // endpoint — omit `otpCode` when a grant is active.
-export async function bulkCreateMarbetesXlsx(
-  args: {
-    file: File;
-    reason?: string;
-    otpCode: string | undefined;
-    cookie?: string;
-  },
-): Promise<BulkXlsxCreateResponse> {
+export async function bulkCreateMarbetesXlsx(args: {
+  file: File;
+  reason?: string;
+  otpCode: string | undefined;
+  cookie?: string;
+}): Promise<BulkXlsxCreateResponse> {
   const contentBase64 = await readFileAsBase64(args.file);
   const req: z.input<typeof BulkXlsxCreateRequest> = {
     fileName: args.file.name,
@@ -585,9 +605,7 @@ export async function listMatriculas(
   return apiGet<ListMatriculasResponse>(`/api/v1/matriculas${qs}`, cookie);
 }
 
-export async function getMatriculasCounters(
-  cookie?: string,
-): Promise<MatriculasCountersResponse> {
+export async function getMatriculasCounters(cookie?: string): Promise<MatriculasCountersResponse> {
   return apiGet<MatriculasCountersResponse>('/api/v1/matriculas/counters', cookie);
 }
 
@@ -596,12 +614,7 @@ export async function assignMatriculas(
   otpCode: string | undefined,
   cookie?: string,
 ): Promise<AssignMarbetesResponse> {
-  return apiPostWithOtp<AssignMarbetesResponse>(
-    '/api/v1/matriculas/assign',
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPostWithOtp<AssignMarbetesResponse>('/api/v1/matriculas/assign', req, otpCode, cookie);
 }
 
 export async function unassignMatricula(
@@ -609,12 +622,7 @@ export async function unassignMatricula(
   otpCode: string | undefined,
   cookie?: string,
 ): Promise<MarbeteDetailResponse> {
-  return apiPostWithOtp<MarbeteDetailResponse>(
-    '/api/v1/matriculas/unassign',
-    req,
-    otpCode,
-    cookie,
-  );
+  return apiPostWithOtp<MarbeteDetailResponse>('/api/v1/matriculas/unassign', req, otpCode, cookie);
 }
 
 /**

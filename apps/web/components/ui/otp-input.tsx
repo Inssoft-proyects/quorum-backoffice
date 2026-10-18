@@ -1,36 +1,30 @@
 'use client';
-import {
-  useRef,
-  useEffect,
-  type KeyboardEvent,
-  type ClipboardEvent,
-  type ChangeEvent,
-} from 'react';
+
+import * as React from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { useOtpInput, type OtpMode } from '@/components/interior/otp-input';
 
 /**
- * Six-character (configurable) OTP / one-time-code input.
+ * OTP input built on interior.dev's OTP Input
+ * (https://www.interior.dev/docs/otp-input): auto-advance on type, paste
+ * that fills the group in one gesture, Backspace that clears the current box
+ * then retreats to the previous one, arrow/Home/End navigation, a caret that
+ * blinks only on the active empty cell, and a single shake when the group
+ * enters the error state.
  *
- * Renders `length` single-character text boxes. Controlled via a single
- * concatenated digit string in `value`. Auto-advances on type, Backspace
- * moves to the previous empty box, ArrowLeft / ArrowRight navigate, and
- * a multi-character paste fills the boxes in order.
+ * The controlled contract is unchanged — `value` is a concatenated string and
+ * `onChange` receives the next one — because 16 dialogs plus the login and
+ * MFA screens already drive it that way, and the RTL suite pins the exact
+ * `inputMode`, `autoComplete`, per-box `aria-label` (`Digit N of 6`), group
+ * `role`/`aria-label`, first-box-only `id` and `data-testid` surface.
  *
- * Default `mode='numeric'` (digits only, `inputMode="numeric"`) preserves
- * the byte-for-byte behaviour used by the marbetes (create/edit/delete) and
- * dispositivos (create/edit/revoke) dialogs, plus the inventory bulk-upload
- * confirmation. `mode='alphanumeric'` is used by the BackOffice login
- * (`/login`) and the destructive dialogs (bulk-upload, assign-review,
- * unassign, reveal) where the OTP is a 6-character uppercase A–Z0–9 code
- * drawn from the quorum-otp 31-char alphabet; in that mode the component
- * forces uppercase, accepts only `A–Z0–9`, exposes `inputMode="text"` and
- * `autoComplete="one-time-code"` so password managers / OS autofill can
- * offer the value.
- *
- * Used by marbete delete (WU8a); reused by create/edit (WU8b), dispositivos
- * dialogs (WU9), inventory bulk-upload, and BackOffice login OTP.
+ * `mode='numeric'` keeps the historical surface: no `autoComplete` at all.
+ * `mode='alphanumeric'` forces uppercase at the input boundary and exposes
+ * `autoComplete="one-time-code"` on the first box only.
  */
-export type OtpInputMode = 'numeric' | 'alphanumeric';
+export type OtpInputMode = OtpMode;
+export type OtpStatus = 'idle' | 'error' | 'success';
 
 interface OtpInputProps {
   /** Number of characters. Defaults to 6. */
@@ -43,30 +37,26 @@ interface OtpInputProps {
   disabled?: boolean;
   /** Auto-focus the first box on mount. Defaults to true. */
   autoFocus?: boolean;
-  /**
-   * Character alphabet:
-   * - `'numeric'` (default): digits only, `inputMode="numeric"`. Wire payload
-   *   stays a digit string; matches the existing dialog call sites.
-   * - `'alphanumeric'`: uppercase `A–Z` + `0–9`, forced to uppercase,
-   *   `inputMode="text"`, `autoComplete="one-time-code"` on the first box.
-   *   Used by the BackOffice login OTP.
-   */
+  /** Character alphabet. */
   mode?: OtpInputMode;
-  /**
-   * Optional id applied to the FIRST box only. Useful when a parent
-   * `<Label htmlFor="…">` needs to associate with the group; clicking
-   * the label focuses the first box, and downstream keyboard typing
-   * auto-advances through the remaining boxes. Defaults to no id.
-   */
+  /** Optional id applied to the FIRST box only. */
   id?: string;
   /** Group-level aria-label for the digit group. */
   'aria-label'?: string;
-  /** Optional testid forwarded to the group wrapper for Testing Library. */
+  /** Optional testid forwarded to the group wrapper. */
   'data-testid'?: string;
+  /** Marks the group as errored; triggers the single shake. */
+  status?: OtpStatus;
+  /** Message shown under the group while `status='error'`. */
+  errorMessage?: string;
+  /** Message shown under the group while `status='success'`. */
+  successMessage?: string;
+  /** Secondary line shown when the status is idle. */
+  hint?: string;
 }
 
-const NUMERIC_FILTER = /\D/g;
-const ALPHA_FILTER = /[^A-Z0-9]/g;
+const SHAKE = { duration: 0.32, ease: [0.36, 0.07, 0.19, 0.97] } as const;
+const STILL = { duration: 0 } as const;
 
 export function OtpInput({
   length = 6,
@@ -78,100 +68,130 @@ export function OtpInput({
   id,
   'aria-label': ariaLabel = 'OTP code',
   'data-testid': dataTestId,
+  status = 'idle',
+  errorMessage,
+  successMessage,
+  hint,
 }: OtpInputProps) {
-  const refs = useRef<Array<HTMLInputElement | null>>([]);
+  const reduced = useReducedMotion();
   const isAlpha = mode === 'alphanumeric';
-  const filter = isAlpha ? ALPHA_FILTER : NUMERIC_FILTER;
-  const inputMode: 'numeric' | 'text' = isAlpha ? 'text' : 'numeric';
-  const chars = value.padEnd(length, ' ').split('').slice(0, length);
 
-  useEffect(() => {
-    if (autoFocus && refs.current[0]) {
-      refs.current[0].focus();
+  const { chars, focusedIndex, getCellProps, focusAt } = useOtpInput({
+    length,
+    mode,
+    value,
+    disabled: Boolean(disabled),
+    normalize: isAlpha ? (raw) => raw.toUpperCase() : undefined,
+    jumpToFirstEmpty: false,
+    onChange,
+  });
+
+  React.useEffect(() => {
+    if (autoFocus && !disabled) focusAt(0);
+  }, [autoFocus, disabled, focusAt]);
+
+  const wasError = React.useRef(status === 'error');
+  const [shaking, setShaking] = React.useState(false);
+  React.useEffect(() => {
+    const error = status === 'error';
+    if (error && !wasError.current) {
+      setShaking(true);
+      const timer = setTimeout(() => setShaking(false), 340);
+      wasError.current = error;
+      return () => clearTimeout(timer);
     }
-  }, [autoFocus]);
+    wasError.current = error;
+    return undefined;
+  }, [status]);
 
-  function setChar(index: number, ch: string) {
-    const arr = chars.slice();
-    arr[index] = ch || ' ';
-    const joined = arr.join('').trimEnd();
-    onChange(joined);
-    if (ch && index < length - 1) {
-      refs.current[index + 1]?.focus();
-    }
-  }
-
-  function normalise(raw: string): string {
-    // In alphanumeric mode we want to accept *any* case letter and force
-    // uppercase. Uppercase first so the `[^A-Z0-9]` filter does not
-    // silently drop lowercase input before we have a chance to convert it.
-    let next = isAlpha ? raw.toUpperCase() : raw;
-    next = next.replace(filter, '');
-    return next;
-  }
-
-  function handleChange(index: number, e: ChangeEvent<HTMLInputElement>) {
-    const v = normalise(e.target.value).slice(-1);
-    setChar(index, v);
-  }
-
-  function handleKey(index: number, e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && !chars[index]?.trim() && index > 0) {
-      e.preventDefault();
-      refs.current[index - 1]?.focus();
-      setChar(index - 1, '');
-    } else if (e.key === 'ArrowLeft' && index > 0) {
-      refs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < length - 1) {
-      refs.current[index + 1]?.focus();
-    }
-  }
-
-  function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
-    e.preventDefault();
-    const pasted = normalise(e.clipboardData.getData('text')).slice(0, length);
-    if (pasted) {
-      onChange(pasted);
-      const next = Math.min(pasted.length, length - 1);
-      refs.current[next]?.focus();
-    }
-  }
+  const message = status === 'error' ? errorMessage : status === 'success' ? successMessage : hint;
+  const hasMessage = Boolean(message);
+  const messageId = React.useId();
 
   return (
-    <div
-      className="flex gap-2"
-      role="group"
-      aria-label={ariaLabel}
-      data-testid={dataTestId}
-    >
-      {Array.from({ length }).map((_, i) => (
-        <input
-          key={i}
-          ref={(el) => {
-            refs.current[i] = el;
-          }}
-          type="text"
-          inputMode={inputMode}
-          autoComplete={isAlpha && i === 0 ? 'one-time-code' : undefined}
-          maxLength={1}
-          value={chars[i] === ' ' ? '' : chars[i]}
-          onChange={(e) => handleChange(i, e)}
-          onKeyDown={(e) => handleKey(i, e)}
-          onPaste={handlePaste}
-          disabled={disabled}
-          aria-label={`Digit ${i + 1} of ${length}`}
-          id={i === 0 ? id : undefined}
-          className={cn(
-            // Subtle default chrome (matches the design PNG). On focus we
-            // switch the border + ring to the project gold token and add
-            // a faint gold tint so the active box stands out without
-            // overpowering the inactive ones.
-            'h-12 w-11 rounded-md border border-input bg-background text-center text-lg font-mono uppercase',
-            'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:bg-primary-500/10',
-            'disabled:opacity-50',
-          )}
-        />
-      ))}
+    <div className="inline-flex flex-col">
+      <motion.div
+        role="group"
+        aria-label={ariaLabel}
+        data-testid={dataTestId}
+        initial={false}
+        animate={shaking && !reduced ? { x: [0, -5, 4, -3, 0] } : { x: 0 }}
+        transition={shaking && !reduced ? SHAKE : STILL}
+        className="flex gap-2"
+      >
+        {Array.from({ length }).map((_, i) => {
+          const active = focusedIndex === i;
+          const char = chars[i] ?? '';
+          const cell = getCellProps(i);
+          return (
+            <div key={i} className="relative h-10 w-10">
+              <input
+                {...cell}
+                autoComplete={isAlpha ? (i === 0 ? 'one-time-code' : undefined) : undefined}
+                maxLength={1}
+                id={i === 0 ? id : undefined}
+                aria-label={`Digit ${i + 1} of ${length}`}
+                aria-invalid={status === 'error' || undefined}
+                aria-describedby={hasMessage ? messageId : undefined}
+                className={cn(
+                  'h-10 w-10 rounded-md border border-border-strong bg-background text-center text-[15px] font-mono uppercase caret-transparent shadow-[0_1px_2px_rgba(0,0,0,0.10)]',
+                  'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:bg-primary-500/5',
+                  'disabled:opacity-50',
+                  status === 'error' && 'border-alert-error-text',
+                  status === 'success' && 'border-feedback-success',
+                )}
+              />
+              {active && !char && !disabled ? (
+                <motion.span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 grid place-items-center"
+                  initial={{ opacity: 1 }}
+                  animate={reduced ? { opacity: 1 } : { opacity: [1, 1, 0, 0] }}
+                  transition={
+                    reduced
+                      ? STILL
+                      : {
+                          duration: 1.06,
+                          times: [0, 0.5, 0.5, 1],
+                          repeat: Infinity,
+                          ease: 'linear',
+                        }
+                  }
+                >
+                  <span className="block h-4 w-[1.5px] rounded-[1px] bg-primary-500" />
+                </motion.span>
+              ) : null}
+            </div>
+          );
+        })}
+      </motion.div>
+
+      {hasMessage ? (
+        <>
+          <motion.div
+            aria-hidden
+            key={status}
+            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 3 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={reduced ? STILL : { duration: 0.2 }}
+            className={cn(
+              'mt-2 h-4 text-[11.5px] leading-[16px]',
+              status === 'error'
+                ? 'text-alert-error-text'
+                : status === 'success'
+                  ? 'text-success-text'
+                  : 'text-text-muted',
+            )}
+          >
+            {message}
+          </motion.div>
+          {status !== 'idle' ? (
+            <span id={messageId} role="status" className="sr-only">
+              {message}
+            </span>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }

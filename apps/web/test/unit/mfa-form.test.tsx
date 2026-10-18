@@ -378,10 +378,10 @@ describe('MfaForm — three-factor authentication (M2)', () => {
         );
       }
       if (url.endsWith('/api/v1/mfa/redirect-token')) {
-        return new Response(
-          JSON.stringify({ token: 'a'.repeat(64), expires_in: 30 }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
+        return new Response(JSON.stringify({ token: 'a'.repeat(64), expires_in: 30 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
       }
       return new Response('not used', { status: 404 });
     }) as unknown as typeof fetch;
@@ -399,9 +399,7 @@ describe('MfaForm — three-factor authentication (M2)', () => {
     //  1) POST /api/v1/mfa/authenticate
     //  2) POST /api/v1/mfa/redirect-token with the next_url
     await waitFor(() => {
-      const redirectCall = fetchCalls.find(
-        (c) => c.url === 'http://127.0.0.1:3100/api/v1/mfa/redirect-token',
-      );
+      const redirectCall = fetchCalls.find((c) => c.url === '/api/v1/mfa/redirect-token');
       expect(redirectCall).toBeDefined();
       expect(redirectCall?.body).toEqual({
         next_url: 'https://canvas.example.com/dashboard',
@@ -409,9 +407,7 @@ describe('MfaForm — three-factor authentication (M2)', () => {
     });
     // The redirect-token call must use `credentials: include`
     // so the browser forwards the `__Host-mfa_sid` cookie.
-    const redirectCall = fetchCalls.find(
-      (c) => c.url === 'http://127.0.0.1:3100/api/v1/mfa/redirect-token',
-    );
+    const redirectCall = fetchCalls.find((c) => c.url === '/api/v1/mfa/redirect-token');
     expect(redirectCall?.init?.credentials).toBe('include');
 
     // The form must reach the success state (which proves
@@ -471,8 +467,8 @@ describe('MfaForm — three-factor authentication (M2)', () => {
       expect(warnSpy).toHaveBeenCalled();
       const warnMessages = warnSpy.mock.calls.map((c) => c[0]);
       expect(
-        warnMessages.some((m) =>
-          typeof m === 'string' && m.includes('mfa_redirect_token_issue_failed'),
+        warnMessages.some(
+          (m) => typeof m === 'string' && m.includes('mfa_redirect_token_issue_failed'),
         ),
       ).toBe(true);
       // R3-open-redirect: with no backend-minted token the form must stay
@@ -522,9 +518,7 @@ describe('MfaForm — three-factor authentication (M2)', () => {
     expect(stubRouter.push).toHaveBeenCalledTimes(1);
     // The redirect-token endpoint must NOT be called for
     // same-origin paths.
-    expect(
-      fetchCalls.find((c) => c.url === 'http://127.0.0.1:3100/api/v1/mfa/redirect-token'),
-    ).toBeUndefined();
+    expect(fetchCalls.find((c) => c.url === '/api/v1/mfa/redirect-token')).toBeUndefined();
   });
 });
 
@@ -543,9 +537,9 @@ describe('buildNextUrlWithToken — M3 URL construction', () => {
   });
 
   it('appends &mfa_token=<token> when the target already has a query string', () => {
-    expect(
-      buildNextUrlWithToken('https://canvas.example.com/courses?term=2026a', 'abc123'),
-    ).toBe('https://canvas.example.com/courses?term=2026a&mfa_token=abc123');
+    expect(buildNextUrlWithToken('https://canvas.example.com/courses?term=2026a', 'abc123')).toBe(
+      'https://canvas.example.com/courses?term=2026a&mfa_token=abc123',
+    );
   });
 
   it('returns the target verbatim when the token is null', () => {

@@ -14,8 +14,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
 import { StudentLookup } from './student-lookup';
@@ -147,23 +147,17 @@ export function EditDialog({ marbete, onClose, onSuccess }: Props) {
               {error}
             </Alert>
           ) : null}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-code">UID</Label>
-            <Input
-              id="edit-code"
-              type="text"
-              value={marbete?.maskedCode ?? ''}
-              disabled
-              data-testid="edit-uid"
-            />
-          </div>
+          <Field
+            id="edit-code"
+            type="text"
+            label="UID"
+            data-testid="edit-uid"
+            value={marbete?.maskedCode ?? ''}
+            disabled
+          />
           <div className="flex flex-col gap-1.5">
             <Label>Matrícula Canvas</Label>
-            <StudentLookup
-              value={canvasUserId}
-              onChange={setCanvasUserId}
-              disabled={loading}
-            />
+            <StudentLookup value={canvasUserId} onChange={setCanvasUserId} disabled={loading} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="edit-status">Estado</Label>
@@ -206,11 +200,7 @@ export function EditDialog({ marbete, onClose, onSuccess }: Props) {
             >
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              disabled={loading || otp.length !== 6}
-              data-testid="edit-submit"
-            >
+            <Button type="submit" disabled={loading || otp.length !== 6} data-testid="edit-submit">
               {loading ? 'Guardando…' : 'Guardar'}
             </Button>
           </DialogFooter>

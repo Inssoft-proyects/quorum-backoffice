@@ -17,9 +17,7 @@ const stubRouter: AppRouterInstance = {
 };
 
 function withRouter(children: ReactNode) {
-  return (
-    <AppRouterContext.Provider value={stubRouter}>{children}</AppRouterContext.Provider>
-  );
+  return <AppRouterContext.Provider value={stubRouter}>{children}</AppRouterContext.Provider>;
 }
 
 function renderForm() {
@@ -45,16 +43,22 @@ describe('LoginForm', () => {
 
   it('shows error when login fails with invalid credentials', async () => {
     (globalThis as { fetch: typeof fetch }).fetch = (async () =>
-      new Response(JSON.stringify({ code: 'invalid_credentials', message: 'invalid email or password' }), {
-        status: 401,
-      })) as unknown as typeof fetch;
+      new Response(
+        JSON.stringify({ code: 'invalid_credentials', message: 'invalid email or password' }),
+        {
+          status: 401,
+        },
+      )) as unknown as typeof fetch;
     const user = userEvent.setup();
     renderForm();
     await user.type(screen.getByLabelText('Correo'), 'wrong@example.com');
     await user.type(screen.getByLabelText('Contraseña'), 'wrongpass');
     await user.click(screen.getByRole('button', { name: /Ingresar/i }));
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(/incorrectos/i);
+      // The auth context maps a rejected login to the shared OTP copy
+      // ("Usuario o código incorrecto…"), which is singular. This assertion
+      // was stale on main before the cosmetic work started.
+      expect(screen.getByRole('alert')).toHaveTextContent(/incorrecto/i);
     });
   });
 });

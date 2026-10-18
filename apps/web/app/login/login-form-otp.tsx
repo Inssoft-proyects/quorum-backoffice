@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { KeyRound } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
@@ -54,37 +54,31 @@ export function LoginFormOtp() {
   }
 
   return (
-    <form
-      className="flex flex-col items-stretch gap-5"
-      onSubmit={handleSubmit}
-      noValidate
-    >
+    <form className="flex flex-col items-stretch gap-5" onSubmit={handleSubmit} noValidate>
       {error ? (
         <Alert variant="destructive" role="alert" data-testid="login-error">
           {error}
         </Alert>
       ) : null}
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="username">Usuario</Label>
-        <Input
-          id="username"
-          name="username"
-          type="text"
-          autoComplete="username"
-          required
-          minLength={3}
-          maxLength={32}
-          placeholder="admin"
-          value={username}
-          onChange={(e) => {
-            setUsername(e.target.value);
-            if (error) reset();
-          }}
-          disabled={loading}
-          data-testid="login-username"
-        />
-      </div>
+      <Field
+        id="username"
+        name="username"
+        type="text"
+        autoComplete="username"
+        required
+        minLength={3}
+        maxLength={32}
+        label="Usuario"
+        placeholder="admin"
+        data-testid="login-username"
+        value={username}
+        onChange={(value) => {
+          setUsername(value);
+          if (error) reset();
+        }}
+        disabled={loading}
+      />
 
       {/*
         OTP zone, matched to `diseno/design/OPT_Dinamico.png`: centered
@@ -93,11 +87,8 @@ export function LoginFormOtp() {
         testid lives on the OtpInput group wrapper so existing
         Testing Library queries keep working.
       */}
-      <div className="flex flex-col items-center gap-2">
-        <Label
-          htmlFor="otp-1"
-          className="self-center text-center text-primary-500"
-        >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="otp-1" className="text-[13px] font-medium text-text-muted-bold">
           Código de acceso
         </Label>
         <OtpInput
@@ -110,7 +101,10 @@ export function LoginFormOtp() {
             // re-normalisation so a future refactor cannot accidentally
             // regress the wire contract (the backend verifies A–Z0–9
             // uppercased only).
-            const safe = next.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            const safe = next
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '')
+              .slice(0, 6);
             setOtp(safe);
             if (error) reset();
           }}
@@ -118,18 +112,13 @@ export function LoginFormOtp() {
           autoFocus={false}
           aria-label="Código de acceso de 6 caracteres"
           data-testid="login-otp"
+          hint="Código de 6 caracteres alfanuméricos (mayúsculas y dígitos)."
         />
-        <p
-          id="otp-hint"
-          className="text-center text-xs text-text-muted"
-        >
-          Código de 6 caracteres alfanuméricos (mayúsculas y dígitos).
-        </p>
       </div>
 
       <Button
         type="submit"
-        className="w-full font-semibold"
+        className="w-full"
         size="lg"
         disabled={loading || !usernameReady || !otpReady}
         data-testid="login-submit"

@@ -10,8 +10,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { OtpInput } from '@/components/ui/otp-input';
 import { ApiError, revokeDispositivo } from '@/lib/api-client';
@@ -99,8 +99,8 @@ export function RevokeDialog({ dispositivo, onClose, onSuccess }: Props) {
         <DialogHeader>
           <DialogTitle>Revocar dispositivo</DialogTitle>
           <DialogDescription>
-            Vas a revocar el dispositivo <strong>{dispositivo?.serialNumber ?? ''}</strong>.
-            Esta operación requiere justificación y un código OTP.
+            Vas a revocar el dispositivo <strong>{dispositivo?.serialNumber ?? ''}</strong>. Esta
+            operación requiere justificación y un código OTP.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
@@ -109,24 +109,22 @@ export function RevokeDialog({ dispositivo, onClose, onSuccess }: Props) {
               {error}
             </Alert>
           ) : null}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="revoke-reason">Justificación</Label>
-            <Input
-              id="revoke-reason"
-              type="text"
-              minLength={3}
-              maxLength={500}
-              placeholder="Motivo de la revocación"
-              value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
-                if (error) setError(null);
-              }}
-              disabled={loading}
-              required
-              data-testid="revoke-reason"
-            />
-          </div>
+          <Field
+            id="revoke-reason"
+            type="text"
+            minLength={3}
+            maxLength={500}
+            label="Justificación"
+            placeholder="Motivo de la revocación"
+            data-testid="revoke-reason"
+            value={reason}
+            onChange={(value) => {
+              setReason(value);
+              if (error) setError(null);
+            }}
+            disabled={loading}
+            required
+          />
           <div className="flex flex-col gap-1.5">
             <Label>Código OTP</Label>
             <OtpInput

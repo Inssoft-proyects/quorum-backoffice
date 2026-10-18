@@ -148,6 +148,7 @@ npm run -w @quorum-backoffice/web dev    # Web en :3002
 
 # 6. Tests
 npm test                  # unit + integration
+npm run test:cosmetic -w @quorum-backoffice/web  # smoke de navegador (Chromium + API stub, sin credenciales)
 npx playwright test --config=apps/web/e2e/lookfeel/playwright.config.ts  # e2e (contra staging)
 ```
 
@@ -160,7 +161,7 @@ Puertos (convención):
 ```bash
 npm run typecheck    # api + web + shared, strict TS
 npm run lint         # api + web
-npm test             # 194 verde (115 api + 21 api unit + 58 web RTL)
+npm test             # api + web unit (web RTL: 264 tests / 42 suites)
 cd apps/web && npm run build  # 7 rutas verde
 ```
 
@@ -175,14 +176,16 @@ quorum-backoffice/
 │   ├── api/                # Fastify 5 + TS (port 3100 dev / 4100 prod)
 │   │   ├── migrations/      # 9 migrations (init → 0009_audit_action_bulk)
 │   │   └── src/             # routes, services, repositories, plugins, scripts/seed-e2e
-│   └── web/                # Next.js 16 + shadcn/ui (port 3002 dev / 4002 prod)
+│   └── web/                # Next.js 16 + interior.dev (port 3002 dev / 4002 prod)
 │       ├── app/             # /login, /(authed)/{dashboard,marbetes,dispositivos,audit}
 │       ├── components/
 │       │   ├── inventory/   # MetricCard, DonutChart, BulkUploadDialog, etc.
 │       │   ├── layout/      # AppShell, Sidebar, Topbar, LogoutButton, MobileNav
-│       │   └── ui/          # shadcn wrappers
+│       │   ├── interior/    # fuentes interior.dev vendorizadas (MIT)
+│       │   └── ui/          # adaptadores con API estable (Field, Modal, Button…)
 │       ├── lib/             # api-client, server-session, auth-context
-│       ├── e2e/lookfeel/   # Playwright suite (45 tests, contra staging)
+│       ├── e2e/lookfeel/   # Playwright suite (contra staging)
+│       ├── e2e/cosmetic/   # smoke de navegador (stub API, sin credenciales)
 │       └── test/unit/      # React Testing Library suite
 ├── packages/shared/         # Zod DTOs compartidos (AuditAction, BulkCreateMarbetes*, etc.)
 ├── odd/tasks/               # planes ODD + bitácora (quorum-backoffice-mvp.md + Polish WU vN.md)

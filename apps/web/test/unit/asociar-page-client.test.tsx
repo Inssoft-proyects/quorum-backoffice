@@ -56,13 +56,7 @@ const baseCounters = {
 };
 
 function defaultUnassigned(): MatriculaListItem[] {
-  return [
-    makeMatricula(1),
-    makeMatricula(2),
-    makeMatricula(3),
-    makeMatricula(4),
-    makeMatricula(5),
-  ];
+  return [makeMatricula(1), makeMatricula(2), makeMatricula(3), makeMatricula(4), makeMatricula(5)];
 }
 
 function defaultAssigned(): MatriculaListItem[] {
@@ -192,35 +186,33 @@ function installFetchMock(handlers: FetchHandlers = {}): {
     }
     if (url.includes('/api/v1/marbetes/otp-grant')) {
       counts.grantRequests += 1;
-      return new Response(
-        JSON.stringify(
-          handlers.grant ?? { active: false, expiresAt: null },
-        ),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return new Response(JSON.stringify(handlers.grant ?? { active: false, expiresAt: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     if (url.includes('/api/v1/matriculas/counters')) {
       counts.countersRequests += 1;
-      return new Response(
-        JSON.stringify(
-          handlers.counters ?? baseCounters,
-        ),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return new Response(JSON.stringify(handlers.counters ?? baseCounters), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     if (url.includes('/api/v1/matriculas')) {
       counts.listRequests += 1;
-      const params = new URL(url).searchParams;
+      // The API client now emits same-origin relative URLs; parse them
+      // against a base so jsdom/Node can still read the query string.
+      const params = new URL(url, 'http://localhost').searchParams;
       const status = (params.get('status') ?? 'any') as ListMatriculasStatus;
       counts.observedListStatuses.push(status);
       const items =
         status === 'assigned'
           ? (handlers.assigned ?? defaultAssigned())
           : (handlers.unassigned ?? defaultUnassigned());
-      return new Response(
-        JSON.stringify({ total: items.length, limit: 200, offset: 0, items }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return new Response(JSON.stringify({ total: items.length, limit: 200, offset: 0, items }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     if (url.includes('/api/v1/marbetes/') && url.includes('/reveal')) {
       return new Response(
@@ -293,9 +285,7 @@ describe('AsociarPageClient', () => {
     );
     const card = container.querySelector('[data-inventory-card]');
     expect(card?.classList.contains('is-inventory-shortage')).toBe(true);
-    expect(screen.getByTestId('metric-inventory-status')).toHaveTextContent(
-      /Faltan 3 marbetes/,
-    );
+    expect(screen.getByTestId('metric-inventory-status')).toHaveTextContent(/Faltan 3 marbetes/);
   });
 
   it('opens the bulk assign modal and submits POST /assign with the right body', async () => {
@@ -322,14 +312,8 @@ describe('AsociarPageClient', () => {
     expect(screen.getByTestId('assign-review-row-2')).toBeInTheDocument();
 
     // Select the first available marbete for each row.
-    await user.selectOptions(
-      screen.getByTestId('assign-review-select-1'),
-      '1',
-    );
-    await user.selectOptions(
-      screen.getByTestId('assign-review-select-2'),
-      '2',
-    );
+    await user.selectOptions(screen.getByTestId('assign-review-select-1'), '1');
+    await user.selectOptions(screen.getByTestId('assign-review-select-2'), '2');
 
     // OTP input is required (no grant active).
     const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i });
@@ -449,10 +433,7 @@ describe('AsociarPageClient', () => {
     expect(await screen.findByTestId('unassign-modal')).toBeInTheDocument();
     expect(screen.getByTestId('unassign-enrollment')).toHaveTextContent('Ana López');
 
-    await user.selectOptions(
-      screen.getByTestId('unassign-reason-select'),
-      'dano-fisico',
-    );
+    await user.selectOptions(screen.getByTestId('unassign-reason-select'), 'dano-fisico');
     const otpInputs = screen.getAllByRole('textbox', { name: /Digit/i });
     for (const input of otpInputs) {
       await user.type(input, '1');
@@ -534,23 +515,17 @@ describe('AsociarPageClient', () => {
     const search = screen.getByTestId('assigned-search');
     fireEvent.change(search, { target: { value: 'm-AB12' } });
     expect(screen.getByTestId('assigned-empty')).toBeInTheDocument();
-    expect(
-      screen.getByTestId('assigned-search-count'),
-    ).toHaveTextContent('(0)');
+    expect(screen.getByTestId('assigned-search-count')).toHaveTextContent('(0)');
 
     // 2) maskedCode fragment MUST match (visible field).
     fireEvent.change(search, { target: { value: '1***AB' } });
     expect(screen.queryByTestId('assigned-empty')).toBeNull();
-    expect(
-      screen.getByTestId('assigned-search-count'),
-    ).toHaveTextContent(/\(1\)/);
+    expect(screen.getByTestId('assigned-search-count')).toHaveTextContent(/\(1\)/);
 
     // 3) fullName fragment still matches.
     fireEvent.change(search, { target: { value: 'Ana' } });
     expect(screen.queryByTestId('assigned-empty')).toBeNull();
-    expect(
-      screen.getByTestId('assigned-search-count'),
-    ).toHaveTextContent(/\(1\)/);
+    expect(screen.getByTestId('assigned-search-count')).toHaveTextContent(/\(1\)/);
   });
 
   it('dismisses the success banner via the close button', async () => {
@@ -658,18 +633,14 @@ describe('AsociarPageClient', () => {
     // present, so the assertion is the substring "LCPRZ1".
     const rowCell = await screen.findByTestId('assigned-matricula-7001');
     expect(rowCell).toHaveTextContent('LCPRZ1');
-    expect(
-      screen.getByTestId('assigned-matricula-7002'),
-    ).toHaveTextContent('MRSOT2');
+    expect(screen.getByTestId('assigned-matricula-7002')).toHaveTextContent('MRSOT2');
 
     // (5) The "No hay matrículas asignadas" empty state must NOT
     // be shown — the bug rendered it because the tab was never
     // fed. We assert via the canonical testid and the exact copy
     // to keep the regression intent obvious to a reader.
     expect(screen.queryByTestId('assigned-empty')).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/No hay matrículas asignadas/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No hay matrículas asignadas/)).not.toBeInTheDocument();
   });
 
   /**
@@ -739,9 +710,10 @@ describe('AsociarPageClient', () => {
     // The aria-label on the row's selection checkbox must not read
     // "Seleccionar matrícula null" — the helper picks the SIS code
     // as the label.
-    expect(
-      screen.getByTestId('unassigned-check-901'),
-    ).toHaveAttribute('aria-label', 'Seleccionar matrícula TOPGR4');
+    expect(screen.getByTestId('unassigned-check-901')).toHaveAttribute(
+      'aria-label',
+      'Seleccionar matrícula TOPGR4',
+    );
   });
 
   /**
@@ -839,12 +811,8 @@ describe('AsociarPageClient', () => {
       fireEvent.change(search, { target: { value: 'TOP' } });
     }).not.toThrow();
     // SIS fragment matches exactly one row.
-    expect(screen.getByTestId('unassigned-matricula-901')).toHaveTextContent(
-      'TOPGR4',
-    );
+    expect(screen.getByTestId('unassigned-matricula-901')).toHaveTextContent('TOPGR4');
     // The other row is filtered out.
-    expect(
-      screen.queryByTestId('unassigned-matricula-902'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('unassigned-matricula-902')).not.toBeInTheDocument();
   });
 });
