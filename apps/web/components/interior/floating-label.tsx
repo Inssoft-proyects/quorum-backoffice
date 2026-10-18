@@ -109,6 +109,13 @@ export function useFloatingLabel({
   };
 }
 
+/**
+ * Quorum adaptation: `inputProps` forwards everything the native field
+ * needs (`placeholder`, `min`, `minLength`, `step`, `data-testid`, key and
+ * clipboard handlers) without giving up the floating-label mechanism. A
+ * placeholder is only rendered once the label has been raised, so the two
+ * never overlap at rest.
+ */
 export type FloatingLabelInputProps = {
   label: string;
   value?: string;
@@ -120,7 +127,7 @@ export type FloatingLabelInputProps = {
   invalid?: boolean;
   id?: string;
   name?: string;
-  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url';
+  type?: React.HTMLInputTypeAttribute;
   autoComplete?: string;
   inputMode?: React.ComponentProps<'input'>['inputMode'];
   maxLength?: number;
@@ -129,6 +136,40 @@ export type FloatingLabelInputProps = {
   readOnly?: boolean;
   inputRef?: React.Ref<HTMLInputElement>;
   className?: string;
+  /** Extra utilities for the native input (e.g. font-mono for codes). */
+  inputClassName?: string;
+  /** Convenience pass-throughs for the most common native attributes. */
+  placeholder?: string;
+  minLength?: number;
+  min?: number | string;
+  max?: number | string;
+  step?: number | string;
+  pattern?: string;
+  'data-testid'?: string;
+  'aria-label'?: string;
+  inputProps?: Omit<
+    React.InputHTMLAttributes<HTMLInputElement>,
+    | 'id'
+    | 'name'
+    | 'type'
+    | 'value'
+    | 'defaultValue'
+    | 'onChange'
+    | 'onFocus'
+    | 'onBlur'
+    | 'className'
+    | 'disabled'
+    | 'readOnly'
+    | 'required'
+    | 'maxLength'
+    | 'autoComplete'
+    | 'inputMode'
+    | 'ref'
+  > & {
+    'data-testid'?: string;
+    'data-test'?: string;
+    'data-cy'?: string;
+  };
 };
 
 export function FloatingLabelInput({
@@ -151,6 +192,16 @@ export function FloatingLabelInput({
   readOnly = false,
   inputRef,
   className = '',
+  inputClassName = '',
+  placeholder,
+  minLength,
+  min,
+  max,
+  step,
+  pattern,
+  'data-testid': dataTestId,
+  'aria-label': ariaLabel,
+  inputProps,
 }: FloatingLabelInputProps) {
   const auto = useId();
   const fieldId = id ?? `${auto}-field`;
@@ -189,6 +240,14 @@ export function FloatingLabelInput({
           } ${disabled ? 'opacity-55' : ''}`}
         >
           <input
+            {...inputProps}
+            minLength={minLength}
+            min={min}
+            max={max}
+            step={step}
+            pattern={pattern}
+            data-testid={dataTestId}
+            aria-label={ariaLabel}
             ref={attach}
             id={fieldId}
             name={name}
@@ -201,9 +260,13 @@ export function FloatingLabelInput({
             required={required}
             disabled={disabled}
             readOnly={readOnly}
+            placeholder={focused ? (placeholder ?? inputProps?.placeholder) : undefined}
             aria-required={required || undefined}
             aria-invalid={invalid || undefined}
-            aria-describedby={hint ? hintId : undefined}
+            aria-describedby={
+              [hint ? hintId : null, inputProps?.['aria-describedby']].filter(Boolean).join(' ') ||
+              undefined
+            }
             onFocus={() => {
               fieldProps.onFocus();
               onFocus?.();
@@ -216,7 +279,7 @@ export function FloatingLabelInput({
               fieldProps.onChange(event);
               onChange?.(event.currentTarget.value, event);
             }}
-            className="absolute inset-0 h-full w-full rounded-md bg-transparent px-3 py-0 text-[13px] leading-[20px] text-text-primary outline-none focus-visible:outline-none disabled:cursor-not-allowed "
+            className={`absolute inset-0 h-full w-full rounded-md bg-transparent px-3 py-0 text-[13px] leading-[20px] text-text-primary outline-none focus-visible:outline-none disabled:cursor-not-allowed ${inputClassName}`}
           />
         </div>
 
