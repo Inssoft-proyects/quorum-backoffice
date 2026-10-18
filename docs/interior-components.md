@@ -49,6 +49,19 @@ Repositorio upstream: <https://github.com/ddoemonn/interior> · Licencia:
 `Card` no tiene equivalente en interior.dev (es un contenedor estático, no una
 micro-interacción): se conserva y sus cifras usan Value Flash.
 
+`Input` y `Label` ya no son primitivos shadcn con Radix:
+
+- `components/ui/input.tsx` se elimina: todo campo de texto pasa por `Field`. No
+  quedaba ningún consumidor.
+- `components/ui/label.tsx` es un `<label>` nativo con las mismas clases. Se usa
+  para controles agrupados (grupo OTP, búsqueda de matrícula, widgets compuestos)
+  donde no hay nada que flotar.
+
+Consecuencia pendiente (follow-up, fuera de este feature): `@radix-ui/react-dialog`,
+`@radix-ui/react-dropdown-menu`, `@radix-ui/react-label` y `@radix-ui/react-tabs`
+quedan instalados sin uso. Retirarlos toca `package-lock.json` y merece su propia
+rebanada de revisión.
+
 ## Cómo actualizar una fuente vendorizada
 
 1. Descargar el registro: `curl -sL https://www.interior.dev/r/<name>.json` y

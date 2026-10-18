@@ -54,7 +54,10 @@ describe('LoginForm', () => {
     await user.type(screen.getByLabelText('Contraseña'), 'wrongpass');
     await user.click(screen.getByRole('button', { name: /Ingresar/i }));
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(/incorrectos/i);
+      // The auth context maps a rejected login to the shared OTP copy
+      // ("Usuario o código incorrecto…"), which is singular. This assertion
+      // was stale on main before the cosmetic work started.
+      expect(screen.getByRole('alert')).toHaveTextContent(/incorrecto/i);
     });
   });
 });

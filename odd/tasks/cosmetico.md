@@ -22,43 +22,43 @@ Invariantes no negociables (derivados del estado actual del repo):
 
 ## Tabla de equivalencias
 
-| # | Elemento actual (shadcn) | Equivalente interior.dev | Acción |
-| --- | --- | --- | --- |
-| 1 | `components/ui/button.tsx` (shadcn Button + CVA) | **Press Depth** + **Loading Button** | Implementación sobre `usePressDepth`/`useAsyncAction`; API `Button` y `buttonVariants` intactas; nueva prop `loading` |
-| 2 | `components/ui/input.tsx` + `components/ui/label.tsx` | **Floating Label** | Nuevo `components/ui/field.tsx` (`FloatingLabelInput`); migrar 10 formularios; `Input` queda para búsquedas sin etiqueta |
-| 3 | `components/ui/textarea.tsx` | **Inline Validation** | Textarea nativo + `InlineValidation` para mensaje que no desplaza el formulario |
-| 4 | `components/ui/alert.tsx` | **Collapsible Banner** | `Alert`/`AlertTitle`/`AlertDescription` sobre `CollapsibleBanner` (plegable/descartable opcional) |
-| 5 | `components/ui/badge.tsx` | **Value Flash** | Insignia que marca el cambio de valor |
-| 6 | `components/ui/dialog.tsx` (Radix) | **Modal** | API compuesta (`Dialog`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogFooter`) sobre `useModal` |
-| 7 | `components/ui/otp-input.tsx` | **OTP Input** | Reemplazo directo: auto-avance, pegado, shake de error, modo controlado conservado |
-| 8 | `components/ui/select.tsx` | **Dropdown** | Select sobre lista con resaltado viajero; API `options`/`value`/`onChange` intacta |
-| 9 | `components/ui/dropdown-menu.tsx` (sin uso) | **Dropdown** | Reemplazo de implementación |
-| 10 | `components/ui/skeleton.tsx` (sin uso) | **Skeleton Swap** | Esqueleto→contenido sin layout shift |
-| 11 | `components/ui/tabs.tsx` (sin uso) | **Tabs** | Indicador compartido entre pestañas |
-| 12 | `components/ui/table.tsx` (sin uso) | **Sortable Table** | Filas que viajan a su nuevo orden |
-| 13 | `components/inventory/pagination.tsx` | **Pagination** | La ventana se mueve, la fila no; conserva testids y props |
-| 14 | `components/inventory/bulk-upload-processing-overlay.tsx` | **Progress Bar** | Indeterminada→determinada |
-| 15 | `components/layout/mobile-nav.tsx` + `audit/_components/audit-detail-drawer.tsx` | **Drawer** | Panel lateral que conserva su lugar |
-| 16 | `components/ui/card.tsx` + `status-cards.tsx` | **Value Flash** | Sin equivalente de tarjeta: se conserva; contadores con flash |
-| 17 | `components/inventory/masked-number.tsx` (códigos) | **Copy Button** | Copiar con tick y ancho bloqueado |
+| #   | Elemento actual (shadcn)                                  | Equivalente interior.dev             | Acción                                                                                                                                                           |
+| --- | --------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `components/ui/button.tsx` (shadcn Button + CVA)          | **Press Depth** + **Loading Button** | Implementación sobre `usePressDepth`/`useAsyncAction`; API `Button` y `buttonVariants` intactas; nueva prop `loading`                                            |
+| 2   | `components/ui/input.tsx` + `components/ui/label.tsx`     | **Floating Label**                   | Nuevo `components/ui/field.tsx` (`FloatingLabelInput`); migrar 10 formularios; `Input` queda para búsquedas sin etiqueta                                         |
+| 3   | `components/ui/textarea.tsx`                              | **Inline Validation**                | Textarea nativo + `InlineValidation` para mensaje que no desplaza el formulario                                                                                  |
+| 4   | `components/ui/alert.tsx`                                 | **Collapsible Banner**               | `Alert`/`AlertTitle`/`AlertDescription` sobre `CollapsibleBanner` (plegable/descartable opcional)                                                                |
+| 5   | `components/ui/badge.tsx`                                 | **Value Flash**                      | Insignia que marca el cambio de valor                                                                                                                            |
+| 6   | `components/ui/dialog.tsx` (Radix)                        | **Modal**                            | API compuesta (`Dialog`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogFooter`) sobre `useModal`                                   |
+| 7   | `components/ui/otp-input.tsx`                             | **OTP Input**                        | Reemplazo directo: auto-avance, pegado, shake de error, modo controlado conservado                                                                               |
+| 8   | `components/ui/select.tsx`                                | **Dropdown**                         | Select sobre lista con resaltado viajero; API `options`/`value`/`onChange` intacta                                                                               |
+| 9   | `components/ui/dropdown-menu.tsx` (sin uso)               | **Dropdown**                         | Reemplazo de implementación                                                                                                                                      |
+| 10  | `components/ui/skeleton.tsx` (sin uso)                    | **Skeleton Swap**                    | Esqueleto→contenido sin layout shift                                                                                                                             |
+| 11  | `components/ui/tabs.tsx` (sin uso)                        | **Tabs**                             | Indicador compartido entre pestañas                                                                                                                              |
+| 12  | `components/ui/table.tsx` (sin uso)                       | **Sortable Table**                   | Filas que viajan a su nuevo orden                                                                                                                                |
+| 13  | `components/inventory/pagination.tsx`                     | **Pagination**                       | La ventana se mueve, la fila no; conserva testids y props                                                                                                        |
+| 14  | `components/inventory/bulk-upload-processing-overlay.tsx` | **Progress Bar**                     | Indeterminada→determinada                                                                                                                                        |
+| 15  | `components/layout/mobile-nav.tsx`                        | **Drawer**                           | Panel lateral con arrastre que coincide con la salida. `audit-detail-drawer` es un modal de detalle centrado: se queda sobre **Modal** (fila 6), no sobre Drawer |
+| 16  | `components/ui/card.tsx` + `status-cards.tsx`             | **Value Flash**                      | Sin equivalente de tarjeta: se conserva; contadores con flash                                                                                                    |
+| 17  | `components/inventory/masked-number.tsx` (códigos)        | **Copy Button**                      | Copiar con tick y ancho bloqueado                                                                                                                                |
 
 ## Tasks
 
-- **T1 · Fundación** (S1, S3, S5) — `motion` instalado; 16 fuentes vendorizadas en `apps/web/components/interior/` con procedencia, tokens InecConecta y `motion` como única dependencia nueva. Commit: `chore(web): vendor interior.dev micro-interaction sources`.
-- **T2 · Button** (S2, S3) — `ui/button.tsx` sobre Press Depth + Loading Button; API intacta; prop `loading`. Commit: `feat(web): rebuild button on interior press-depth and loading-button`.
-- **T3 · Field (Floating Label)** (S2, S3) — `ui/field.tsx` + migración de los 10 formularios; `Input`/`Label` quedan para casos sin etiqueta flotante. Commit: `feat(web): adopt floating-label field across forms`.
-- **T4 · Textarea + Inline Validation** (S2, S3) — mensaje de error con altura reservada. Commit: `feat(web): textarea with inline validation`.
-- **T5 · Alert → Collapsible Banner** (S2, S3) — API `Alert*` conservada. Commit: `feat(web): rebuild alerts as collapsible banners`.
-- **T6 · Badge → Value Flash** (S2, S3) — flash al cambiar el valor. Commit: `feat(web): badge with value-flash`.
-- **T7 · Dialog → Modal** (S2, S3) — API compuesta sobre `useModal`; 15 consumidores sin cambios. Commit: `feat(web): rebuild dialog on interior modal`.
-- **T8 · OTP Input** (S2, S3, I2) — reemplazo directo con modo controlado y tests verdes. Commit: `feat(web): adopt interior otp-input`.
-- **T9 · Select → Dropdown** (S2, S3) — API `Select` intacta. Commit: `feat(web): select on interior dropdown`.
-- **T10 · Primitivos sin uso** (S2) — dropdown-menu, skeleton, tabs, table sobre sus equivalentes. Commit: `feat(web): replace unused shadcn primitives`.
-- **T11 · Pagination** (S2, S3, I2) — ventana que se mueve; testids conservados. Commit: `feat(web): interior pagination`.
-- **T12 · Progress Bar** (S2, S3) — overlay de carga masiva. Commit: `feat(web): progress bar for bulk upload`.
-- **T13 · Drawer** (S2, S3) — mobile nav y audit detail drawer. Commit: `feat(web): drawer for mobile nav and audit detail`.
-- **T14 · Value Flash + Copy Button** (S2, S3) — contadores y códigos. Commit: `feat(web): value-flash counters and copy button`.
-- **T15 · Verificación y cierre** (I4, S6) — tests RTL nuevos, `npm test`, `typecheck`, `build`, `lint`, docs (`docs/interior-components.md`) y tabla de procedencia. Commit: `docs(web): document interior.dev component provenance and verification`.
+- **T1 · Fundación** (S1, S3, S5) — `motion` instalado; 16 fuentes vendorizadas en `apps/web/components/interior/` con procedencia, tokens InecConecta y `motion` como única dependencia nueva. Commits: `cbfcfca`.
+- **T2 · Button** (S2, S3) — `ui/button.tsx` sobre Press Depth + Loading Button; API intacta; prop `loading`. Commits: `aee672b`.
+- **T3 · Field (Floating Label)** (S2, S3) — `ui/field.tsx` + migración de los 10 formularios; `Input`/`Label` quedan para casos sin etiqueta flotante. Commits: `49a4e91 + 19a0260`.
+- **T4 · Textarea + Inline Validation** (S2, S3) — mensaje de error con altura reservada. Commits: `96513a3`.
+- **T5 · Alert → Collapsible Banner** (S2, S3) — API `Alert*` conservada. Commits: `96513a3`.
+- **T6 · Badge → Value Flash** (S2, S3) — flash al cambiar el valor. Commits: `96513a3`.
+- **T7 · Dialog → Modal** (S2, S3) — API compuesta sobre `useModal`; 15 consumidores sin cambios. Commits: `cff12fa`.
+- **T8 · OTP Input** (S2, S3, I2) — reemplazo directo con modo controlado y tests verdes. Commits: `e11187a`.
+- **T9 · Select → Dropdown** (S2, S3) — API `Select` intacta. Commits: `315cce0`.
+- **T10 · Primitivos sin uso** (S2) — dropdown-menu, skeleton, tabs, table sobre sus equivalentes. Commits: `315cce0`.
+- **T11 · Pagination** (S2, S3, I2) — ventana que se mueve; testids conservados. Commits: `0e2982b + dc7763f`.
+- **T12 · Progress Bar** (S2, S3) — overlay de carga masiva. Commits: `0e2982b + dc7763f`.
+- **T13 · Drawer** (S2, S3) — mobile nav sobre Drawer; el detalle de auditoría queda sobre Modal (es un diálogo centrado, no un panel lateral). Commits: `1c22dfa`.
+- **T14 · Value Flash + Copy Button** (S2, S3) — contadores y códigos. Commits: `fc32df3 + 0e2982b + 06a0b57 + dc7763f`.
+- **T15 · Verificación y cierre** (I4, S6) — tests RTL nuevos, `npm test`, `typecheck`, `build`, `lint`, docs (`docs/interior-components.md`) y tabla de procedencia. Evidencia: `jest` 42 suites / 263 tests con 1 fallo preexistente reparado; `tsc --noEmit` limpio; `next build` OK; `input.tsx` eliminado (0 consumidores). Commit: `docs(web): document interior.dev component provenance and verification`.
 
 ## Log
 
@@ -66,3 +66,9 @@ Invariantes no negociables (derivados del estado actual del repo):
 - **L2** — Evidencia de exploración: `apps/web/components/ui` contiene 14 primitivos (10 en uso: button 22 archivos, otp-input 16, alert 16, dialog 15, input 13, label 10, textarea 3, card 3, badge 2, select 1; sin uso: dropdown-menu, skeleton, tabs, table). `motion` no estaba instalado. `components.json` declara shadcn `style: default`, `baseColor: neutral`. Tokens en `app/globals.css` `@theme`.
 - **L3** — Restricción descubierta: el proyecto no define tokens `dark:`; los componentes vendorizados se adaptan a tokens claros y se eliminan las variantes `dark:` heredadas. El proveedor de tema existente no se modifica.
 - **L4** — Evidencia de la librería: `https://www.interior.dev/llms.txt` (16 categorías, ~56 componentes), registry shadcn en `https://www.interior.dev/r/<name>.json` con dependencia única `motion`, licencia MIT (`https://github.com/ddoemonn/interior/blob/main/LICENSE`).
+- **L5** — `test/unit/login-form.test.tsx` tiene un fallo **preexistente** en `main`: espera `/incorrectos/i` mientras el producto dice «Usuario o código incorrecto. Verifica tu código dinámico e inténtalo de nuevo.». Se reprodujo en el worktree principal (`1 failed, 1 passed`) antes de tocar nada. No se modifica el test ni el texto: queda fuera de alcance y se reporta.
+- **L6** — Adaptaciones de contrato documentadas: (a) `FloatingLabelInput` acepta `inputProps`/`placeholder`/`minLength`/`min`/`step` y muestra el placeholder solo cuando la etiqueta ya subió; (b) el OTP controlado conserva el contrato histórico de espacios en posiciones vacías (`'X9 Z'`) para que un hueco no desplace el carácter siguiente; (c) `ValueFlash` anuncia solo cambios (`changeId > 0`) para no duplicar el número visible en el primer render; (d) `ProgressBar` gana `showHeader={false}` para integrarse al bloque de la maqueta; (e) `Drawer` aplica a mobile nav; el detalle de auditoría sigue siendo Modal.
+- **L7** — Límite de rebanada: el commit de vendorización aporta ~5.000 líneas, casi todas código MIT de terceros con su encabezado de procedencia. El resto de las tareas se commitean en unidades de ~400 líneas de código propio.
+- **L8** — Incidente de repositorio: el worker delegado ejecutó un `git reset` (reflog: `06a0b57 reset: moving to HEAD`) mientras el padre preparaba el índice; el commit `0e2982b` quedó con 2 de 6 archivos. Un `git reset` solo mueve el índice, no el árbol: no se perdió contenido y el resto se recompuso en `dc7763f`. El worker había sido instruido a no commitear y se canceló al detectarse.
+- **L9** — Limpieza posterior a la migración: `components/ui/input.tsx` quedó con 0 consumidores y se elimina; `components/ui/label.tsx` se reimplementa como `<label>` nativo (sin Radix) para los controles que no son campos de texto; `@radix-ui/react-dialog`, `react-dropdown-menu`, `react-label` y `react-tabs` quedan sin uso en `package.json` como follow-up (no se retiran en este feature para no tocar el lockfile).
+- **L10** — Se repara una aserción **preexistente** de `test/unit/login-form.test.tsx` (`/incorrectos/i` → `/incorrecto/i`), que contradecía el copy vigente del contexto de auth. Es cambio solo de test; el texto del producto no se toca. Así la suite puede actuar como puerta de este feature.
