@@ -233,6 +233,26 @@ paths:
                       scheduled_end: '2026-02-01T16:00:00Z'
                       status: scheduled
                     active_enrollments: 28
+                    events_status: fresh
+                    events_synced_at: '2026-10-19T20:00:00Z'
+                    events:
+                      - id: "98765"
+                        type: assignment
+                        title: Entrega 1
+                        description: Instrucciones completas
+                        start_at: '2026-11-03T16:00:00Z'
+                        end_at: null
+                        all_day: false
+                        all_day_date: '2026-11-03'
+                        location_name: Aula 3
+                        location_address: Calle 1
+                        html_url: 'https://lms.inecuni.com/courses/101/assignments/98765'
+                        context_code: course_101
+                        workflow_state: active
+                        assignment_id: "98765"
+                        points_possible: 10
+                        submission_types: [online_text_entry]
+                        updated_at: '2026-10-18T12:00:00Z'
         '400':
           description: Path inválido.
           content:
@@ -313,7 +333,9 @@ components:
       allOf:
         - $ref: '#/components/schemas/CourseCatalogItem'
         - type: object
-          required: [teacher_email_hash, teachers, next_session, active_enrollments]
+          required:
+            [teacher_email_hash, teachers, next_session, active_enrollments,
+             events, events_status, events_synced_at]
           properties:
             teacher_email_hash:
               type: [string, 'null']
@@ -328,6 +350,72 @@ components:
             active_enrollments:
               type: integer
               minimum: 0
+            events:
+              type: array
+              description: |
+                Eventos de Canvas (`event` + `assignment`) dentro de la ventana
+                −30/+90 días, ordenados por `start_at` ascendente. Sin límite
+                de cantidad dentro de la ventana.
+              items: { $ref: '#/components/schemas/CourseEvent' }
+            events_status:
+              type: string
+              enum: [fresh, stale, unavailable]
+              description: |
+                Frescura del espejo de eventos: `stale` cuando el último sync
+                exitoso superó 2 h; `unavailable` cuando nunca se sincronizó o
+                el curso no tiene `canvas_id`.
+            events_synced_at:
+              type: [string, 'null']
+              format: date-time
+              description: Último sync exitoso de eventos, ISO-8601 UTC.
+    CourseEvent:
+      type: object
+      required:
+        [id, type, title, start_at, end_at, all_day, context_code, workflow_state]
+      properties:
+        id:
+          type: string
+          description: Canvas event id (clave natural del espejo).
+        type:
+          type: string
+          enum: [event, assignment]
+        title: { type: string }
+        description:
+          type: [string, 'null']
+          description: |
+            Texto completo de Canvas. Puede contener PII y links privados de
+            videollamada; riesgo aceptado explícitamente (S8).
+        start_at:
+          type: [string, 'null']
+          format: date-time
+        end_at:
+          type: [string, 'null']
+          format: date-time
+        all_day: { type: boolean }
+        all_day_date:
+          type: [string, 'null']
+          format: date
+        location_name: { type: [string, 'null'] }
+        location_address: { type: [string, 'null'] }
+        html_url:
+          type: [string, 'null']
+          format: uri
+        context_code:
+          type: string
+          description: '`course_<canvas_id>`, `user_<id>` o `account_<id>`.'
+        workflow_state:
+          type: string
+          description: |
+            `active`, `deleted` o `cancelled` según Canvas. Los cancelados se
+            conservan en el espejo (S11).
+        assignment_id: { type: [string, 'null'] }
+        points_possible: { type: [number, 'null'] }
+        submission_types:
+          type: [array, 'null']
+          items: { type: string }
+        updated_at:
+          type: [string, 'null']
+          format: date-time
     TeacherSummary:
       type: object
       required: [sub, display_name, role, email_hash]
