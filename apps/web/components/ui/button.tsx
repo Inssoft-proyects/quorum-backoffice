@@ -8,25 +8,31 @@ import { cn } from '@/lib/utils';
 import { usePressDepth } from '@/components/interior/press-depth';
 
 /**
- * Button built on two interior.dev micro-interactions:
+ * Button built on interior.dev's *Loading Button* pattern
+ * (https://www.interior.dev/docs/loading-button).
  *
- * - **Press Depth** (https://www.interior.dev/docs/press-depth): the face
- *   travels into its own underlay on pointer or keyboard press, with a
- *   spring that resumes from wherever it is. The travel is 2px (upstream
- *   uses 4px) because this is a dense backoffice, not a marketing page.
- * - **Loading Button** (https://www.interior.dev/docs/loading-button):
- *   when `loadingLabel` is supplied the idle and pending faces share one
- *   grid cell from mount, so the button reserves the widest reachable
- *   width *before* it gets there and the row beneath never moves. Without
- *   `loadingLabel` the legacy behaviour (caller swaps the child string)
- *   is preserved untouched.
+ * The **Press Depth** extrusion (https://www.interior.dev/docs/press-depth)
+ * was removed from the render: interior.dev ships that pattern and the flat
+ * one, and the product owner rejected anything that looks 3D
+ * (`odd/tasks/backoffice-ui-canon.md`, S1). So there is no underlay slab, no
+ * `rotateX`/`rotateY` tilt and no `transformPerspective`; pressing only
+ * travels the face 1px down on a spring, the `whileTap={{ y: 1 }}` of the
+ * flat pattern. The pattern's `0 0 0 1px` ring plus `0 1px 2px` ambient
+ * shadow pair is interior.dev canon and stays: flattening the press does not
+ * remove it.
+ *
+ * The pending face is the other half of the same pattern: when
+ * `loadingLabel` is supplied the idle and pending faces share one grid cell
+ * from mount, so the button reserves the widest reachable width *before* it
+ * gets there and the row beneath never moves. Without `loadingLabel` the
+ * legacy behaviour (caller swaps the child string) is preserved untouched.
  *
  * Both mechanisms collapse to `duration: 0` under `prefers-reduced-motion`:
  * the pressed state and the pending label still arrive, only the trip is
  * skipped.
  *
- * `asChild` (Radix Slot) keeps working for link-styled triggers: Slot
- * clones a single child, so the depth layers are skipped in that mode.
+ * `asChild` (Radix Slot) keeps working for link-styled triggers: Slot clones
+ * a single child, so the press motion is skipped in that mode.
  */
 
 const buttonVariants = cva(
@@ -55,24 +61,9 @@ const buttonVariants = cva(
   },
 );
 
-/**
- * Underlay tone per variant: the face slides onto a darker slab of its own
- * colour, so the travel reads as depth instead of a shadow.
- */
-const pressShade: Record<NonNullable<VariantProps<typeof buttonVariants>['variant']>, string> = {
-  default: 'bg-primary-600',
-  destructive: 'bg-alert-error-text/70',
-  secondary: 'bg-secondary-600',
-  outline: 'bg-border',
-  ghost: 'bg-muted',
-  link: 'bg-transparent',
-};
-
 const PRESS = { type: 'spring', stiffness: 520, damping: 34, mass: 0.45 } as const;
 const CROSSFADE = { type: 'spring', stiffness: 260, damping: 34, mass: 0.8 } as const;
 const INSTANT = { duration: 0 } as const;
-
-const DEPTH = 2;
 
 function Spinner({ still }: { still: boolean }) {
   return (
@@ -127,7 +118,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const reduced = useReducedMotion();
     const inactive = Boolean(disabled) || loading;
-    const { pressed, origin, ref: pressRef, bind } = usePressDepth({ disabled: inactive });
+    const { pressed, ref: pressRef, bind } = usePressDepth({ disabled: inactive });
 
     const setRef = React.useCallback(
       (node: HTMLButtonElement | null) => {
@@ -148,11 +139,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       );
     }
 
-    const depth = variant === 'ghost' || variant === 'link' ? 0 : DEPTH;
-    const lean =
-      pressed && origin && Number.isFinite(origin.x) && Number.isFinite(origin.y) && !reduced
-        ? origin
-        : null;
     const move = reduced ? INSTANT : PRESS;
     const fade = reduced ? INSTANT : CROSSFADE;
     const reservesWidth = typeof loadingLabel === 'string';
@@ -192,32 +178,16 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-label={loading && loadingLabel ? loadingLabel : undefined}
         onClick={onClick}
         style={{
-          paddingBottom: depth,
           touchAction: 'manipulation',
           WebkitTapHighlightColor: 'transparent',
         }}
         {...bind}
         {...props}
       >
-        {depth > 0 ? (
-          <span
-            aria-hidden
-            style={{ top: depth }}
-            className={cn(
-              'pointer-events-none absolute inset-x-0 bottom-0 rounded-md',
-              pressShade[variant ?? 'default'],
-            )}
-          />
-        ) : null}
         <motion.span
           initial={false}
-          animate={{
-            y: pressed && depth > 0 ? depth : 0,
-            rotateX: lean ? -lean.y * 2 : 0,
-            rotateY: lean ? lean.x * 2 : 0,
-          }}
+          animate={{ y: pressed ? 1 : 0 }}
           transition={move}
-          style={{ transformPerspective: 340 }}
           className="relative inline-grid place-items-center"
         >
           {idleFace}
