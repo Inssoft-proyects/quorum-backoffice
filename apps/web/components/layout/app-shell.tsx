@@ -64,12 +64,12 @@ export function AppShell({ user, children }: { user: MeResponse; children: React
          * scrolls internally for screens that opt in via the
          * `inventory-page` flex layout.
          *
-         * The bottom padding is a constant 1rem and the inventory page adds
-         * none: together with the 0 bottom padding on `.inventory-page` this
-         * is the whole dead band left below the pagination (S2 of
-         * `odd/tasks/backoffice-ui-canon.md`), so table screens spend ~98% of
-         * the viewport height on content. */}
-        <main className="min-w-0 flex-1 h-full overflow-x-hidden overflow-y-auto p-4 pb-4 md:px-6 md:pt-6 md:pb-4">
+         * The vertical padding is a constant 1rem on both edges and the
+         * inventory page adds none vertically: that makes the space above
+         * the page title equal to the space below the table footer (S2 and
+         * S9 of `odd/tasks/backoffice-ui-canon.md`), so table screens spend
+         * ~98% of the viewport height on content. */}
+        <main className="min-w-0 flex-1 h-full overflow-x-hidden overflow-y-auto p-4 pb-4 md:px-6 md:pt-4 md:pb-4">
           {children}
         </main>
       </div>

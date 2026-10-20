@@ -152,7 +152,13 @@
   .inventory-page {
     width: min(100%, 90rem);
     margin-inline: auto;
-    padding: 2rem 2rem 0;
+    /* Vertical padding is 0 on purpose: `<main>` owns the constant 1rem on
+     * both edges, so the space above the page title matches the space below
+     * the table footer (S9 of `odd/tasks/backoffice-ui-canon.md`). The
+     * `.app-alert` toast is `position: fixed` (`globals.css` line ~576) and
+     * floats above the pagination, so it never displaced the page flow;
+     * reserving room for it here only opened a dead band. */
+    padding: 0 2rem 0;
     font-family: var(--font-family-base);
     display: flex;
     flex-direction: column;

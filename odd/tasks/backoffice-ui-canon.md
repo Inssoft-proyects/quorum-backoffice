@@ -13,6 +13,8 @@ Feature: `backoffice-ui-canon` · Rama: `feat/backoffice-ui-canon` · Fecha: 202
 - **S7** — «Ojo, quita la banda muerta para las pantallas "Marbetes", Dispositivos", "Auditoría", Sólo "Asignación de marbetes" tiene scroll y la especificación indicaba que se debe hacer uso del máximo espacio del portview (máximo 98%), sin embargo genera un scroll y debe homologarse con las demás pantallas.» `/asociar` deja de desplazar el documento: su workspaces se contrae y la tabla interior scrollea, igual que las otras tres. El dashboard no recibe contenido nuevo.
 - **S8** — «No existe ningún logo de INEC Conecta en el repo… Está en /planQuorum/dev/quorum-design/design/logo_inec.png». El ícono se copia desde `quorum-design/design/icono inec.png` (283×283 PNG RGBA) a `apps/web/public/assets/`.
 
+- **S9** — «sólo hace falta ajustar el espacio muerto que está arriba de los títulos de la parte centrar de cada página, puedes valdiarlo con playwright, debería tener el mismo espacio que estamos dejando debo de las tablas». El espacio entre la barra superior y el título de la página debe ser igual al que queda entre el pie de la tabla y el borde inferior del viewport (1 rem tras la S2, con tolerancia de 1 px).
+
 ## Tasks
 
 | ID  | Spec       | Ruta                                                                                                                                                                            | Commit                                                                          |
@@ -22,20 +24,22 @@ Feature: `backoffice-ui-canon` · Rama: `feat/backoffice-ui-canon` · Fecha: 202
 | T3  | S2, S7     | `globals.css` + `app-shell.tsx`: eliminar la banda muerta, compactar el ritmo vertical, homologar `/asociar`; corregir el solape de la tarjeta «Por atender»                    | `style(web): reclaim the viewport and homologate the assignment screen`         |
 | T4  | S3, S4, S8 | Ícono de marca en `public/assets`, fila de marca con `BackOffice`, toggle contraíble con riel de iconos y persistencia; tests RTL y e2e                                         | `feat(web): sidebar brand row with the INEC Conecta mark and a collapse toggle` |
 | T5  | S5         | Jest + typecheck + build + smoke cosmético + aserción Playwright de geometría y planitud + medición en producción                                                               | `test(web): pin the flat controls and the 98% viewport budget`                  |
+| T6  | S9         | `globals.css` + `app-shell.tsx`: alinear el espacio superior con el inferior                                                                                                    | `style(web): match the space above the page title to the footer`                |
 
 ## Evidence
 
-| Gate               | Comando                                                          | Resultado                                                                                             |
-| ------------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Tipos              | `cd apps/web && npx tsc --noEmit -p tsconfig.json`               | exit 0                                                                                                |
-| Unidad             | `cd apps/web && npx jest --config jest.config.cjs`               | 42/42 suites, 267/267 tests                                                                           |
-| Navegador          | `bash scripts/cosmetic-smoke.sh`                                 | 12/12 tests (7 de smoke previos + 5 nuevos)                                                           |
-| Planitud           | `ui-canon.spec.ts` › _no control is extruded_                    | 0 losas, 0 `matrix3d`, 0 `perspective` en login, dashboard, marbetes, dispositivos y auditoría        |
-| Viewport 1440×900  | medición propia sobre el standalone                              | gap 16 px · 98.2 % del alto · documento sin scroll                                                    |
-| Viewport 1920×1080 | medición propia                                                  | gap 16 px · 98.5 %                                                                                    |
-| Viewport 1366×768  | medición propia                                                  | gap 16 px · 97.9 % · cuerpo de tabla 139→263 px (marbetes), 81→211 (dispositivos), 29→153 (auditoría) |
-| `/asociar`         | `ui-canon.spec.ts` › _assignment screen contains its own scroll_ | documento sin scroll; `.table-shell` interior de 121 px a 768                                         |
-| Marca              | `curl localhost:3210/backoffice/assets/inec-conecta.png`         | 200                                                                                                   |
+| Gate               | Comando                                                                                    | Resultado                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Tipos              | `cd apps/web && npx tsc --noEmit -p tsconfig.json`                                         | exit 0                                                                                                |
+| Unidad             | `cd apps/web && npx jest --config jest.config.cjs`                                         | 42/42 suites, 267/267 tests                                                                           |
+| Navegador          | `bash scripts/cosmetic-smoke.sh`                                                           | 12/12 tests (7 de smoke previos + 5 nuevos)                                                           |
+| Planitud           | `ui-canon.spec.ts` › _no control is extruded_                                              | 0 losas, 0 `matrix3d`, 0 `perspective` en login, dashboard, marbetes, dispositivos y auditoría        |
+| Viewport 1440×900  | medición propia sobre el standalone                                                        | gap 16 px · 98.2 % del alto · documento sin scroll                                                    |
+| Viewport 1920×1080 | medición propia                                                                            | gap 16 px · 98.5 %                                                                                    |
+| Viewport 1366×768  | medición propia                                                                            | gap 16 px · 97.9 % · cuerpo de tabla 139→263 px (marbetes), 81→211 (dispositivos), 29→153 (auditoría) |
+| `/asociar`         | `ui-canon.spec.ts` › _assignment screen contains its own scroll_                           | documento sin scroll; `.table-shell` interior de 121 px a 768                                         |
+| Marca              | `curl localhost:3210/backoffice/assets/inec-conecta.png`                                   | 200                                                                                                   |
+| Simetría vertical  | `ui-canon.spec.ts` › _space above the page title matches the space below the table footer_ | 16 px arriba y 16 px abajo en marbetes, dispositivos y auditoría                                      |
 
 ## Log
 
@@ -45,3 +49,4 @@ Feature: `backoffice-ui-canon` · Rama: `feat/backoffice-ui-canon` · Fecha: 202
 - **L4** — Hallazgo: interior.dev publica _Press Depth_ (3D explícito) y _Loading Button_ (plano, `whileTap y:1`). Se adopta el segundo; el anillo `0 0 0 1px` + ambiente `0 1px 2px` del botón plano es canon del sitio y se conserva.
 - **L5** — Defecto adicional confirmado en producción: en el dashboard la tarjeta «Por atender» solapa su texto con el donut/área de pills (`.metric-card__percentage` con `white-space: nowrap`). Se corrige en T3.
 - **L6** — Defectos encontrados durante la verificación y su causa raíz: (a) `next/image` con `output: 'standalone'` + `basePath` emite la ruta sin el prefijo y el PNG de marca daba 404, incluso con `unoptimized`; se resolvió con un `<img>` a `/backoffice/assets/inec-conecta.png`, la convención que ya usaba la plantilla de carga masiva. (b) Tailwind 4 no emitió `md:grid-cols-[var(--sidebar-track)_1fr]`, así que la pista del grid quedaba determinada por el contenido (94 px en vez de 72); se sustituyó por dos utilidades estáticas. Ambos se detectaron en el navegador, no en jsdom.
+- **L7** — «Por favor, sólo hace falta ajustar el espacio muerto que está arriba de los títulos de la parte centrar de cada página, puedes valdiarlo con playwright, debería tener el mismo espacio que estamos dejando debo de las tablas. ¿Puedes ajustarlo?» El espacio superior era de 56 px (24 px de `<main>` + 32 px de `.inventory-page`) frente a los 16 px inferiores; se igualó a 1 rem en ambos extremos.

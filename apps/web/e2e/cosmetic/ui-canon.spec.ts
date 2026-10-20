@@ -113,6 +113,33 @@ test.describe('UI canon — flat controls and the 98% viewport budget', () => {
     }
   });
 
+  test('the space above the page title matches the space below the table footer', async ({
+    page,
+  }) => {
+    await login(page);
+    for (const route of ['/backoffice/marbetes', '/backoffice/dispositivos', '/backoffice/audit']) {
+      await page.goto(route);
+      await expect(page.locator('.table-pagination')).toBeVisible();
+
+      const measured = await page.evaluate(() => {
+        const main = document.querySelector('main')!.getBoundingClientRect();
+        const title = document.querySelector('.inventory-page h1')!.getBoundingClientRect();
+        const pagination = document.querySelector('.table-pagination')!.getBoundingClientRect();
+        return {
+          above: +(title.top - main.top).toFixed(1),
+          below: +(window.innerHeight - pagination.bottom).toFixed(1),
+        };
+      });
+
+      // S9: one constant breathing space, above and below, so the page reads
+      // centred instead of pushed down.
+      expect(
+        Math.abs(measured.above - measured.below),
+        `${route} leaves ${measured.above}px above the title and ${measured.below}px below the footer`,
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+
   test('the assignment screen contains its own scroll like the other table screens', async ({
     page,
   }) => {
