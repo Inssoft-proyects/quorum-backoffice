@@ -4,48 +4,60 @@ Pega este bloque en una sesión nueva de Pi para retomar el trabajo.
 
 ---
 
-# Estado actual al cierre de la sesión (2026-10-18)
+# Estado actual al cierre de la sesión (2026-10-20)
 
-> Esta sección reemplaza a la del 2026-09-26 para el estado del **frontend**.
-> El resto del documento sigue siendo válido como historial de arquitectura.
+> Esta sección reemplaza a la del 2026-10-18 para el estado del **frontend**.
 
 ## Lo que cambió
 
-- **Migración cosmética a interior.dev** (rama `feat/cosmetico`): los primitivos
-  shadcn de `apps/web/components/ui` fueron sustituidos por componentes de
-  [interior.dev](https://www.interior.dev/) (MIT) vendorizados en
-  `apps/web/components/interior/`, con adaptadores que conservan la API que ya
-  consumían las pantallas. Detalle y tabla de sustitución en
-  `docs/interior-components.md`.
-- **Base del API en mismo origen por defecto**: `NEXT_PUBLIC_API_URL` solo se
-  inlinea si está definida; si falta, el navegador llama a `/api/v1/...` del
-  origen que sirvió la página. El servidor usa `API_INTERNAL_URL` (runtime) y
-  `next.config.ts` expone un rewrite `/api` para dev/standalone. Esto corrigió el
-  login roto en `backoffice.inecuni.com` (el bundle traía `127.0.0.1:3100`).
-- **Armonización visual**: el chrome heredado (`.btn`, `.row-action`,
-  `.form-field__*`, `.custom-select__trigger`, tablas, paginación, metric cards,
-  modales) se alineó a la geometría interior.dev (40 px, radio 8, 13 px/500,
-  anillo de 1 px, foco dorado). Se corrigieron defectos de layout: filtros de
-  auditoría superpuestos, sección de tabla sin CSS (footer fuera de vista),
-  tabla de dispositivos 118 px más ancha que su contenedor, número invisible en
-  la tarjeta activa y doble anillo de foco en los campos.
-- **Release real documentado** en `RUNBOOK.md` §Deploy: el pod web corre
-  `node:22-bookworm-slim` sobre el hostPath `/opt/quorum-backoffice`. Se
-  documentó el rebuild, el rollback y la recuperación ante caché de Turbopack
-  corrupta (build en worktree + publicación del `.next`).
-- **Producción**: revisión 31 del Deployment `quorum-backoffice-web`, bundle
-  construido en mismo origen, `/api` proxied por nginx.
+- **Botones planos**: `Button` pasó de _Press Depth_ (losa de 2 px, `rotateX/Y` y
+  `perspective`) al patrón plano de interior.dev (_Loading Button_: 1 px de
+  recorrido, `brightness(.98)`). Se retiraron los componentes vendorizados
+  `PressDepth` y `LoadingButton` (sin consumidores) y los biseles `inset` de la
+  barra de progreso y del desplegable abierto. interior.dev publica **ambos**
+  patrones; el 3D estaba prohibido por el dueño.
+- **Viewport al 98 %**: fuera la banda muerta de 124 px bajo la paginación
+  (100 px de `padding-bottom` de `.inventory-page` + 24 px de `<main>`). Ahora el
+  contenido termina a 16 px del borde inferior y el título arranca a 16 px de la
+  barra superior. `/asociar` dejó de arrastrar el documento: workspace y paneles
+  son columnas flex que se contraen y la tabla scrollea dentro.
+- **Sidebar**: marca INEC Conecta + título `BackOffice` + toggle que contrae a un
+  riel de 4.5 rem con iconos, tooltip y persistencia en `localStorage`
+  (`qb-sidebar-collapsed`).
+- **Tarjetas de resumen**: una sola retícula de cuatro áreas (etiqueta + chip /
+  valor + porcentaje / meta / barra), separación uniforme de 8 px, 2×2 por debajo
+  de 1200 px y **barra proporcional** en lugar de la dona (patrón _Poll Results_
+  de interior.dev). `/asociar` renombró las dos cifras confundibles: «Marbetes en
+  inventario» y «Matrículas sin marbete».
+- **Revelado de marbetes en `/asociar`**: la fila muestra el código completo y el
+  chip «Revelado». Causa doble: `onRevealed` descartaba el código y la celda no
+  usaba `MaskedNumber`; la API enmascara **toda** lectura de lista, así que el
+  valor revelado vive en estado de la página.
 
 ## Pendientes
 
-1. Regenerar la línea base de paridad visual
-   (`e2e/lookfeel/12-maquette-parity.spec.ts`) con `E2E_ADMIN_USERNAME` + OTP;
-   el rediseño de botones/campos/diálogos invalida la anterior.
-2. Retirar del Deployment la env `NEXT_PUBLIC_API_URL` (hoy inerte: el bundle no
-   la lee) y las dependencias Radix sin uso
-   (`@radix-ui/react-dialog|dropdown-menu|label|tabs`).
-3. Implementar CI para web y migrar el release a `kubectl set image`; hoy no
-   existe pipeline y el release es el rebuild del hostPath.
+1. Regenerar la línea base de `e2e/lookfeel/12-maquette-parity.spec.ts` con
+   `E2E_ADMIN_USERNAME` + OTP. La región `metrics-grid` ya salió de la comparación
+   pixel porque el dibujo se aparta de la maqueta a propósito; queda cubierta por
+   `has-4-metric-cards` y `has-bar-per-card`.
+2. Push + PR de la rama `feat/backoffice-ui-canon` (11 commits locales, sin push).
+3. **Publicar siempre el bundle desde el worktree**: nunca construir dentro de
+   `/opt/quorum-backoffice` mientras el pod sirve (ver RUNBOOK § Release del
+   bundle web).
+4. Retirar las dependencias Radix sin uso (`@radix-ui/react-dialog|dropdown-menu|
+label|tabs`) y la env `NEXT_PUBLIC_API_URL` inerte del Deployment.
+5. CI para web; hoy el release sigue siendo rebuild + rollout del hostPath.
+
+## Despliegue al cierre
+
+- Producción: `https://backoffice.inecuni.com`, pod
+  `quorum-backoffice-web-cb45b7bcf-5vtrl` (1/1), `BUILD_ID 42w5_zigS36gJ5Jx_UEKd`,
+  login 200 / logo 200 / API 401 (sin sesión).
+- Respaldo del bundle previo:
+  `/opt/quorum-backoffice/apps/web/.next.rollback-20261020-082332`.
+- Incidente del día: el release anterior construyó **en sitio**, falló a medias y
+  tumbó el pod web ~15 min (la API no se afectó). Se recuperó con rollback y
+  después publicando un artefacto construido en el worktree.
 
 # Estado actual al cierre de la sesión (2026-09-26)
 
@@ -71,10 +83,10 @@ Pega este bloque en una sesión nueva de Pi para retomar el trabajo.
 - ✅ **Paridad visual contra la maqueta Inec** en las 4 pantallas authed
   (Inicio / Marbetes / Dispositivos / Auditoría). Score oficial medido
   contra el bundle de producción con Playwright:
-  - `/backoffice/marbetes`     96.68% hybrid
+  - `/backoffice/marbetes` 96.68% hybrid
   - `/backoffice/dispositivos` 96.91% hybrid
-  - `/backoffice/audit`        96.86% hybrid
-  - `/backoffice/dashboard`    98.01% hybrid
+  - `/backoffice/audit` 96.86% hybrid
+  - `/backoffice/dashboard` 98.01% hybrid
   - **TOTAL 97.11%** con PARITY_THRESHOLD=95 y 42/42 chequeos
     estructurales pasados. Spec: `apps/web/e2e/lookfeel/12-maquette-parity.spec.ts`.
 - ✅ **Tokens InecConecta** alineados (`--color-primary-500: #AB8620`,
@@ -95,7 +107,7 @@ Pega este bloque en una sesión nueva de Pi para retomar el trabajo.
 
 - `c85bb41` Merge feature/backoffice-maquette-parity into master
 - `df4c0ac` feat(web): privacy chip icon-only, unified row heights, sticky table footer
-- `5bc6e91` feat(web): align metric-cards to maquette canon (drop padding-inline-end, add --space-*, --font-size-*)
+- `5bc6e91` feat(web): align metric-cards to maquette canon (drop padding-inline-end, add --space-_, --font-size-_)
 - `626ca92` docs(odd): documentar topología k8s y accidente del 26-sep
 - `9109ed7` docs(odd): close backoffice-maquette-parity with evidence (97.22% parity)
 - `5637194` docs(odd): track backoffice-maquette-parity feature
@@ -286,14 +298,17 @@ bash scripts/dev-bootstrap.sh
 (none — todos los items XS/M cerrados en Polish WU v1 (infra/devops) + v2 (UI/UX) + v3 (security + endpoint + archival) + v4 (bulk upload + closeout))
 
 Cerrados en Polish WU v3 (commits `859c8f3` + `157b163` + `70c9c16` + `fcd523d` + `1fa0513` → `5fe6692` en master, merge de `feature/polish-wu-v3`):
+
 - **W #1 M** (Reveal endpoint): `POST /api/v1/marbetes/:id/reveal` admin-only + `RevealMarbeteDialog` wired.
 - **W #5 S-M** (argon2id migration): dual-verify + transparent re-hash on first successful login.
 - **W #6 M** (audit_log archival): `audit_log_archive` table + `archive_audit_log(retention_days)` SECURITY DEFINER + cron weekly en RUNBOOK.
 
 Cerrados en WU #2 (commits `f7d071c` + `9a425b8` en feature/dispositivos-v2, merge TBD a master):
+
 - **WU #2 L** (Rediseño /dispositivos): replica del patrón marbetes v2. 4 metric cards (Total / Activos / Revocados / Sin marca con pills attention), DonutChart segments, tabla rediseñada con IdBadge DIS-#### + StatusChip, filtros en `.inventory-search` shell, Playwright spec `08-dispositivos-design.spec.ts` con 5 cases (T8.1-T8.5). 3 dialogs (Create/Edit/Revoke) intactos. Plan en `odd/tasks/dispositivos-inventory-v2.md`.
 
 Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + `764243e` en `feature/wu0-bootstrap`):
+
 - **RESP-001 P0** (mobile responsive): AppShell con sidebar colapsable en <md.
 - **A11Y-001 P1**: landmark `<header>` en card de /login.
 - **VIS-002 P2**: focus-visible audit + styles en .metric-card, .sort-button, .row-action, .table-pagination__toggle.
@@ -301,18 +316,22 @@ Cerrados en Polish WU v2 (commits `e0e49c7` + `218a56a` + `8d31b0b` + `764243e` 
 - **W #8 XS** (aria-modal MobileNav): explícito en `<DialogContent>`. Cerrado en v3 commit `157b163`.
 
 Pendientes (L effort, sesiones dedicadas futuras):
+
 - (none — Polish WU v5 cerró el rediseño /audit; ver bloque "Cerrados en Polish WU v5" abajo).
 
 Cerrados en Polish WU v4 (commits `3f430bc` + `06fda3d` + `<wu9-hash>` en `feature/bulk-upload`, merge TBD a master):
+
 - **Bulk upload endpoint** para "Cargar marbetes": `POST /api/v1/marbetes/bulk` admin-only, OTP-enforced, acepta JSON array o CSV (RFC-4180-lite parser), valida códigos (length 8-128, alphanumeric), rechaza duplicados intra-batch + contra DB, persiste N marbetes atómicamente en una transacción, emite 1 audit aggregate `marbete.bulk_create` con `metadata: { count, source, fileName, individualRefs }`. Frontend: `BulkUploadDialog` con drag&drop + paste + preview ≤10 filas + errors panel + progress bar + OTP, reemplaza el stub `window.alert('Cargar marbetes próximamente')`. Plan + bitácora en `odd/tasks/polish-wu-v4.md`.
 - **Housekeeping WU #9**: `.gitignore` agrega bloque `# Playwright artifacts` cubriendo `apps/*/test-results/` (genérico); `migrations.test.ts` ahora espera los 9 migrations (0001-0009) en ambas assertions; 4 lint cleanups (removed unused `total` prop de `MarbetesPageClient` + call site; deleted 3 dead functions en `a11y.ts` que eran shadowed por INNER copies en `page.evaluate`; `// eslint-disable-next-line react-hooks/exhaustive-deps` en `student-lookup.tsx` con comentario explicando la omisión intencional de `state`). Resultado: 184 tests verde (32 suites), typecheck clean, lint 0 errors / 0 warnings, build 7 rutas verdes.
 
 Cerrados en Polish WU v5 (commits `959a5fb` en `feature/audit-v2`, merge `dc6e46b` a master):
+
 - **Rediseño `/audit`** per maquet InecConecta (replica del marbetes v2 adaptado a entries del audit log): page server `limit:100` → `200` + `VALID_ACTIONS` extendido a los 12 valores del enum `AuditAction` (incluye `marbete.reveal` y `marbete.bulk_create`); page-client con 4 MetricCards (Total / Marbetes / Dispositivos / Autenticación con pill danger cuando hay `auth.failed`); filtros en `.inventory-search` shell + `.grid` row para los 5 filtros estructurados; tabla rediseñadaada con `IdBadge` `AUD-${id.padStart(4,'0')}` + `StatusChip` mapeando las 12 acciones a las 3 variantes existentes ('available'/'assigned'/'danger') + `SortHeader` para ID y Fecha (ciclo 2-state con default `desc` para occurredAt y `asc` para id) + `Pagination` + `<tr onClick>` que abre el drawer. Tests nuevos: `audit-page-client.test.tsx` (6 cases: T1 4 cards, T2 Marbetes filter, T3 Fecha sort cycle, T4 Total reset, T5 Dispositivos filter, T6 ID sort cycle); `audit-table.test.tsx` (+2: IdBadge AUD-#### + StatusChip variant); `audit-filters.test.tsx` (+2: search URL update + shell containment); `09-audit-design.spec.ts` (6 Playwright cases T9.1-T9.6: cards + screenshot, AUD-#### badges, search URL, Fecha sort cycle, auditor RBAC reach, operator redirect). `AuditDetailDrawer` intacto (`data-testid="audit-detail"` preservado). 79 web RTL + 115 API integration = 194 tests verdes sin regresiones. typecheck/lint clean. build 7 rutas. Plan + bitácora en `odd/tasks/polish-wu-v5.md`.
 
 Cerrados en Polish WU v6 (**14 commits** en `feature/security-auth-otp` @ `7fe86d4`, **PR #3 abierto** contra master):
 
 **Fase A — Security rewrite (email + OTP)**, 11 commits, 11 nuevos tests verdes:
+
 - **(A1)** `2d03fde feat(api): add SMTP mailer + config` — Nodemailer + dev-mode logged fallback (`createMailerForTest` para integration suite).
 - **(A2)** `b66a7df feat(api): OtpClient.issue()` — extiende `verify()` para que el backoffice pueda pedir OTP al quorum-otp service.
 - **(A5)** `88d92b4 feat(auth): DTOs + client wiring` — `RequestLoginRequest` + `LoginRequestOtp` (campo `password` preservado en el wire type como ignored optional, no se usa).
@@ -323,6 +342,7 @@ Cerrados en Polish WU v6 (**14 commits** en `feature/security-auth-otp` @ `7fe86
 - **(A9)** `cd96e99 test(e2e): Playwright spec` — 6 casos T10.1-T10.6 contra staging, incluyendo regression guard `expect(page.locator('input[type="password"]')).toHaveCount(0)` que cierra el hallazgo original.
 
 **Fase B — Maquette v3 alignment**, 3 commits, 5 nuevos tests verdes:
+
 - **(B1)** `75e5e01 chore: drop __MACOSX + png-x2 leftovers` + `783b350 chore: regenerate package-lock after nodemailer install` — limpieza del working tree antes del PR.
 - **(B7)** `47a4f6a test(e2e): fix T10.3 + add mock-otp-service for local Playwright runs` — helper mock OTP para tests locales + fix del regression T10.3.
 - **(B7)** `7fe86d4 test(e2e): maquette v3 visual regression` — `11-maquette-v3.spec.ts` T11.1-T11.5 verifica que `/marbetes` + `/dispositivos` + `/audit` + `/dashboard` + `/login` renderizan con el copy y métricas del HTML canónico (`diseno/maqueta_Inec/Inec/inventario-credenciales.html`). Screenshots en `apps/web/e2e/lookfeel/artifacts/`.
@@ -349,11 +369,13 @@ Cerrados en Polish WU v6 (**14 commits** en `feature/security-auth-otp` @ `7fe86
 ## Próximos pasos sugeridos
 
 Items L pendientes (sesiones dedicadas):
+
 1. ~~Rediseño `/dispositivos`~~ (done in WU #2)
 2. ~~**Bulk upload endpoint** para "Cargar marbetes"~~ (done in Polish WU v4)
 3. ~~**Rediseño `/audit`** per maquet InecConecta~~ (done in Polish WU v5)
 
 Bloqueado por config:
+
 - **RDD review** del Polish WU v3 (5 commits + 1 merge). requiere asignar modelo al host relay en `agent model routing config`.
 
 ## Convenciones para nuevas sesiones
@@ -378,6 +400,7 @@ Actualizar después de cada WU cerrado (es ODD rule).
 ## Memoria de decisiones clave
 
 Topics Engram activos (recuperar con `mem_search --topic_key`):
+
 - `quorum-backoffice` — overview del proyecto
 - `quorum-backoffice-cookie-name-mismatch` — bug BUG-001 (resuelto)
 - `quorum-backoffice-ui-ux-audit` — hallazgos originales del audit
