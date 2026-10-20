@@ -152,7 +152,7 @@
   .inventory-page {
     width: min(100%, 90rem);
     margin-inline: auto;
-    padding: 2rem 2rem calc(4.25rem + 2rem + env(safe-area-inset-bottom));
+    padding: 2rem 2rem 0;
     font-family: var(--font-family-base);
     display: flex;
     flex-direction: column;
@@ -164,10 +164,16 @@
      * `flex-1` inside a grid that is `min-h-screen`). */
     height: 100%;
     min-height: 0;
+    /* Bottom padding was previously `calc(4.25rem + 2rem + env(safe-area-inset-bottom))`
+     * to reserve space for the `.app-alert` toast. The toast is
+     * `position: fixed` (`globals.css` line ~576) and floats above the
+     * pagination, so it never displaced the page flow; removing the
+     * reservation closes the dead band so the table pagination lands
+     * within ~16 px of the viewport bottom (S2 budget: ≤ 2 % of vh). */
   }
 
   .inventory-header {
-    margin-block-end: 1.5rem;
+    margin-block-end: 1rem;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -199,7 +205,9 @@
   }
 
   .metrics-section {
-    margin-block-end: 1.5rem;
+    /* Tightened from 1.5rem to 1rem to reclaim vertical budget for the
+     * table (S2) without touching card paddings, fonts or gaps. */
+    margin-block-end: 1rem;
   }
 
   .metrics-grid {
@@ -373,6 +381,25 @@
     padding: 0;
     background: transparent;
     border-radius: 0;
+  }
+
+  /* L5 fix — "Por atender" attention-card overlap. The default
+   * `.metric-card__value-row` is a non-wrapping flex row, and
+   * `.metric-card__percentage` ships with `white-space: nowrap`, so
+   * when the dashboard renders the value next to "Solo el 2% del total"
+   * the text collides with the absolute-positioned donut / filter
+   * chip. Scoped to `--attention` so the other cards (Total /
+   * Disponibles / Asignados) keep their single-line layout. The
+   * specificity bump (1 class + 1 modifier + 1 element) wins over
+   * the bare `.metric-card__percentage` rules in the cosmetic
+   * harmony block further down the file. */
+  .metric-card--attention .metric-card__value-row {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+
+  .metric-card--attention .metric-card__percentage {
+    white-space: normal;
   }
 
   .metric-card__meta-pill {
@@ -1429,7 +1456,11 @@
   /* ----- Responsive adjustments ----- */
   @media (max-width: 64rem) {
     .inventory-page {
-      padding-block-end: calc(5.75rem + 2rem + env(safe-area-inset-bottom));
+      /* Tablet ≤64rem: kill the bottom reservation entirely. The
+       * `.app-alert` toast is `position: fixed` and does not push the
+       * page flow; on tablet the inner table-scroll carries the scroll
+       * (S7), so 0 is the correct value here too. */
+      padding-block-end: 0;
     }
     .inventory-header {
       flex-direction: column;
@@ -1519,10 +1550,13 @@
 
   @media (max-width: 45rem) {
     .inventory-page {
-      padding: 1rem 1rem calc(5.75rem + 1rem + env(safe-area-inset-bottom));
+      /* Phone ≤45rem: the page itself scrolls (no inner table-scroll),
+       * so we keep a 1rem breath at the bottom for the safe-area. The
+       * `.app-alert` is fixed and needs no reservation here either. */
+      padding: 1rem 1rem 1rem;
     }
     .inventory-header {
-      margin-block-end: 1.25rem;
+      margin-block-end: 1rem;
     }
     .inventory-header h1 {
       font-size: 1.5rem;
@@ -2579,7 +2613,21 @@
   }
 
   .assignment-workspace {
-    display: grid;
+    /* S7 homologation: the marbetes / dispositivos / auditoria screens
+     * keep the table inside a viewport-bound flex chain
+     * (.inventory-page > .inventory-section--table > .table-shell),
+     * which lets `.table-scroll` own the vertical scroll. `/asociar`
+     * previously used `display: grid` here, so the workspace grew
+     * past the viewport and forced the whole document to scroll.
+     * Promoting the workspace + panel to a flex column lets the
+     * inner `.table-shell` (flex: 1; min-height: 0) and
+     * `.table-scroll` (overflow-y: auto) close the chain the same
+     * way the other three screens do, and the document stops
+     * scrolling. */
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     gap: var(--space-5);
   }
 
@@ -2616,7 +2664,19 @@
   }
 
   .assignment-panel {
-    display: grid;
+    /* S7 homologation (continued): each tab panel is a flex child of
+     * `.assignment-workspace`. `flex: 1 1 auto; min-height: 0` lets
+     * the visible panel absorb the remaining vertical space and lets
+     * the `display: flex` on `.table-shell` actually shrink to fit
+     * instead of overflowing into the document scroll. The
+     * `[hidden]` selector below still enforces `display: none` so
+     * the inactive panel doesn't paint. The previous `display: grid`
+     * is dropped because a flex parent with a grid child wouldn't
+     * apply our flex sizing on the table-shell inside it. */
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     gap: var(--space-4);
   }
   .assignment-panel[hidden] {
