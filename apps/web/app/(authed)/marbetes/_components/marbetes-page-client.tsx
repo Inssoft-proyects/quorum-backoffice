@@ -13,7 +13,7 @@ import {
   Pagination,
   RevealMarbeteDialog,
   RevokeMarbeteDialog,
-  type DonutSegment,
+  type MetricBarSegment,
   type PageSize,
 } from '@/components/inventory';
 import { CopyButton } from '@/components/interior/copy-button';
@@ -121,7 +121,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
   }, [filtered, pageSize, safePage, effectiveSize]);
 
   // Donut chart segments: deterministic relative to the active counts.
-  const segmentsTotal: DonutSegment[] = useMemo(() => {
+  const segmentsTotal: MetricBarSegment[] = useMemo(() => {
     const total = Math.max(counts.disponibles + counts.asignados + counts.porAtender, 1);
     return [
       { percent: (counts.disponibles / total) * 100, color: 'var(--color-secondary-500)' },
@@ -133,7 +133,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
     ];
   }, [counts]);
 
-  const segmentsDisponibles: DonutSegment[] = useMemo(() => {
+  const segmentsDisponibles: MetricBarSegment[] = useMemo(() => {
     const total = Math.max(counts.total, 1);
     return [
       { percent: (counts.disponibles / total) * 100, color: 'var(--color-secondary-500)' },
@@ -144,7 +144,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
     ];
   }, [counts]);
 
-  const segmentsAsignados: DonutSegment[] = useMemo(() => {
+  const segmentsAsignados: MetricBarSegment[] = useMemo(() => {
     const total = Math.max(counts.total, 1);
     return [
       { percent: (counts.asignados / total) * 100, color: 'var(--color-assigned-text)' },
@@ -258,8 +258,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
             meta="Inventario"
             active={filter === 'all'}
             segments={segmentsTotal}
-            centerLabel="100%"
-            chartVariant="total"
+            ratioLabel="100%"
             onClick={() => setFilter('all')}
           />
           <MetricCard
@@ -267,7 +266,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
             value={counts.disponibles}
             meta="Almacén"
             segments={segmentsDisponibles}
-            centerLabel={`${Math.round((counts.disponibles / Math.max(counts.total, 1)) * 100)}%`}
+            ratioLabel={`${Math.round((counts.disponibles / Math.max(counts.total, 1)) * 100)}%`}
             active={filter === 'available'}
             onClick={() => setFilter('available')}
           />
@@ -276,7 +275,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
             value={counts.asignados}
             meta="Funcionando"
             segments={segmentsAsignados}
-            centerLabel={`${Math.round((counts.asignados / Math.max(counts.total, 1)) * 100)}%`}
+            ratioLabel={`${Math.round((counts.asignados / Math.max(counts.total, 1)) * 100)}%`}
             active={filter === 'assigned'}
             onClick={() => setFilter('assigned')}
           />
@@ -285,6 +284,7 @@ export function MarbetesPageClient({ items, userRole }: Props) {
             value={counts.porAtender}
             meta="Atención"
             active={filter === 'attention'}
+            ratio={Math.round((counts.porAtender / Math.max(counts.total, 1)) * 100)}
             percentageLabel={`${Math.round((counts.porAtender / Math.max(counts.total, 1)) * 100)}% del total`}
             percentageAriaLabel={`${Math.round((counts.porAtender / Math.max(counts.total, 1)) * 100)}% del inventario requiere atención`}
             pills={

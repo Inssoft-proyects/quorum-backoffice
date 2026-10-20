@@ -140,6 +140,82 @@ test.describe('UI canon — flat controls and the 98% viewport budget', () => {
     }
   });
 
+  test('the summary cards share one geometry: equal heights, 8px gaps, no clipping', async ({
+    page,
+  }) => {
+    await login(page);
+    for (const route of [
+      '/backoffice/dashboard',
+      '/backoffice/marbetes',
+      '/backoffice/dispositivos',
+      '/backoffice/audit',
+      '/backoffice/asociar',
+    ]) {
+      await page.goto(route);
+      await expect(page.locator('.metrics-grid')).toBeVisible();
+
+      const measured = await page.evaluate(() => {
+        const grid = document.querySelector('.metrics-grid') as HTMLElement;
+        const cards = [...grid.children].map((el) => el.getBoundingClientRect());
+        const gaps = cards
+          .slice(1)
+          .map((card, index) => +(card.left - cards[index]!.right).toFixed(1));
+        const labels = [...grid.querySelectorAll('.metric-card__label')].map((el) => {
+          const cs = getComputedStyle(el);
+          return {
+            text: (el.textContent || '').trim().slice(0, 30),
+            lines: Math.round(
+              el.getBoundingClientRect().height / parseFloat(cs.lineHeight || '16'),
+            ),
+          };
+        });
+        const overflowing = [...grid.children]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => (el.textContent || '').trim().slice(0, 30));
+        return {
+          count: cards.length,
+          heights: cards.map((c) => +c.height.toFixed(1)),
+          gaps,
+          labels,
+          overflowing,
+          bars: grid.querySelectorAll('.metric-bar').length,
+        };
+      });
+
+      expect(measured.count, `${route} must render four cards`).toBe(4);
+
+      const tallest = Math.max(...measured.heights);
+      const shortest = Math.min(...measured.heights);
+      expect(
+        tallest - shortest,
+        `${route} card heights ${measured.heights.join(' / ')}`,
+      ).toBeLessThanOrEqual(1);
+
+      for (const gap of measured.gaps) {
+        expect(Math.abs(gap - 8), `${route} gap ${gap}px`).toBeLessThanOrEqual(1);
+      }
+
+      for (const label of measured.labels) {
+        expect(label.lines, `${route} label "${label.text}" wraps`).toBe(1);
+      }
+
+      expect(measured.overflowing, `${route} cards overflow`).toEqual([]);
+      expect(measured.bars, `${route} bars`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  test('the assignment cards name the two different counts', async ({ page }) => {
+    await login(page);
+    await page.goto('/backoffice/asociar');
+    const grid = page.locator('.metrics-grid');
+
+    // "Marbetes disponibles" (inventory) and "Disponibles" (matrículas) read
+    // as the same thing; the cards now name each count explicitly.
+    await expect(grid.getByText('Marbetes en inventario', { exact: true })).toBeVisible();
+    await expect(grid.getByText('Matrículas sin marbete', { exact: true })).toBeVisible();
+    await expect(grid.getByText('Marbetes disponibles', { exact: true })).toHaveCount(0);
+  });
+
   test('the assignment screen contains its own scroll like the other table screens', async ({
     page,
   }) => {

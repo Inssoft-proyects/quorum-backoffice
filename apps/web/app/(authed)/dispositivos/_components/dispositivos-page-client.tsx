@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import {
   MetricCard,
   Pagination,
-  type DonutSegment,
+  type MetricBarSegment,
   type PageSize,
   type SortState,
 } from '@/components/inventory';
@@ -145,8 +145,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
 
   // Pagination math.
   const totalForPaging = sorted.length;
-  const effectiveSize: number =
-    pageSize === 'all' ? Math.max(totalForPaging, 1) : pageSize;
+  const effectiveSize: number = pageSize === 'all' ? Math.max(totalForPaging, 1) : pageSize;
   const totalPages =
     pageSize === 'all' || totalForPaging === 0
       ? 1
@@ -161,7 +160,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
   // Donut chart segments: 3 segments for the Total card (active /
   // revoked / no-brand), 2 segments each for the other three cards
   // (the metric vs the surface-subtle complement).
-  const segmentsTotal: DonutSegment[] = useMemo(() => {
+  const segmentsTotal: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.activos + counts.revocados + counts.sinMarca, 1);
     return [
       {
@@ -179,7 +178,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
     ];
   }, [counts]);
 
-  const segmentsActivos: DonutSegment[] = useMemo(() => {
+  const segmentsActivos: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.total, 1);
     return [
       {
@@ -193,7 +192,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
     ];
   }, [counts]);
 
-  const segmentsRevocados: DonutSegment[] = useMemo(() => {
+  const segmentsRevocados: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.total, 1);
     return [
       {
@@ -207,7 +206,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
     ];
   }, [counts]);
 
-  const segmentsSinMarca: DonutSegment[] = useMemo(() => {
+  const segmentsSinMarca: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.total, 1);
     return [
       {
@@ -239,11 +238,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
         </div>
         {isAdmin ? (
           <div className="inventory-header__actions">
-            <Button
-              variant="outline"
-              onClick={() => setCreating(true)}
-              data-testid="open-create"
-            >
+            <Button variant="outline" onClick={() => setCreating(true)} data-testid="open-create">
               <PlusCircle className="h-4 w-4" aria-hidden />
               Registrar dispositivo
             </Button>
@@ -259,8 +254,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
             meta="Inventario"
             active={filter === 'all'}
             segments={segmentsTotal}
-            centerLabel="100%"
-            chartVariant="total"
+            ratioLabel="100%"
             onClick={() => setFilter('all')}
           />
           <MetricCard
@@ -268,9 +262,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
             value={counts.activos}
             meta="En uso"
             segments={segmentsActivos}
-            centerLabel={`${Math.round(
-              (counts.activos / Math.max(counts.total, 1)) * 100,
-            )}%`}
+            ratioLabel={`${Math.round((counts.activos / Math.max(counts.total, 1)) * 100)}%`}
             active={filter === 'active'}
             onClick={() => setFilter('active')}
           />
@@ -279,9 +271,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
             value={counts.revocados}
             meta="Dados de baja"
             segments={segmentsRevocados}
-            centerLabel={`${Math.round(
-              (counts.revocados / Math.max(counts.total, 1)) * 100,
-            )}%`}
+            ratioLabel={`${Math.round((counts.revocados / Math.max(counts.total, 1)) * 100)}%`}
             active={filter === 'revoked'}
             onClick={() => setFilter('revoked')}
           />
@@ -291,14 +281,11 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
             meta="Pendiente de inventario"
             segments={segmentsSinMarca}
             active={filter === 'no-brand'}
+            ratio={Math.round((counts.sinMarca / Math.max(counts.total, 1)) * 100)}
             percentageLabel={`${Math.round(
               (counts.sinMarca / Math.max(counts.total, 1)) * 100,
             )}% del total`}
-            pills={
-              counts.sinMarca > 0
-                ? [{ label: 'Pendiente', variant: 'warning' }]
-                : undefined
-            }
+            pills={counts.sinMarca > 0 ? [{ label: 'Pendiente', variant: 'warning' }] : undefined}
             onClick={() => setFilter('no-brand')}
           />
         </div>
@@ -326,10 +313,7 @@ export function DispositivosPageClient({ items, userRole, total, search }: Props
           </div>
         </div>
 
-        <div
-          className="mt-3 flex flex-wrap items-center gap-3"
-          data-testid="dispositivos-filters"
-        >
+        <div className="mt-3 flex flex-wrap items-center gap-3" data-testid="dispositivos-filters">
           <DispositivosFilters isPending={isPending} />
         </div>
 

@@ -6,7 +6,7 @@ import type { AuditEntry } from '@quorum-backoffice/shared';
 import {
   MetricCard,
   Pagination,
-  type DonutSegment,
+  type MetricBarSegment,
   type PageSize,
   type SortState,
 } from '@/components/inventory';
@@ -100,8 +100,7 @@ export function AuditPageClient({ items, total }: Props) {
 
   // Pagination math.
   const totalForPaging = sorted.length;
-  const effectiveSize: number =
-    pageSize === 'all' ? Math.max(totalForPaging, 1) : pageSize;
+  const effectiveSize: number = pageSize === 'all' ? Math.max(totalForPaging, 1) : pageSize;
   const totalPages =
     pageSize === 'all' || totalForPaging === 0
       ? 1
@@ -117,7 +116,7 @@ export function AuditPageClient({ items, total }: Props) {
   // three segments for the Total card (marbete / dispositivo / auth)
   // and two segments each for the others (the metric vs the
   // surface-subtle complement).
-  const segmentsTotal: DonutSegment[] = useMemo(() => {
+  const segmentsTotal: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.marbetes + counts.dispositivos + counts.auth, 1);
     return [
       {
@@ -135,7 +134,7 @@ export function AuditPageClient({ items, total }: Props) {
     ];
   }, [counts]);
 
-  const segmentsMarbetes: DonutSegment[] = useMemo(() => {
+  const segmentsMarbetes: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.total, 1);
     return [
       {
@@ -149,7 +148,7 @@ export function AuditPageClient({ items, total }: Props) {
     ];
   }, [counts]);
 
-  const segmentsDispositivos: DonutSegment[] = useMemo(() => {
+  const segmentsDispositivos: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.total, 1);
     return [
       {
@@ -163,7 +162,7 @@ export function AuditPageClient({ items, total }: Props) {
     ];
   }, [counts]);
 
-  const segmentsAuth: DonutSegment[] = useMemo(() => {
+  const segmentsAuth: MetricBarSegment[] = useMemo(() => {
     const t = Math.max(counts.total, 1);
     return [
       {
@@ -188,9 +187,7 @@ export function AuditPageClient({ items, total }: Props) {
       <header className="inventory-header">
         <div className="inventory-header__content">
           <h1>Auditoría</h1>
-          <p>
-            Trazabilidad completa de los cambios en marbetes, dispositivos y sesiones.
-          </p>
+          <p>Trazabilidad completa de los cambios en marbetes, dispositivos y sesiones.</p>
         </div>
       </header>
 
@@ -202,8 +199,7 @@ export function AuditPageClient({ items, total }: Props) {
             meta="Movimientos"
             active={filter === 'all'}
             segments={segmentsTotal}
-            centerLabel="100%"
-            chartVariant="total"
+            ratioLabel="100%"
             onClick={() => setFilter('all')}
           />
           <MetricCard
@@ -211,9 +207,7 @@ export function AuditPageClient({ items, total }: Props) {
             value={counts.marbetes}
             meta="Marbete"
             segments={segmentsMarbetes}
-            centerLabel={`${Math.round(
-              (counts.marbetes / Math.max(counts.total, 1)) * 100,
-            )}%`}
+            ratioLabel={`${Math.round((counts.marbetes / Math.max(counts.total, 1)) * 100)}%`}
             active={filter === 'marbete'}
             onClick={() => setFilter('marbete')}
           />
@@ -222,9 +216,7 @@ export function AuditPageClient({ items, total }: Props) {
             value={counts.dispositivos}
             meta="Dispositivo"
             segments={segmentsDispositivos}
-            centerLabel={`${Math.round(
-              (counts.dispositivos / Math.max(counts.total, 1)) * 100,
-            )}%`}
+            ratioLabel={`${Math.round((counts.dispositivos / Math.max(counts.total, 1)) * 100)}%`}
             active={filter === 'dispositivo'}
             onClick={() => setFilter('dispositivo')}
           />
@@ -234,6 +226,7 @@ export function AuditPageClient({ items, total }: Props) {
             meta="Sesión"
             segments={segmentsAuth}
             active={filter === 'auth'}
+            ratio={Math.round((counts.auth / Math.max(counts.total, 1)) * 100)}
             percentageLabel={`${Math.round(
               (counts.auth / Math.max(counts.total, 1)) * 100,
             )}% del total`}
@@ -253,12 +246,7 @@ export function AuditPageClient({ items, total }: Props) {
           <AuditFilters countLabel={countLabel} />
         </div>
 
-        <AuditTable
-          items={pagedItems}
-          sort={sort}
-          onSortChange={setSort}
-          onSelect={setSelected}
-        />
+        <AuditTable items={pagedItems} sort={sort} onSortChange={setSort} onSelect={setSelected} />
 
         <Pagination
           currentPage={safePage}

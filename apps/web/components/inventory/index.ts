@@ -1,13 +1,18 @@
 /**
- * Marbetes inventory redesign (maquette v2) — barrel export.
+ * Marbetes inventory redesign (maquette v2 + v3) — barrel export.
  *
- * Re-exports the components used by `app/(authed)/marbetes/_components/*`.
- * Adding a new component here keeps the rest of the app from reaching into
- * individual files in this folder.
+ * Re-exports the components used by `app/(authed)/marbetes/_components/*`
+ * and the rest of the inventory screens. Adding a new component here
+ * keeps the rest of the app from reaching into individual files in this
+ * folder.
+ *
+ * The donut chart was retired with the metric-card rework
+ * (`odd/tasks/backoffice-ui-canon.md`, T7): the cards now render a compact
+ * proportional bar, so `DonutChart` and its type are no longer exported.
  */
 
-export { DonutChart } from './donut-chart';
-export type { DonutSegment, DonutChartProps } from './donut-chart';
+export { MetricBar } from './metric-bar';
+export type { MetricBarProps, MetricBarSegment } from './metric-bar';
 
 export { StatusChip } from './status-chip';
 export type { StatusChipProps, StatusChipVariant } from './status-chip';
@@ -40,10 +45,7 @@ export { BulkUploadDialog } from './bulk-upload-dialog';
 export type { BulkUploadDialogProps } from './bulk-upload-dialog';
 
 export { BulkUploadDropzone, formatFileSize } from './bulk-upload-dropzone';
-export type {
-  BulkUploadDropzoneProps,
-  SelectedFile,
-} from './bulk-upload-dropzone';
+export type { BulkUploadDropzoneProps, SelectedFile } from './bulk-upload-dropzone';
 
 export { BulkUploadProcessingOverlay } from './bulk-upload-processing-overlay';
 export type {

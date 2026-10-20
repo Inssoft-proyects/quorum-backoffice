@@ -245,11 +245,11 @@ describe('AsociarPageClient', () => {
       />,
     );
     expect(screen.getByText('Matrículas totales')).toBeInTheDocument();
-    expect(screen.getByText('Marbetes disponibles')).toBeInTheDocument();
+    expect(screen.getByText('Marbetes en inventario')).toBeInTheDocument();
     // "Asignados" appears both in the metric-card label and in the tab
     // button text; we scope the assertion to the metric-card wrapper.
     const metricsSection = screen.getByRole('region', { name: /Resumen de asignación/i });
-    expect(within(metricsSection).getByText('Disponibles')).toBeInTheDocument();
+    expect(within(metricsSection).getByText('Matrículas sin marbete')).toBeInTheDocument();
     expect(within(metricsSection).getByText('Asignados')).toBeInTheDocument();
     expect(screen.getByTestId('tab-unassigned')).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('tab-assigned')).toHaveAttribute('aria-selected', 'false');

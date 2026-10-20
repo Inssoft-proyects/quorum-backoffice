@@ -3,15 +3,7 @@
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  RefreshCw,
-  Search,
-  Undo2,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, EyeOff, RefreshCw, Search, Undo2 } from 'lucide-react';
 import type {
   ListMatriculasStatus,
   MarbeteDetailResponse,
@@ -30,8 +22,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import {
-  DonutChart,
-  type DonutSegment,
+  MetricBar,
+  type MetricBarSegment,
   MetricCard,
   Pagination,
   RevealMarbeteDialog,
@@ -168,7 +160,12 @@ export function AsociarPageClient({
   // the SIS matrícula) when the name is missing.
   const [assignModal, setAssignModal] = useState<{
     open: boolean;
-    enrollments: { canvasUserId: number; fullName: string | null; sisId: string | null; marbeteId: number | null }[];
+    enrollments: {
+      canvasUserId: number;
+      fullName: string | null;
+      sisId: string | null;
+      marbeteId: number | null;
+    }[];
   }>({ open: false, enrollments: [] });
   const [unassignCtx, setUnassignCtx] = useState<Props['initialMatriculas'][number] | null>(null);
   const [revealMarbeteId, setRevealMarbeteId] = useState<number | null>(null);
@@ -276,16 +273,8 @@ export function AsociarPageClient({
   // would throw on null. The helper treats null as an empty string
   // for the search predicate only — it is never rendered, so no
   // fake-name coercion is involved.
-  const matchesSearch = (
-    m: MatriculaListItem,
-    q: string,
-  ): boolean => {
-    const haystack = [
-      String(m.canvasUserId),
-      m.fullName ?? '',
-      m.email ?? '',
-      m.sisId ?? '',
-    ];
+  const matchesSearch = (m: MatriculaListItem, q: string): boolean => {
+    const haystack = [String(m.canvasUserId), m.fullName ?? '', m.email ?? '', m.sisId ?? ''];
     return haystack.some((s) => s.toLowerCase().includes(q));
   };
 
@@ -304,9 +293,7 @@ export function AsociarPageClient({
     // search autocomplete. The visible "X***NN"-formatted
     // maskedCode stays searchable as before.
     return assignedItems.filter(
-      (m) =>
-        matchesSearch(m, q) ||
-        (m.marbete?.maskedCode.toLowerCase().includes(q) ?? false),
+      (m) => matchesSearch(m, q) || (m.marbete?.maskedCode.toLowerCase().includes(q) ?? false),
     );
   }, [assignedItems, search]);
 
@@ -327,21 +314,21 @@ export function AsociarPageClient({
   }, [filteredAssigned, assignedPage, assignedPageSize]);
 
   // ---- Donut chart segments ----
-  const segmentsTotal: DonutSegment[] = useMemo(() => {
+  const segmentsTotal: MetricBarSegment[] = useMemo(() => {
     const total = Math.max(counters.unassigned + counters.assigned, 1);
     return [
       { percent: (counters.unassigned / total) * 100, color: 'var(--color-secondary-500)' },
       { percent: (counters.assigned / total) * 100, color: 'var(--color-assigned-text)' },
     ];
   }, [counters]);
-  const segmentsAvailable: DonutSegment[] = useMemo(() => {
+  const segmentsAvailable: MetricBarSegment[] = useMemo(() => {
     const total = Math.max(counters.total, 1);
     return [
       { percent: (counters.unassigned / total) * 100, color: 'var(--color-secondary-500)' },
       { percent: 100 - (counters.unassigned / total) * 100, color: 'var(--color-surface-subtle)' },
     ];
   }, [counters]);
-  const segmentsAssigned: DonutSegment[] = useMemo(() => {
+  const segmentsAssigned: MetricBarSegment[] = useMemo(() => {
     const total = Math.max(counters.total, 1);
     return [
       { percent: (counters.assigned / total) * 100, color: 'var(--color-assigned-text)' },
@@ -351,8 +338,7 @@ export function AsociarPageClient({
 
   // ---- Selection limit ----
   const selectionLimit = availableMarbetesTotal;
-  const selectionAtLimit =
-    selection.size >= selectionLimit && selectionLimit > 0;
+  const selectionAtLimit = selection.size >= selectionLimit && selectionLimit > 0;
 
   // ---- Bulk assign modal open ----
   // `fullName` and `sisId` are forwarded as `string | null` — the
@@ -363,9 +349,7 @@ export function AsociarPageClient({
     if (selection.size === 0) return;
     const enrollments = Array.from(selection)
       .map((canvasUserId) => {
-        const item = unassignedItems.find(
-          (m) => m.canvasUserId === canvasUserId,
-        );
+        const item = unassignedItems.find((m) => m.canvasUserId === canvasUserId);
         if (!item) return null;
         return {
           canvasUserId: item.canvasUserId,
@@ -400,21 +384,15 @@ export function AsociarPageClient({
   ): Promise<void> {
     await assignMatriculas({ pairs }, otpCode);
     await refetch();
-    setAvailableMarbetes(
-      availableMarbetes.filter((m) => !pairs.some((p) => p.marbeteId === m.id)),
-    );
+    setAvailableMarbetes(availableMarbetes.filter((m) => !pairs.some((p) => p.marbeteId === m.id)));
     if (pairs.length === 1) {
       const [single] = pairs;
-      const item = unassignedItems.find(
-        (m) => m.canvasUserId === single?.canvasUserId,
-      );
+      const item = unassignedItems.find((m) => m.canvasUserId === single?.canvasUserId);
       // Null-safe label: prefer the Canvas full name; fall back to
       // the SIS matrícula; fall back to the canvasUserId so the
       // banner never reads "null ahora tiene el marbete asignado."
       const label =
-        item?.fullName ??
-        item?.sisId ??
-        (item ? `Matrícula ${item.canvasUserId}` : 'La matrícula');
+        item?.fullName ?? item?.sisId ?? (item ? `Matrícula ${item.canvasUserId}` : 'La matrícula');
       showInfoBanner({
         title: 'Marbete asignado correctamente.',
         detail: item
@@ -468,8 +446,7 @@ export function AsociarPageClient({
         detail: 'La caché local se actualizó con la lista más reciente de Canvas.',
       });
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : 'No se pudo sincronizar.';
+      const message = err instanceof ApiError ? err.message : 'No se pudo sincronizar.';
       setSyncError(message);
     } finally {
       setSyncing(false);
@@ -477,9 +454,7 @@ export function AsociarPageClient({
   }
 
   // ---- Reveal ----
-  const [revealMarbete, setRevealMarbete] = useState<MarbeteDetailResponse | null>(
-    null,
-  );
+  const [revealMarbete, setRevealMarbete] = useState<MarbeteDetailResponse | null>(null);
   function openReveal(item: MatriculaListItem): void {
     if (!item.marbete) return;
     setRevealMarbeteId(item.marbete.id);
@@ -541,8 +516,7 @@ export function AsociarPageClient({
   function toggleSelectAll(): void {
     setSelection((prev) => {
       const filteredIds = filteredUnassigned.map((m) => m.canvasUserId);
-      const allSelected =
-        filteredIds.length > 0 && filteredIds.every((id) => prev.has(id));
+      const allSelected = filteredIds.length > 0 && filteredIds.every((id) => prev.has(id));
       if (allSelected) {
         const next = new Set(prev);
         for (const id of filteredIds) next.delete(id);
@@ -567,8 +541,7 @@ export function AsociarPageClient({
   const assignedEmpty = filteredAssigned.length === 0;
   const inventoryShortage = availableMarbetesTotal < counters.unassigned;
   const allUnassignedVisibleSelected =
-    filteredUnassigned.length > 0 &&
-    filteredUnassigned.every((m) => selection.has(m.canvasUserId));
+    filteredUnassigned.length > 0 && filteredUnassigned.every((m) => selection.has(m.canvasUserId));
 
   return (
     <div className="inventory-page assignment-page">
@@ -593,12 +566,7 @@ export function AsociarPageClient({
       </header>
 
       {syncError ? (
-        <Alert
-          variant="destructive"
-          role="alert"
-          data-testid="sync-error"
-          className="mb-4"
-        >
+        <Alert variant="destructive" role="alert" data-testid="sync-error" className="mb-4">
           {syncError}
         </Alert>
       ) : null}
@@ -607,16 +575,19 @@ export function AsociarPageClient({
         <h2 className="sr-only" id="assignment-metrics-title">
           Resumen de asignación
         </h2>
-        <div className="metrics-grid d-grid gap-4 assignment-metrics">
+        <div className="metrics-grid">
           <MetricCard
             label="Matrículas totales"
             value={counters.total}
             meta="Activas"
             active={false}
             segments={segmentsTotal}
-            centerLabel="100%"
-            chartVariant="total"
+            ratioLabel="100%"
           />
+          {/* Static card (no filter, no chip): it reports the marbete inventory
+           * that can still be assigned. It keeps the shared card grid so the
+           * four cards read as one block, and the empty bar is the point: there
+           * is nothing left to assign. */}
           <article
             className={
               'metric-card assignment-metric assignment-inventory-card' +
@@ -624,11 +595,17 @@ export function AsociarPageClient({
             }
             data-inventory-card
           >
-            <span className="metric-card__label">Marbetes disponibles</span>
-            <span className="metric-card__value-row">
-              <span className="metric-card__value" data-metric="available" data-testid="metric-available">
-                {availableMarbetesTotal}
-              </span>
+            <span className="metric-card__label" title="Marbetes en inventario">
+              Marbetes en inventario
+            </span>
+            <span
+              className="metric-card__value"
+              data-metric="available"
+              data-testid="metric-available"
+            >
+              {availableMarbetesTotal}
+            </span>
+            <span className="metric-card__meta">
               <span
                 className="assignment-inventory-status"
                 data-inventory-status
@@ -637,22 +614,27 @@ export function AsociarPageClient({
               >
                 {inventoryShortage
                   ? `Faltan ${counters.unassigned - availableMarbetesTotal} ${
-                      counters.unassigned - availableMarbetesTotal === 1
-                        ? 'marbete'
-                        : 'marbetes'
+                      counters.unassigned - availableMarbetesTotal === 1 ? 'marbete' : 'marbetes'
                     }`
                   : 'Inventario suficiente'}
               </span>
             </span>
-            <span className="metric-card__meta">Asignables</span>
+            <MetricBar
+              ratio={
+                counters.total > 0
+                  ? Math.min(100, (availableMarbetesTotal / counters.total) * 100)
+                  : 0
+              }
+              label={`${availableMarbetesTotal} marbetes disponibles de ${counters.total} matrículas`}
+            />
           </article>
           <MetricCard
-            label="Disponibles"
+            label="Matrículas sin marbete"
             value={counters.unassigned}
-            meta="Sin marbete"
+            meta="Sin asignar"
             active={activeTab === 'unassigned'}
             segments={segmentsAvailable}
-            centerLabel={`${Math.round((counters.unassigned / Math.max(counters.total, 1)) * 100)}%`}
+            ratioLabel={`${Math.round((counters.unassigned / Math.max(counters.total, 1)) * 100)}%`}
             data-filter-source="metric"
             data-filter="unassigned"
             onClick={() => setActiveTabSync('unassigned')}
@@ -663,7 +645,7 @@ export function AsociarPageClient({
             meta="Con marbete"
             active={activeTab === 'assigned'}
             segments={segmentsAssigned}
-            centerLabel={`${Math.round((counters.assigned / Math.max(counters.total, 1)) * 100)}%`}
+            ratioLabel={`${Math.round((counters.assigned / Math.max(counters.total, 1)) * 100)}%`}
             data-filter-source="metric"
             data-filter="assigned"
             onClick={() => setActiveTabSync('assigned')}
@@ -672,11 +654,7 @@ export function AsociarPageClient({
       </section>
 
       <section className="assignment-workspace" aria-labelledby="assignment-list-title">
-        <div
-          className="assignment-tabs"
-          role="tablist"
-          aria-label="Estado de las matrículas"
-        >
+        <div className="assignment-tabs" role="tablist" aria-label="Estado de las matrículas">
           <button
             id="tab-unassigned"
             type="button"
@@ -690,8 +668,7 @@ export function AsociarPageClient({
             onClick={() => setActiveTabSync('unassigned')}
             onKeyDown={(e) => handleTabKeydown(e, 'unassigned')}
           >
-            Sin asignar{' '}
-            <span data-testid="tab-count-unassigned">({counters.unassigned})</span>
+            Sin asignar <span data-testid="tab-count-unassigned">({counters.unassigned})</span>
           </button>
           <button
             id="tab-assigned"
@@ -706,8 +683,7 @@ export function AsociarPageClient({
             onClick={() => setActiveTabSync('assigned')}
             onKeyDown={(e) => handleTabKeydown(e, 'assigned')}
           >
-            Asignados{' '}
-            <span data-testid="tab-count-assigned">({counters.assigned})</span>
+            Asignados <span data-testid="tab-count-assigned">({counters.assigned})</span>
           </button>
         </div>
 
@@ -732,11 +708,7 @@ export function AsociarPageClient({
               <label className="sr-only" htmlFor="unassigned-search">
                 Buscar por matrícula
               </label>
-              <Search
-                className="inventory-search__icon"
-                aria-hidden
-                style={{ display: 'none' }}
-              />
+              <Search className="inventory-search__icon" aria-hidden style={{ display: 'none' }} />
               <span className="inventory-search__icon" aria-hidden />
               <input
                 id="unassigned-search"
@@ -804,17 +776,13 @@ export function AsociarPageClient({
               role="status"
               data-testid="unassigned-limit-message"
             >
-              Solo puedes seleccionar hasta {selectionLimit} matrículas porque hay{' '}
-              {selectionLimit} marbetes disponibles.
+              Solo puedes seleccionar hasta {selectionLimit} matrículas porque hay {selectionLimit}{' '}
+              marbetes disponibles.
             </p>
           ) : null}
 
           <div className="table-shell">
-            <div
-              className="table-scroll"
-              tabIndex={0}
-              aria-label="Tabla de matrículas sin marbete"
-            >
+            <div className="table-scroll" tabIndex={0} aria-label="Tabla de matrículas sin marbete">
               <table className="data-table assignment-table" data-testid="unassigned-table">
                 <caption className="sr-only">
                   Matrículas activas que no tienen un marbete asignado.
@@ -841,8 +809,7 @@ export function AsociarPageClient({
                 <tbody data-testid="unassigned-body">
                   {unassignedRows.map((item) => {
                     const checked = selection.has(item.canvasUserId);
-                    const atLimit =
-                      !checked && selection.size >= availableMarbetesTotal;
+                    const atLimit = !checked && selection.size >= availableMarbetesTotal;
                     // Primary label follows the canon (Canvas full
                     // name when available, else the SIS matrícula, else
                     // the numeric id) so the operator can always tell
@@ -895,7 +862,10 @@ export function AsociarPageClient({
                           ) : null}
                         </td>
                         <td data-label="Estado">
-                          <StatusChip variant="warning" data-testid={`unassigned-status-${item.canvasUserId}`}>
+                          <StatusChip
+                            variant="warning"
+                            data-testid={`unassigned-status-${item.canvasUserId}`}
+                          >
                             Sin asignar
                           </StatusChip>
                         </td>
@@ -907,9 +877,7 @@ export function AsociarPageClient({
                             variant="outline"
                             size="sm"
                             onClick={() => openSingleAssign(item.canvasUserId)}
-                            disabled={
-                              !canWrite || availableMarbetesTotal === 0
-                            }
+                            disabled={!canWrite || availableMarbetesTotal === 0}
                             data-testid={`unassigned-assign-${item.canvasUserId}`}
                           >
                             Asignar marbete
@@ -1007,15 +975,9 @@ export function AsociarPageClient({
           </div>
 
           <div className="table-shell">
-            <div
-              className="table-scroll"
-              tabIndex={0}
-              aria-label="Tabla de matrículas asignadas"
-            >
+            <div className="table-scroll" tabIndex={0} aria-label="Tabla de matrículas asignadas">
               <table className="data-table assignment-table" data-testid="assigned-table">
-                <caption className="sr-only">
-                  Matrículas activas con marbete asignado.
-                </caption>
+                <caption className="sr-only">Matrículas activas con marbete asignado.</caption>
                 <thead>
                   <tr>
                     <th scope="col">Matrícula</th>
@@ -1043,77 +1005,82 @@ export function AsociarPageClient({
                             ? item.email
                             : null;
                     return (
-                    <tr
-                      key={item.canvasUserId}
-                      data-testid={`assigned-row-${item.canvasUserId}`}
-                    >
-                      <td
-                        className="data-table__id"
-                        data-label="Matrícula"
-                        data-testid={`assigned-matricula-${item.canvasUserId}`}
-                      >
-                        {primaryLabel}
-                        {secondaryLabel ? (
-                          <span
-                            className="block text-xs font-normal text-text-muted"
-                            data-testid={`assigned-secondary-${item.canvasUserId}`}
-                          >
-                            {secondaryLabel}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="data-table__credential" data-label="Marbete">
-                        {item.marbete ? (
-                          <span className="credential-cell">
-                            <span className="credential-mask">
-                              {item.marbete.maskedCode}
+                      <tr key={item.canvasUserId} data-testid={`assigned-row-${item.canvasUserId}`}>
+                        <td
+                          className="data-table__id"
+                          data-label="Matrícula"
+                          data-testid={`assigned-matricula-${item.canvasUserId}`}
+                        >
+                          {primaryLabel}
+                          {secondaryLabel ? (
+                            <span
+                              className="block text-xs font-normal text-text-muted"
+                              data-testid={`assigned-secondary-${item.canvasUserId}`}
+                            >
+                              {secondaryLabel}
                             </span>
-                            <span className="privacy-chip" aria-label="Oculto">
-                              <EyeOff className="privacy-chip__icon" aria-hidden />
+                          ) : null}
+                        </td>
+                        <td className="data-table__credential" data-label="Marbete">
+                          {item.marbete ? (
+                            <span className="credential-cell">
+                              <span className="credential-mask">{item.marbete.maskedCode}</span>
+                              <span className="privacy-chip" aria-label="Oculto">
+                                <EyeOff className="privacy-chip__icon" aria-hidden />
+                              </span>
                             </span>
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td data-label="Estado">
-                        <StatusChip variant="assigned" data-testid={`assigned-status-${item.canvasUserId}`}>
-                          Asignado
-                        </StatusChip>
-                      </td>
-                      <td className="data-table__date" data-label="Fecha de asignación">
-                        {formatShortDate(item.marbete?.assignedAt ?? null)}
-                      </td>
-                      <td data-label="Usuario">
-                        {item.marbete?.assignedBy ?? '—'}
-                      </td>
-                      <td className="assignment-row__action" data-label="Acción">
-                        <div className="admin-actions" aria-label={`Acciones para ${primaryLabel}`}>
-                          <button
-                            className="admin-action admin-action--reveal"
-                            type="button"
-                            aria-label={`Revelar número completo de ${primaryLabel}`}
-                            data-testid={`assigned-reveal-${item.canvasUserId}`}
-                            disabled={!canWrite || !item.marbete}
-                            onClick={() => openReveal(item)}
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td data-label="Estado">
+                          <StatusChip
+                            variant="assigned"
+                            data-testid={`assigned-status-${item.canvasUserId}`}
                           >
-                            <Eye className="admin-action__icon admin-action__icon--stroke" aria-hidden />
-                            <span className="admin-action__label">Revelar</span>
-                          </button>
-                          <button
-                            className="admin-action admin-action--danger"
-                            type="button"
-                            aria-label={`Desasignar marbete de ${primaryLabel}`}
-                            data-testid={`assigned-unassign-${item.canvasUserId}`}
-                            disabled={!canWrite || !item.marbete}
-                            onClick={() => openUnassign(item)}
+                            Asignado
+                          </StatusChip>
+                        </td>
+                        <td className="data-table__date" data-label="Fecha de asignación">
+                          {formatShortDate(item.marbete?.assignedAt ?? null)}
+                        </td>
+                        <td data-label="Usuario">{item.marbete?.assignedBy ?? '—'}</td>
+                        <td className="assignment-row__action" data-label="Acción">
+                          <div
+                            className="admin-actions"
+                            aria-label={`Acciones para ${primaryLabel}`}
                           >
-                            <Undo2 className="admin-action__icon admin-action__icon--stroke" aria-hidden />
-                            <span className="admin-action__label">Desasignar</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                            <button
+                              className="admin-action admin-action--reveal"
+                              type="button"
+                              aria-label={`Revelar número completo de ${primaryLabel}`}
+                              data-testid={`assigned-reveal-${item.canvasUserId}`}
+                              disabled={!canWrite || !item.marbete}
+                              onClick={() => openReveal(item)}
+                            >
+                              <Eye
+                                className="admin-action__icon admin-action__icon--stroke"
+                                aria-hidden
+                              />
+                              <span className="admin-action__label">Revelar</span>
+                            </button>
+                            <button
+                              className="admin-action admin-action--danger"
+                              type="button"
+                              aria-label={`Desasignar marbete de ${primaryLabel}`}
+                              data-testid={`assigned-unassign-${item.canvasUserId}`}
+                              disabled={!canWrite || !item.marbete}
+                              onClick={() => openUnassign(item)}
+                            >
+                              <Undo2
+                                className="admin-action__icon admin-action__icon--stroke"
+                                aria-hidden
+                              />
+                              <span className="admin-action__label">Desasignar</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
