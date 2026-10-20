@@ -264,13 +264,23 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/v1/matriculas') {
+    // The real API filters by status; the stub used to ignore it, which made
+    // the "Asignados" panel list matriculas without a marbete and hid the
+    // per-row reveal bug behind unrealistic data.
+    const status = url.searchParams.get('status');
+    const rows =
+      status === 'assigned'
+        ? MATRICULAS.filter((m) => m.marbete !== null)
+        : status === 'unassigned'
+          ? MATRICULAS.filter((m) => m.marbete === null)
+          : MATRICULAS;
     const limit = Number(url.searchParams.get('limit') ?? 50);
     const offset = Number(url.searchParams.get('offset') ?? 0);
     send(req, res, 200, {
-      total: MATRICULAS.length,
+      total: rows.length,
       limit,
       offset,
-      items: MATRICULAS.slice(offset, offset + limit),
+      items: rows.slice(offset, offset + limit),
     });
     return;
   }
@@ -296,6 +306,17 @@ const server = createServer(async (req, res) => {
       offset,
       items: AUDIT.slice(offset, offset + limit),
     });
+    return;
+  }
+
+  // Reveal: the real API lifts `maskCode(publicUid)` for this one response and
+  // keeps masking every list read, so the stub returns a full code and never
+  // changes what /matriculas returns.
+  const revealMatch = path.match(/^\/api\/v1\/marbetes\/(\d+)\/reveal$/);
+  if (revealMatch && req.method === 'POST') {
+    await readJson(req);
+    const id = Number(revealMatch[1]);
+    send(req, res, 200, { code: `VALIDO-26${String(id).padStart(6, '0')}` });
     return;
   }
 

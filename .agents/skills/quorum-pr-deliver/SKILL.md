@@ -16,6 +16,9 @@ Use when a Quorum change must land on `main` in a sibling repo protected by bran
 - Commit or push only on explicit user request; never commit unrelated foreign working-tree changes.
 - Stage explicit paths only. Never `git add -A`/`git add .` in a tree with untracked foreign work.
 - Bypassing branch protection (direct push or `--admin` merge) requires explicit user authorization.
+- Never assume a third party can approve. If the user is the sole owner/operator of the repository, a delivery must not stop waiting for another person's review: state the block once, offer the two exits (lower `required_approving_review_count` to 0, or authorize `--admin`), and continue with their decision.
+- Auto-merge is not an exit. Arming it still waits for the same approval; use it only after an approval source exists.
+- Never claim a previous agent added the CI or the branch protection. Check `git log -- .github` and the protection endpoint before attributing either.
 - Publish (push/PR) only when the user asked to deliver.
 
 ## Decision Gates
@@ -24,6 +27,7 @@ Use when a Quorum change must land on `main` in a sibling repo protected by bran
 | --- | --- |
 | behind `origin/main`, feature line open | branch off `origin/main` (clean, minimal PR) |
 | PR requires review + linear history | rebase merge; `--admin` only if authorized |
+| sole owner and protection demands 1 approval | do not wait for a third party: ask for reviews→0 or an authorized `--admin` merge |
 | large multi-commit PR already open | prefer a small independent PR over growing it |
 | dirty tree with foreign changes | isolate (worktree) before any edit |
 

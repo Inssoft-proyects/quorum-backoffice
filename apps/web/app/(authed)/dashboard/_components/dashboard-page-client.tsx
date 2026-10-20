@@ -8,7 +8,7 @@ import type {
   MarbeteDetailResponse,
   UserRole,
 } from '@quorum-backoffice/shared';
-import { MetricCard, type DonutSegment } from '@/components/inventory';
+import { MetricCard, type MetricBarSegment } from '@/components/inventory';
 
 /**
  * Per-domain payload assembled by the dashboard server component.
@@ -75,8 +75,7 @@ function countAuditFailed(items: AuditEntry[]) {
  * When a list endpoint fails (typically a 403 from RBAC), the
  * corresponding card renders a neutral state (`value=0`, `meta='Sin
  * acceso'`, no chart) so the layout never collapses and the other
- * cards stay visible. The Total card always uses the maquette's white
- * separator bands (`chartVariant="total"`).
+ * cards stay visible.
  *
  * No table is rendered on the dashboard by design — the brief calls for
  * 4 metric cards only, with the attention card replacing a Maquette's
@@ -86,28 +85,24 @@ export function DashboardPageClient({ data }: Props) {
   const { marbetes, dispositivos, audit, user } = data;
   const now = useMemo(() => Date.now(), []);
 
-  // Donut segments per card: the Total card gets the maquette's
-  // 3-band split; the per-domain cards get the percentage of the
-  // successful load vs. an error ring.
-  const segmentsMarbetes: DonutSegment[] = useMemo(() => {
+  // Bar segments per card: the share of the total that the card represents.
+  // A failed list endpoint paints a neutral track so the row keeps its height
+  // instead of collapsing.
+  const segmentsMarbetes: MetricBarSegment[] = useMemo(() => {
     if (marbetes.error) {
-      return [
-        { percent: 100, color: 'var(--color-surface-subtle)' },
-      ];
+      return [{ percent: 100, color: 'var(--color-surface-subtle)' }];
     }
-    return [
-      { percent: 100, color: 'var(--color-secondary-500)' },
-    ];
+    return [{ percent: 100, color: 'var(--color-secondary-500)' }];
   }, [marbetes.error]);
 
-  const segmentsDispositivos: DonutSegment[] = useMemo(() => {
+  const segmentsDispositivos: MetricBarSegment[] = useMemo(() => {
     if (dispositivos.error) {
       return [{ percent: 100, color: 'var(--color-surface-subtle)' }];
     }
     return [{ percent: 100, color: 'var(--color-secondary-500)' }];
   }, [dispositivos.error]);
 
-  const segmentsAudit: DonutSegment[] = useMemo(() => {
+  const segmentsAudit: MetricBarSegment[] = useMemo(() => {
     if (audit.error) {
       return [{ percent: 100, color: 'var(--color-surface-subtle)' }];
     }
@@ -121,8 +116,7 @@ export function DashboardPageClient({ data }: Props) {
     const marbetesAtt = countMarbeteAttention(marbetes.items, now);
     const dispositivosSinMarca = countDispositivoSinMarca(dispositivos.items);
     const auditFailed = countAuditFailed(audit.items);
-    const total =
-      marbetesAtt.total + dispositivosSinMarca + auditFailed;
+    const total = marbetesAtt.total + dispositivosSinMarca + auditFailed;
     return { marbetesAtt, dispositivosSinMarca, auditFailed, total };
   }, [marbetes.items, dispositivos.items, audit.items, now]);
 
@@ -160,9 +154,7 @@ export function DashboardPageClient({ data }: Props) {
       <header className="inventory-header">
         <div className="inventory-header__content">
           <h1>Inicio</h1>
-          <p>
-            Resumen general del inventario y la actividad reciente.
-          </p>
+          <p>Resumen general del inventario y la actividad reciente.</p>
         </div>
       </header>
 
@@ -173,8 +165,7 @@ export function DashboardPageClient({ data }: Props) {
             value={marbetes.error ? '—' : marbetes.total}
             meta={marbetes.error ? 'Sin acceso' : 'Total inventario'}
             segments={segmentsMarbetes}
-            centerLabel={marbetes.error ? '—' : '100%'}
-            chartVariant="total"
+            ratioLabel={marbetes.error ? '—' : '100%'}
             data-testid="dashboard-card-marbetes"
           />
           <MetricCard
@@ -182,7 +173,7 @@ export function DashboardPageClient({ data }: Props) {
             value={dispositivos.error ? '—' : dispositivos.total}
             meta={dispositivos.error ? 'Sin acceso' : 'Total inventario'}
             segments={segmentsDispositivos}
-            centerLabel={dispositivos.error ? '—' : '100%'}
+            ratioLabel={dispositivos.error ? '—' : '100%'}
             data-testid="dashboard-card-dispositivos"
           />
           <MetricCard
@@ -190,7 +181,7 @@ export function DashboardPageClient({ data }: Props) {
             value={audit.error ? '—' : audit.total}
             meta={audit.error ? 'Sin acceso' : 'Movimientos'}
             segments={segmentsAudit}
-            centerLabel={audit.error ? '—' : '100%'}
+            ratioLabel={audit.error ? '—' : '100%'}
             data-testid="dashboard-card-audit"
           />
           <MetricCard
@@ -198,11 +189,6 @@ export function DashboardPageClient({ data }: Props) {
             value={attention.total}
             meta={attention.total === 0 ? 'Sin pendientes' : 'Atención'}
             pills={attentionPills.length > 0 ? attentionPills : undefined}
-            percentageLabel={
-              attention.total === 0
-                ? '0% del total'
-                : `${attention.total} pendiente${attention.total === 1 ? '' : 's'}`
-            }
             data-testid="dashboard-card-attention"
           />
         </div>

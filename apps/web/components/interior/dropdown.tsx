@@ -306,7 +306,7 @@ export function Dropdown({
         {...triggerProps}
         className={`flex h-9 select-none items-center gap-2 whitespace-nowrap rounded-md px-3 text-[13px] font-medium text-text-primary outline-none transition-[box-shadow,filter] duration-150 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 disabled:opacity-50  ${
           open
-            ? 'bg-[var(--color-surface-subtle)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.06),0_0_0_1px_rgba(0,0,0,0.12)]  '
+            ? 'bg-[var(--color-surface-subtle)] shadow-[0_0_0_1px_rgba(0,0,0,0.12)]  '
             : 'bg-background shadow-[0_0_0_1px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.06)] hover:brightness-[0.98]   '
         }`}
       >

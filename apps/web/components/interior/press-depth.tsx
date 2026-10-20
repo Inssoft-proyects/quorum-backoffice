@@ -5,14 +5,19 @@
  * Registry source: https://www.interior.dev/r/press-depth.json
  * License: MIT (https://github.com/ddoemonn/interior/blob/main/LICENSE)
  *
+ * This file is the press **hook** only. The `PressDepth` component that used
+ * to live here rendered the 3D extrusion (underlay slab, `rotateX`/`rotateY`
+ * tilt, inset gloss) and is gone: no control may look extruded
+ * (`odd/tasks/backoffice-ui-canon.md`, S1). `usePressDepth` stays because it
+ * is the press-tracking primitive `components/ui/button.tsx` uses for its flat
+ * 1px press; the pointer `origin` it reports is kept for callers that want it
+ * and is simply not consumed by the button anymore.
+ *
  * Adapted to the Quorum InecConecta tokens in this repository. The
- * micro-interaction logic (springs, reserved width, reduced-motion parity)
- * is upstream; the palette, radii and focus rings are ours.
+ * micro-interaction logic (springs, reduced-motion parity) is upstream; the
+ * palette, radii and focus rings are ours.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
-
-const PRESS = { type: 'spring', stiffness: 520, damping: 34, mass: 0.45 } as const;
 
 export type UsePressDepthOptions = {
   disabled?: boolean;
@@ -148,75 +153,4 @@ export function usePressDepth(options: UsePressDepthOptions = {}): UsePressDepth
   };
 
   return { pressed, origin, ref, bind };
-}
-
-export type PressDepthProps = {
-  children: React.ReactNode;
-  depth?: number;
-  tilt?: number;
-  disabled?: boolean;
-  type?: 'button' | 'submit' | 'reset';
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  className?: string;
-  'aria-label'?: string;
-};
-
-export function PressDepth({
-  children,
-  depth = 4,
-  tilt = 7,
-  disabled = false,
-  type = 'button',
-  onClick,
-  className = '',
-  'aria-label': ariaLabel,
-}: PressDepthProps) {
-  const reduced = useReducedMotion();
-  const { pressed, origin, ref, bind } = usePressDepth({ disabled });
-
-  const lean = pressed && origin && !reduced ? origin : null;
-
-  return (
-    <button
-      ref={ref}
-      type={type}
-      disabled={disabled}
-      aria-label={ariaLabel}
-      data-pressed={pressed ? '' : undefined}
-      onClick={onClick}
-      style={{
-        paddingBottom: depth,
-        touchAction: 'manipulation',
-        WebkitTapHighlightColor: 'transparent',
-      }}
-      className="group relative inline-flex select-none rounded-md align-middle outline-none disabled:opacity-50"
-      {...bind}
-    >
-      <span
-        aria-hidden
-        style={{ top: depth }}
-        className="absolute inset-x-0 bottom-0 rounded-md bg-border-strong "
-      />
-      <motion.span
-        initial={false}
-        animate={{
-          y: pressed ? depth : 0,
-          rotateX: lean ? -lean.y * tilt : 0,
-          rotateY: lean ? lean.x * tilt : 0,
-        }}
-        transition={reduced ? { duration: 0 } : PRESS}
-        style={{ transformPerspective: 340 }}
-        className={`relative inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3.5 text-[13px] font-medium text-text-primary group-focus-visible:ring-2 group-focus-visible:ring-primary-500 ${className}`}
-      >
-        <motion.span
-          aria-hidden
-          initial={false}
-          animate={{ opacity: pressed ? 0 : 1 }}
-          transition={reduced ? { duration: 0 } : PRESS}
-          className="pointer-events-none absolute inset-0 rounded-md shadow-[inset_0_1.5px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(28,25,23,0.06)]  "
-        />
-        {children}
-      </motion.span>
-    </button>
-  );
 }

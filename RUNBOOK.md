@@ -109,6 +109,19 @@ registry" descrita históricamente no está implementada para web.
 
 #### Release del bundle web
 
+> **Nunca construyas dentro de `/opt/quorum-backoffice` mientras el pod sirve.**
+> `next build` reescribe `.next` **en sitio**: si el build falla a medias (por
+> ejemplo, caché incremental de Turbopack corrupta) borra `standalone/` y
+> `BUILD_ID` debajo del proceso en ejecución y el pod entra en
+> `CrashLoopBackOff`. Incidente real: 2026-10-20, backoffice web inestable
+> ~15 min.
+>
+> Camino seguro: construir en el worktree con `API_INTERNAL_URL` de producción,
+> verificar las guardas (`standalone/apps/web/server.js`, logo, rewrites al
+> puerto real, ausencia de `127.0.0.1:3100`) y publicar el artefacto con
+> `rsync -a --delete` + `rollout restart`, conservando el `.next.rollback-<ts>`
+> previo. Ver «Si el build en el hostPath falla…» más abajo.
+
 ```bash
 TS=$(date +%Y%m%d-%H%M%S)
 BASE=/opt/quorum-backoffice

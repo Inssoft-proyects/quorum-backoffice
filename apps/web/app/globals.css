@@ -152,7 +152,13 @@
   .inventory-page {
     width: min(100%, 90rem);
     margin-inline: auto;
-    padding: 2rem 2rem calc(4.25rem + 2rem + env(safe-area-inset-bottom));
+    /* Vertical padding is 0 on purpose: `<main>` owns the constant 1rem on
+     * both edges, so the space above the page title matches the space below
+     * the table footer (S9 of `odd/tasks/backoffice-ui-canon.md`). The
+     * `.app-alert` toast is `position: fixed` (`globals.css` line ~576) and
+     * floats above the pagination, so it never displaced the page flow;
+     * reserving room for it here only opened a dead band. */
+    padding: 0 2rem 0;
     font-family: var(--font-family-base);
     display: flex;
     flex-direction: column;
@@ -164,10 +170,16 @@
      * `flex-1` inside a grid that is `min-h-screen`). */
     height: 100%;
     min-height: 0;
+    /* Bottom padding was previously `calc(4.25rem + 2rem + env(safe-area-inset-bottom))`
+     * to reserve space for the `.app-alert` toast. The toast is
+     * `position: fixed` (`globals.css` line ~576) and floats above the
+     * pagination, so it never displaced the page flow; removing the
+     * reservation closes the dead band so the table pagination lands
+     * within ~16 px of the viewport bottom (S2 budget: ≤ 2 % of vh). */
   }
 
   .inventory-header {
-    margin-block-end: 1.5rem;
+    margin-block-end: 1rem;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -199,20 +211,22 @@
   }
 
   .metrics-section {
-    margin-block-end: 1.5rem;
+    /* Tightened from 1.5rem to 1rem to reclaim vertical budget for the
+     * table (S2) without touching card paddings, fonts or gaps. */
+    margin-block-end: 1rem;
   }
 
   .metrics-grid {
-    /* Maquette canon: the four metric cards sit flush against each
-     * other on desktop — `grid-template-columns: repeat(4, minmax(0, 1fr))`
-     * with no gap. The card borders (1px var(--color-border)) provide
-     * the only visual separation. The 1rem gap we previously shipped
-     * was a real drift from the maquette that cost several hundred
-     * diff pixels per card row. The mobile breakpoints below add the
-     * `var(--space-2)` (0.5rem) gap that the maquette itself uses at
-     * <64rem viewports. */
+    /* Owner decision: every inventory screen uses one geometry with
+     * an 8px gap between the four cards — the previous "flush"
+     * layout was a drift that forced a separate tablet rule and
+     * collapsed the cards into a single visual block when the
+     * border tokens lightened. The 8px gap shares the maquette's
+     * <64rem rhythm and gives the new compact proportional bar
+     * room to breathe. The tablet rule below collapses to 2 cols. */
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
   }
 
   .inventory-section__header {
@@ -230,15 +244,33 @@
     color: var(--color-text-primary);
   }
 
-  /* ----- Metric card ----- */
+  /* ----- Metric card -----
+   *
+   * Maquette v3: every summary card on every screen uses one geometry.
+   * The card is a CSS grid with explicit areas
+   *   `label chip / value ratio / meta meta / bar bar`
+   * and a uniform 8px gap (see `.metrics-grid`). The donut was retired
+   * in favour of a compact proportional bar (`.metric-bar`) so the
+   * card no longer reserves ~195 px of vertical space and the value
+   * text never collides with the chart. `align-content: start` plus
+   * the grid areas let siblings stretch to the tallest in their row
+   * without forcing a fixed `min-height`.
+   */
   .metric-card {
-    position: relative;
     min-width: 0;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
+    padding: 1rem 1.125rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'label  chip'
+      'value  ratio'
+      'meta   meta'
+      'bar    bar';
+    grid-auto-rows: auto;
+    align-content: start;
+    gap: 0.25rem 0.5rem;
     background: var(--color-background);
     color: var(--color-text-primary);
     text-align: left;
@@ -248,13 +280,14 @@
     cursor: pointer;
     transition:
       border-color 160ms ease,
-      box-shadow 160ms ease,
-      transform 160ms ease;
+      box-shadow 160ms ease;
   }
 
   .metric-card:hover {
     border-color: var(--color-secondary-500);
-    transform: translateY(-1px);
+    /* The fake "lift" (translateY(-1px)) was retired: the canon forbids
+     * any depth illusion behind the card face (S1 of the backoffice UI
+     * canon). The border highlight is enough feedback. */
   }
 
   .metric-card:focus-visible {
@@ -268,63 +301,126 @@
     color: var(--color-background);
   }
 
-  .metric-card--with-chart {
-    min-height: 8.5rem;
-    /* Per maquette: the donut is absolute (inset-inline-end / inset-block-end)
-     * and overlaps the value text on the right; we do NOT reserve right
-     * padding. This matches `diseno/maqueta_Inec/Inec/css/components.css`
-     * 1:1 and is the single biggest reason for the metric-cards pixel
-     * diff drop we saw in production. */
+  /* Attention card (with `pills`): the meta row turns into a 2-col
+   * pills grid; the bar still renders below it. */
+  .metric-card--attention .metric-card__meta {
+    width: 100%;
+    max-width: 260px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.25rem;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
   }
-  .metric-card--attention {
-    /* The "Por atender" / "Autenticación" cards use pill chips
-     * instead of a donut; no chart means no padding-end reservation.
-     * The maquette uses the same padding as the other cards. */
+  .metric-card--attention[aria-pressed='true'] .metric-card__meta {
+    width: 100%;
+    max-width: 260px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.25rem;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
   }
 
   .metric-card__label {
+    grid-area: label;
+    min-width: 0;
     color: var(--color-text-muted-strong);
     font-weight: 600;
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    /* The chip shares this row, so a single-line label would be cut to
+     * "Matrículas sin ma…" on a 256px card. Clamp to two lines instead: the
+     * grid stretches the sibling cards, so the row keeps one height and
+     * nothing is unreadable. JSX also carries a `title` with the full text. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  .metric-card__filter-chip {
+    /* Static grid-area item — no absolute positioning so the layout
+     * never depends on a magic offset when the card stretches. Same
+     * pill look as v2: neutral surface, muted text, 12px sans. */
+    grid-area: chip;
+    justify-self: end;
+    align-self: center;
+    max-width: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 0.125rem 0.6rem;
+    background: rgb(39 86 111 / 5%);
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .metric-card__value {
-    font-size: 2rem;
+    grid-area: value;
+    min-width: 0;
+    font-size: clamp(1.5rem, 1.2rem + 0.6vw, 1.75rem);
     font-weight: 700;
     line-height: 1.1;
-    margin-top: 0.75rem;
+    color: var(--color-text-primary);
+    /* Single non-breaking line so a wider number never pushes the
+     * ratio slot past the right edge of the card. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .metric-card__value-row {
-    margin-top: 0.75rem;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .metric-card__value-row .metric-card__value {
-    margin-top: 0;
-  }
-
-  .metric-card__percentage {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--color-alert-warning-text);
-    font-size: 0.875rem;
+  .metric-card__ratio {
+    /* Small bold share label (e.g. "65%") anchored to the end of the
+     * second column, aligned with the value's baseline. */
+    grid-area: ratio;
+    justify-self: end;
+    align-self: end;
+    font-size: 0.8125rem;
     font-weight: 700;
-    line-height: 1;
+    line-height: 1.1;
+    color: var(--color-text-muted);
     white-space: nowrap;
   }
 
-  .metric-card__percentage::before {
+  /* Attention-card variant keeps the "Solo el X% del total" prefix
+   * rendered through the same `.metric-card__ratio` slot but with
+   * the warning hue and a leading dot to match the v2 canon. The
+   * layout never needs the wrap workaround any more because the
+   * chip no longer overlaps the value text. */
+  .metric-card--attention .metric-card__ratio,
+  .metric-card--attention .metric-card__percentage {
+    grid-area: ratio;
+    justify-self: end;
+    align-self: end;
+    color: var(--color-alert-warning-text);
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .metric-card--attention .metric-card__percentage::before {
     content: '';
+    display: inline-block;
     width: 0.4375rem;
     height: 0.4375rem;
+    margin-inline-end: 0.25rem;
     border-radius: 50%;
     background: currentColor;
+    vertical-align: 0.125rem;
   }
 
   .metric-card__meta {
+    grid-area: meta;
     line-height: 1.2;
     color: var(--color-text-muted);
     font-size: 0.75rem;
@@ -333,20 +429,10 @@
     width: fit-content;
   }
 
-  .metric-card__filter-chip {
-    position: absolute;
-    inset-block-start: 1rem;
-    inset-inline-end: 1rem;
-    max-width: calc(100% - 2rem);
-    border: 1px solid var(--color-border);
-    border-radius: 999px;
-    padding: 0.125rem 0.75rem;
-    background: rgb(39 86 111 / 5%);
-    color: var(--color-text-muted);
-    font-size: 0.75rem;
-    font-weight: 700;
-    line-height: 1.35;
-    white-space: nowrap;
+  .metric-card__bar {
+    grid-area: bar;
+    display: block;
+    min-width: 0;
   }
 
   .metric-card[aria-pressed='true'] .metric-card__label {
@@ -357,22 +443,14 @@
     color: var(--color-background);
   }
 
+  .metric-card[aria-pressed='true'] .metric-card__ratio {
+    color: rgb(255 255 255 / 88%);
+  }
+
   .metric-card[aria-pressed='true'] .metric-card__meta {
     color: var(--color-background);
     background: var(--color-secondary-500);
     border-radius: 999px;
-  }
-
-  .metric-card--attention .metric-card__meta,
-  .metric-card--attention[aria-pressed='true'] .metric-card__meta {
-    width: 100%;
-    max-width: 260px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 0.25rem;
-    padding: 0;
-    background: transparent;
-    border-radius: 0;
   }
 
   .metric-card__meta-pill {
@@ -408,77 +486,40 @@
     color: var(--color-secondary-600);
   }
 
-  /* ----- Donut chart ----- */
-  .donut-chart {
-    position: relative;
-    width: 4rem;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    border: 3px solid var(--color-background);
-    box-shadow:
-      0 0.25rem 0.625rem rgb(41 41 41 / 12%),
-      inset 0 0 0 1px rgb(41 41 41 / 8%);
+  /* ----- Compact proportional bar -----
+   *
+   * Inspired by interior.dev's *Poll Results* idiom: horizontal
+   * proportional bar with its share. Presentational — the
+   * `metric-card.tsx` component owns whether it renders. */
+  .metric-bar {
+    display: block;
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--color-surface-subtle);
   }
 
-  /*
-   * Desktop positioning inside a metric card. The maquette anchors
-   * the donut to the bottom-right corner of the card with absolute
-   * positioning (the value + meta text flows on the left, the
-   * donut overlaps the lower-right of that flow). Without this rule
-   * the donut renders in flex flow under the meta text, which
-   * breaks the metrics-grid pixel diff on /dispositivos and /audit.
-   */
-  .metric-card .donut-chart {
-    position: absolute;
-    inset-inline-end: var(--space-4);
-    inset-block-end: var(--space-4);
+  /* The active card paints a dark background, so the subtle track and the
+   * "assigned" segment colour disappear into it. A translucent track keeps
+   * the proportion readable without changing the segment palette. */
+  .metric-card[aria-pressed='true'] .metric-bar {
+    background: rgb(255 255 255 / 22%);
   }
 
-  .donut-chart::before {
-    content: '';
-    position: absolute;
-    inset: 0.5rem;
-    border-radius: inherit;
-    background: var(--color-background);
-    box-shadow: inset 0 0 0 1px rgb(41 41 41 / 8%);
-    z-index: 2;
+  .metric-bar__seg {
+    display: block;
+    height: 100%;
+    /* Animate width changes when the data updates; the
+     * reduced-motion guard below drops the transition for users
+     * who opt out at the OS level. */
+    transition: width 320ms ease;
   }
 
-  .donut-chart__value {
-    position: relative;
-    z-index: 3;
-    color: var(--color-text-primary);
-    font-size: 0.75rem;
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  /*
-   * Maquette total-card separator: 3 small white bands (~4° each) at the
-   * joins between the secondary / assigned / warning segments. Rendered
-   * via an ::after overlay so the existing conic-gradient built from
-   * `segments` in <DonutChart /> continues to drive the colored bands
-   * underneath (see donut-chart.tsx -> variant="total").
-   */
-  .donut-chart--total::after {
-    content: '';
-    position: absolute;
-    inset: -0.0625rem;
-    border-radius: inherit;
-    background: conic-gradient(
-      from -90deg,
-      var(--color-background) 0 4deg,
-      transparent 4deg 224deg,
-      var(--color-background) 224deg 232deg,
-      transparent 232deg 336deg,
-      var(--color-background) 336deg 344deg,
-      transparent 344deg 356deg,
-      var(--color-background) 356deg 360deg
-    );
-    z-index: 1;
-    pointer-events: none;
+  @media (prefers-reduced-motion: reduce) {
+    .metric-bar__seg {
+      transition: none;
+    }
   }
 
   /* ----- Chip / id-badge / privacy-chip ----- */
@@ -1427,18 +1468,29 @@
   }
 
   /* ----- Responsive adjustments ----- */
+  /* Owner decision: below 75rem the four summary cards collapse to a
+   * 2-column grid (the same rhythm the maquette uses at narrower
+   * viewports). The 64rem block below keeps the table-shell switch
+   * which is the only tablet-specific concern there. */
+  @media (max-width: 75rem) {
+    .metrics-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
   @media (max-width: 64rem) {
     .inventory-page {
-      padding-block-end: calc(5.75rem + 2rem + env(safe-area-inset-bottom));
+      /* Tablet ≤64rem: kill the bottom reservation entirely. The
+       * `.app-alert` toast is `position: fixed` and does not push the
+       * page flow; on tablet the inner table-scroll carries the scroll
+       * (S7), so 0 is the correct value here too. */
+      padding-block-end: 0;
     }
     .inventory-header {
       flex-direction: column;
     }
     .inventory-header__actions {
       justify-content: flex-start;
-    }
-    .metrics-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .inventory-section__header {
       align-items: flex-start;
@@ -1519,10 +1571,13 @@
 
   @media (max-width: 45rem) {
     .inventory-page {
-      padding: 1rem 1rem calc(5.75rem + 1rem + env(safe-area-inset-bottom));
+      /* Phone ≤45rem: the page itself scrolls (no inner table-scroll),
+       * so we keep a 1rem breath at the bottom for the safe-area. The
+       * `.app-alert` is fixed and needs no reservation here either. */
+      padding: 1rem 1rem 1rem;
     }
     .inventory-header {
-      margin-block-end: 1.25rem;
+      margin-block-end: 1rem;
     }
     .inventory-header h1 {
       font-size: 1.5rem;
@@ -1542,42 +1597,31 @@
     }
     .metric-card,
     .metric-card[aria-pressed='true'] {
-      min-height: 6.875rem;
-      padding: 0.75rem;
-      justify-content: space-between;
+      /* The proportional bar replaces the donut; the phone can keep
+       * the card a little shorter than the desktop minimum because
+       * nothing reserves space for a chart any more. The grid
+       * `align-content: start` keeps siblings even. */
+      min-height: 6.25rem;
+      padding: 0.75rem 0.875rem;
+      gap: 0.25rem 0.375rem;
       overflow: hidden;
     }
-    .metric-card--with-chart,
-    .metric-card--with-chart[aria-pressed='true'] {
-      padding-inline-end: 4rem;
-    }
-    .metric-card--attention,
-    .metric-card--attention[aria-pressed='true'] {
-      padding-inline-end: 0.75rem;
-    }
     .metric-card__label {
-      max-width: calc(100% - 4.25rem);
-      padding-inline-end: 0;
-      font-size: 0.875rem;
+      font-size: 0.8125rem;
       line-height: 1.25;
     }
     .metric-card__filter-chip {
-      inset-block-start: 0.5rem;
-      inset-inline-end: 0.5rem;
-      max-width: 4.75rem;
       padding: 0.0625rem 0.5rem;
       font-size: 0.6875rem;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 6.5rem;
     }
     .metric-card__value {
-      margin-top: 0.5rem;
       font-size: 1.5rem;
     }
-    .metric-card__chart {
-      inset-inline-end: 0.5rem;
-      inset-block-end: 0.75rem;
-      width: 3.8rem;
+    .metric-card__ratio {
+      font-size: 0.75rem;
     }
     .data-table tbody {
       grid-template-columns: 1fr;
@@ -2486,67 +2530,24 @@
     position: relative;
   }
 
-  /* The four-card grid: takes the existing 4-col inventory layout
-   * but lets us override it at the assignment-metrics scope without
-   * touching the marbetes / dispositivos variants. */
-  .assignment-metrics {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+  /* The four-card grid: `.assignment-metrics` no longer carries an
+   * explicit `grid-template-columns` rule because it now matches
+   * `.metrics-grid` byte-for-byte (the compact bar dropped the
+   * "every screen uses one geometry" requirement on this scope).
+   * The class is kept on `/asociar` for selector affinity (e.g.
+   * `.assignment-metrics .assignment-metric[data-filter-source]`),
+   * but every responsive override was deleted because the same
+   * 2-col collapse now comes from `.metrics-grid`. */
   .assignment-metrics .assignment-metric[data-filter-source='metric'] {
     cursor: pointer;
     text-align: start;
   }
 
-  /* Donut variants per canon: the Total card draws available +
-   * assigned halves with white separator bands; available / assigned
-   * cards draw a single segment + remainder. The conic-gradient is
-   * computed in the React component (DonutChart) and applied inline;
-   * these rules add the override surfaces + the white separators
-   * for the `total` variant. */
-  .assignment-metrics .metric-card__chart--total {
-    --available-angle: 180deg;
-    --assigned-angle: 180deg;
-    --chart-background: conic-gradient(
-      from -90deg,
-      var(--color-secondary-500) 0 var(--available-angle),
-      var(--color-background) var(--available-angle) calc(var(--available-angle) + 4deg),
-      var(--color-assigned-text) calc(var(--available-angle) + 4deg)
-        calc(var(--available-angle) + 4deg + var(--assigned-angle)),
-      var(--color-surface-subtle) calc(var(--available-angle) + 4deg + var(--assigned-angle)) 360deg
-    );
-  }
-  .assignment-metrics .metric-card__chart--total::after {
-    background: conic-gradient(
-      from -90deg,
-      var(--color-background) 0 4deg,
-      transparent 4deg calc(var(--available-angle) - 4deg),
-      var(--color-background) calc(var(--available-angle) - 4deg)
-        calc(var(--available-angle) + 4deg),
-      transparent calc(var(--available-angle) + 4deg)
-        calc(var(--available-angle) + var(--assigned-angle)),
-      var(--color-background) calc(var(--available-angle) + var(--assigned-angle))
-        calc(var(--available-angle) + var(--assigned-angle) + 4deg),
-      transparent calc(var(--available-angle) + var(--assigned-angle) + 4deg) 360deg
-    );
-  }
-  .assignment-metrics .metric-card__chart--available {
-    --progress-angle: 180deg;
-    --chart-background: conic-gradient(
-      from -90deg,
-      var(--color-secondary-500) 0 var(--progress-angle),
-      var(--color-background) var(--progress-angle) calc(var(--progress-angle) + 4deg),
-      var(--color-surface-subtle) calc(var(--progress-angle) + 4deg) 360deg
-    );
-  }
-  .assignment-metrics .metric-card__chart--assigned {
-    --progress-angle: 180deg;
-    --chart-background: conic-gradient(
-      from -90deg,
-      var(--color-assigned-text) 0 var(--progress-angle),
-      var(--color-background) var(--progress-angle) calc(var(--progress-angle) + 4deg),
-      var(--color-surface-subtle) calc(var(--progress-angle) + 4deg) 360deg
-    );
-  }
+  /* Donut chart variants removed (maquette v3). The compact
+   * proportional bar (`.metric-bar`) replaces every
+   * `.metric-card__chart--*` surface; the donut selector and the
+   * `--available-angle` / `--progress-angle` blocks no longer
+   * paint on any screen. */
 
   .assignment-page__header {
     margin-block-end: var(--space-5);
@@ -2579,7 +2580,21 @@
   }
 
   .assignment-workspace {
-    display: grid;
+    /* S7 homologation: the marbetes / dispositivos / auditoria screens
+     * keep the table inside a viewport-bound flex chain
+     * (.inventory-page > .inventory-section--table > .table-shell),
+     * which lets `.table-scroll` own the vertical scroll. `/asociar`
+     * previously used `display: grid` here, so the workspace grew
+     * past the viewport and forced the whole document to scroll.
+     * Promoting the workspace + panel to a flex column lets the
+     * inner `.table-shell` (flex: 1; min-height: 0) and
+     * `.table-scroll` (overflow-y: auto) close the chain the same
+     * way the other three screens do, and the document stops
+     * scrolling. */
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     gap: var(--space-5);
   }
 
@@ -2616,7 +2631,19 @@
   }
 
   .assignment-panel {
-    display: grid;
+    /* S7 homologation (continued): each tab panel is a flex child of
+     * `.assignment-workspace`. `flex: 1 1 auto; min-height: 0` lets
+     * the visible panel absorb the remaining vertical space and lets
+     * the `display: flex` on `.table-shell` actually shrink to fit
+     * instead of overflowing into the document scroll. The
+     * `[hidden]` selector below still enforces `display: none` so
+     * the inactive panel doesn't paint. The previous `display: grid`
+     * is dropped because a flex parent with a grid child wouldn't
+     * apply our flex sizing on the table-shell inside it. */
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     gap: var(--space-4);
   }
   .assignment-panel[hidden] {
@@ -2941,13 +2968,13 @@
 
   /* Responsive: collapses the metrics grid to 2 cols on tablet, the
    * review rows to 1 col on phone, and flattens the limit message
-   * bar to a stacked layout. Mirrors the canon @media rules. */
+   * bar to a stacked layout. Mirrors the canon @media rules. The
+   * `.assignment-metrics` 2-col override was retired: `.metrics-grid`
+   * already collapses at the 75rem breakpoint, so this rule is
+   * redundant. */
   @media (max-width: 45rem) {
-    .assignment-metrics {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .assignment-metric {
-      min-height: 6.875rem;
+      min-height: 6.25rem;
     }
     .assignment-modal {
       max-height: calc(100dvh - 2rem);
@@ -2988,11 +3015,6 @@
     }
     .assignment-context {
       grid-template-columns: 1fr;
-    }
-  }
-  @media (min-width: 45.01rem) and (max-width: 64rem) {
-    .assignment-metrics {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   @media (min-width: 64.01rem) {
@@ -3377,9 +3399,13 @@
     gap: 0.5rem;
   }
 
-  /* ----- Metric cards: stop the chip/donut collisions ----- */
+  /* ----- Metric cards: cosmetic harmony tweaks ----- */
+  /* The compact proportional bar dropped every donut/chip-collision
+   * workaround: chip + label now live in separate grid areas, so the
+   * old `padding-inline-end` reservations and the `__value-row` flex
+   * overrides are gone. These tweaks refine the typography + the
+   * chip / label / meta text-only on top of the v3 base rules. */
   .metric-card__label {
-    padding-inline-end: 5.75rem;
     font-size: 0.8125rem;
     font-weight: 500;
   }
@@ -3391,20 +3417,8 @@
     border-color: var(--color-border);
     color: var(--color-text-muted);
   }
-  .metric-card__value {
-    font-size: 1.75rem;
-    font-weight: 600;
-  }
-  .metric-card__percentage {
-    font-size: 0.8125rem;
+  .metric-card__ratio {
     font-weight: 500;
-    white-space: normal;
-    max-width: 11rem;
-  }
-  .metric-card__value-row {
-    padding-inline-end: 4.5rem;
-    flex-wrap: wrap;
-    row-gap: 0.25rem;
   }
   .metric-card__meta {
     font-size: 0.71875rem;

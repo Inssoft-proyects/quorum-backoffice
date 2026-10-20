@@ -349,16 +349,12 @@ const REGION_DEFS: ReadonlyArray<RegionSpec> = [
     // Mask the h1 + subtitle text; keep the actions buttons.
     masks: async () => [],
   },
-  {
-    id: 'metrics-grid',
-    maquetteSelector: '.metrics-grid',
-    appSelector: '.metrics-grid',
-    why:
-      'The 4 metric cards row. Geometry + card chrome + donut colors ' +
-      'are comparable; the value text is masked because each screen ' +
-      'shows different counters.',
-    masks: async () => [],
-  },
+  // NOTE: the `.metrics-grid` region is intentionally NOT pixel-compared.
+  // The summary cards were rebuilt by design (`odd/tasks/backoffice-ui-canon.md`,
+  // S10/T7): the maquette draws 64px donuts inside 195px cards, while the app now
+  // renders a 6px proportional bar in ~110px cards with an 8px gap. Pixel parity
+  // against the old drawing can no longer pass by construction; the row stays
+  // covered by the structural checks `has-4-metric-cards` and `has-bar-per-card`.
   {
     id: 'search-shell',
     maquetteSelector: '.inventory-search',
@@ -380,8 +376,8 @@ const REGION_DEFS: ReadonlyArray<RegionSpec> = [
  * and css/tokens.css) declares:
  *   .inventory-page wraps every screen
  *   .inventory-header h1 + subtitle + actions
- *   .metrics-grid with exactly 4 .metric-card (with --with-chart variant)
- *   .donut-chart inside metric cards (centered text)
+ *   .metrics-grid with exactly 4 .metric-card (structure checked, not pixels)
+ *   .metric-bar inside metric cards (proportional share)
  *   .inventory-search shell
  *   .table-shell > .data-table (where applicable)
  *   .table-pagination
@@ -836,7 +832,7 @@ async function resolveAppBox(
  *   - /audit is read-only by design: no CTA buttons in the header.
  *     The primary-cta-bg check is N/A.
  *   - /asociar is the "Asignación de marbetes" canon: same chrome as
- *     /marbetes (inventory-page + inventory-header + metrics-grid)
+ *     /marbetes (inventory-page + inventory-header; metrics-grid is structural only)
  *     PLUS the assignment-tabs strip + assignment-action-bar. The
  *     primary-cta-bg check is N/A (the maquette only ships the admin
  *     sync button on the inventory-header; no primary CTA in canon).
@@ -882,13 +878,16 @@ async function buildStructuralChecks(
     detail: `got ${metricCount}`,
   });
 
-  // Pattern: each metric card hosts a donut chart (centered text).
-  const donutCount = await page.locator('.metric-card .donut-chart').count();
+  // Pattern: each metric card hosts a proportional bar. The bar replaced the
+  // maquette's donut (`odd/tasks/backoffice-ui-canon.md`, T7) because the donut
+  // is what forced 195px-tall cards; the attention card may omit it when it has
+  // no share to show.
+  const barCount = await page.locator('.metric-card .metric-bar').count();
   checks.push({
-    id: 'has-donut-per-card',
-    description: 'every metric card renders a .donut-chart',
-    pass: donutCount >= 3, // the attention card may omit the donut
-    detail: `got ${donutCount} donuts for ${metricCount} cards`,
+    id: 'has-bar-per-card',
+    description: 'every metric card renders a .metric-bar',
+    pass: barCount >= 3,
+    detail: `got ${barCount} bars for ${metricCount} cards`,
   });
 
   // Search shell — N/A for the dashboard (KPI overview, no list).
