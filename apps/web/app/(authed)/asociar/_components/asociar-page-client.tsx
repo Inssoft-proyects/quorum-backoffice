@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Eye, EyeOff, RefreshCw, Search, Undo2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, RefreshCw, Search, Undo2 } from 'lucide-react';
 import type {
   ListMatriculasStatus,
   MarbeteDetailResponse,
@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import {
+  MaskedNumber,
   MetricBar,
   type MetricBarSegment,
   MetricCard,
@@ -455,6 +456,15 @@ export function AsociarPageClient({
 
   // ---- Reveal ----
   const [revealMarbete, setRevealMarbete] = useState<MarbeteDetailResponse | null>(null);
+  /**
+   * Full codes returned by a successful reveal, keyed by marbete id.
+   *
+   * The API never returns an unmasked code in a list read (only the hash is
+   * stored, `reveal` lifts `maskCode(publicUid)` for that one response), so the
+   * revealed value has to live here. Without it the row snapped back to
+   * `V***69` as soon as the dialog closed.
+   */
+  const [revealedCodes, setRevealedCodes] = useState<Record<number, string>>({});
   function openReveal(item: MatriculaListItem): void {
     if (!item.marbete) return;
     setRevealMarbeteId(item.marbete.id);
@@ -1023,12 +1033,10 @@ export function AsociarPageClient({
                         </td>
                         <td className="data-table__credential" data-label="Marbete">
                           {item.marbete ? (
-                            <span className="credential-cell">
-                              <span className="credential-mask">{item.marbete.maskedCode}</span>
-                              <span className="privacy-chip" aria-label="Oculto">
-                                <EyeOff className="privacy-chip__icon" aria-hidden />
-                              </span>
-                            </span>
+                            <MaskedNumber
+                              value={item.marbete.maskedCode}
+                              revealed={revealedCodes[item.marbete.id]}
+                            />
                           ) : (
                             '—'
                           )}
@@ -1192,9 +1200,12 @@ export function AsociarPageClient({
         onOpenChange={(o) => {
           if (!o) setRevealMarbeteId(null);
         }}
-        onRevealed={() => {
+        onRevealed={(fullCode) => {
+          const revealedId = revealMarbete?.id;
+          if (revealedId !== undefined) {
+            setRevealedCodes((prev) => ({ ...prev, [revealedId]: fullCode }));
+          }
           setRevealMarbeteId(null);
-          void refetch();
         }}
       />
     </div>
