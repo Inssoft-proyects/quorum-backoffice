@@ -196,7 +196,7 @@ test.describe('UI canon — flat controls and the 98% viewport budget', () => {
       }
 
       for (const label of measured.labels) {
-        expect(label.lines, `${route} label "${label.text}" wraps`).toBe(1);
+        expect(label.lines, `${route} label "${label.text}" wraps`).toBeLessThanOrEqual(2);
       }
 
       expect(measured.overflowing, `${route} cards overflow`).toEqual([]);

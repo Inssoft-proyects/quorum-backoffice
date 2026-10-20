@@ -354,7 +354,16 @@
     font-size: 0.75rem;
     font-weight: 700;
     line-height: 1.35;
-    white-space: nowrap;
+    /* The chip shares this row, so a long label ("Matrículas sin marbete")
+     * would otherwise be cut to "Matrículas sin ma…". Clamp it to two lines
+     * instead of clipping: the grid stretches the sibling cards, so heights
+     * stay equal and nothing is unreadable. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
   }
 
   .metric-card__value {
@@ -491,6 +500,13 @@
     border-radius: 999px;
     overflow: hidden;
     background: var(--color-surface-subtle);
+  }
+
+  /* The active card paints a dark background, so the subtle track and the
+   * "assigned" segment colour disappear into it. A translucent track keeps
+   * the proportion readable without changing the segment palette. */
+  .metric-card[aria-pressed='true'] .metric-bar {
+    background: rgb(255 255 255 / 22%);
   }
 
   .metric-bar__seg {
